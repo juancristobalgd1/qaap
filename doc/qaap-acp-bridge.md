@@ -53,8 +53,11 @@ the gate and delegation env (`resolveQaapAcpSpawnCommand`):
   turn** below the sandbox's shared root, in private 0600 files released with the task. The agent shares the
   uid, so it can write to a copy, but no later turn reuses one. The gate client is loaded before the agent starts.
 
-Readers: OpenCode logs are recognized by the bridge's first line (`{"type":"system","qaap_transport":"acp",...}`)
-and parsed with the Claude parser, both live and on replay (`qaap-acp-bridge-stream.ts`). Copilot stays plain
+Readers: an OpenCode log is recognized as the bridge's by its first JSON line that carries a `type`
+(`qaap-acp-bridge-stream.ts`). Claude stream-json uses `stream_event`, `assistant`, `user` and `result`; native
+OpenCode never does. The bridge's init line alone is not enough: the task log readers drop `system/init` lines
+and read large logs from the tail (found in the app E2E). Recognized logs are parsed with the Claude parser,
+both live and on replay. Copilot stays plain
 text. A structured Copilot transcript would change the native CLI's rendering too, so it is deferred to F4.
 
 Runtime capabilities (`resolveQaapRuntimeHarnessCapabilities`): with its flag on, Copilot goes from
@@ -65,6 +68,12 @@ issues the gate token and the endpoint lets it ask. OpenCode's entry does not ch
 
 - **Client capabilities:** neither `fs/*` nor `terminal/*` is announced, and every agent request other than
   `session/request_permission` gets JSON-RPC -32601.
+- **Gate tool names (Copilot):** the agent's title never reaches the gate, because it describes the call and
+  could pass for a harmless tool. Any kind without a read-only meaning (`edit`, `delete`, `move`, `execute`,
+  `other`…) reaches the gate as a write or shell call. A `--mode readonly` turn refuses every non-read kind
+  locally.
+- **Input checks:** the gate judges the permission's own input. The bridge refuses locally a shell call without
+  a command and a file change without a path.
 - **Granting:** only with an `allow_once` option, only after a well-formed gate `allow`. An `allow` that carries
   `updatedInput` is a deny, since ACP cannot pass a rewritten input. The bridge never chooses `allow_always`,
   which would make the agent stop asking. It chooses by kind, never by option id or label, and ambiguity or a
@@ -76,23 +85,39 @@ issues the gate token and the endpoint lets it ask. OpenCode's entry does not ch
   agent, with exit code 14.
 - **Exit codes:** 0 `end_turn`, 10 cancelled, 11 refusal, 12 limit, 13 sign-in needed, 14 protocol,
   15 agent died, 16 old ACP version, 17 spawn failure. Each comes with a `[qaap]` stderr line.
-- **Cancel:** SIGTERM sends `session/cancel` and answers pending permissions with `cancelled`. If the agent
+- **Cancel:** SIGTERM sends `session/cancel`. From then on, no permission reaches the gate: pending and new
+  ones are answered `cancelled`. If the agent
   ignores it, the bridge kills it after 3 s. The agent runs in the bridge's process group, not detached.
 - **Waiting on an approval:** while a permission waits on the user, the bridge prints a heartbeat line every 15 s.
 - **Unasked mutations:** when the bridge is the only checkpoint (Copilot), a mutating call (edit / delete /
   move / execute) that completes without a granted permission is reported as `unpermitted-mutation` on stderr
   and in the stream. This is the `client-boundary` case: a hostile agent can still mutate, and only the sandbox
   bounds it.
-- **Credentials:** for Copilot, the gate env is removed from the agent's env. OpenCode keeps it because its own
+- **Agent stderr:** each line gets an `[agent] ` prefix, so it can never pass for stream-json or a
+  `[qaap]` note.
+- **Gate client:** the bridge loads it only if its sha256 matches the hash on its command line. A staged copy
+  is writable by the agent's uid.
+- **Hosted deployments:** an ACP turn outside a task sandbox is refused (design 3.8).
+- **Credentials:** the gate token goes to a bridge-gated harness only for a turn that runs through the bridge,
+  never to a native spawn or a one-shot. For Copilot, the gate env is removed from the agent's env. OpenCode keeps it because its own
   gate plugin needs it, as today. Nothing secret goes on the command line.
 - **Known residual risk:** the gate token is in the bridge's env, readable through `/proc/<pid>/environ` by the
   same uid. This matches the Codex hook and the OpenCode plugin today. Passing it by descriptor or by a 0600 file
   removed after reading is still pending.
 
+## Verified in the real app (local, 23 Nov 2026)
+
+- **OpenCode-ACP:** the turn wrote the file and every tool passed the gate plugin. The transcript was structured
+  (thinking, Grep/Edit/Bash, the reply) and the context usage was recorded.
+- **Copilot-ACP in request-approval mode:** the gate's card "Edit · copilot.txt" appeared and the file did not
+  exist. After approving it through the approvals API, Copilot wrote it. Copilot then ran a verification shell
+  command (`cmp`) on its own, without asking, and the bridge reported it as `unpermitted-mutation`. This is the
+  `client-boundary` case: the gate sees only what Copilot chooses to ask.
+
 ## Pending before enabling in production
 
-- E2E inside the real app, locally and in VPS staging with the task sandbox, including a parent→child
-  delegation, a cancel with the kill checked inside the container, and a read-only turn.
+- E2E in VPS staging with the task sandbox, including a parent→child delegation, a cancel with the kill checked
+  inside the container, and a read-only turn.
 - A/B benchmark: native OpenCode vs OpenCode-ACP.
 - The runner does not yet act on `unpermitted-mutation`: it is only logged.
 - Forcing the mode before the first prompt (3.8 step 1) for flavors that expose modes. Neither OpenCode nor
