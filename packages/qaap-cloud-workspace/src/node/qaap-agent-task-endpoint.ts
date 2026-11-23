@@ -556,7 +556,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // task groups arrive over the WebSocket snapshot instead.
         const ownerLogin = this.auth.resolveUserLogin(ctx);
         if (refresh) {
-            this.runner.refreshAgentCatalog(ownerLogin);
+            // `agent`: the Connect dialog confirming one harness's sign-in re-probes only that harness.
+            const agent = typeof req.query.agent === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(req.query.agent) ? req.query.agent : undefined;
+            this.runner.refreshAgentCatalog(ownerLogin, agent);
         }
         // An explicit refresh (the Connect dialog confirming a sign-in) needs the probe's real
         // answer; the regular picker load answers within the short default budget.

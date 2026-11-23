@@ -622,17 +622,28 @@ export function invalidateAgentTaskListAllCache(): void {
  * concurrent calls share one request, and `forceRefresh` bypasses the cache with a `refresh=1` request.
  * Failed requests are never cached.
  */
-export async function fetchAgentTaskListAll(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
+export async function fetchAgentTaskListAll(options?: {
+    readonly forceRefresh?: boolean;
+    /**
+     * With `forceRefresh`: re-probe only this harness (the Connect dialog confirming its sign-in). Without it
+     * the backend re-detects every CLI and re-runs every probe, which a 2.5 s poll turned into a probe storm.
+     */
+    readonly refreshAgent?: string;
+}): Promise<QaapAgentTaskListSnapshot> {
     const forceRefresh = options?.forceRefresh === true;
     if (!forceRefresh && agentTaskListAllCache && Date.now() - agentTaskListAllCache.at < AGENT_TASK_LIST_ALL_TTL_MS) {
         return agentTaskListAllCache.snapshot;
     }
-    return dedupeInFlight(agentTaskListAllInFlight, forceRefresh ? 'refresh' : 'cached', () => requestAgentTaskListAll(forceRefresh));
+    const refreshAgent = forceRefresh ? options?.refreshAgent?.trim().toLowerCase() || undefined : undefined;
+    const key = forceRefresh ? (refreshAgent ? `refresh:${refreshAgent}` : 'refresh') : 'cached';
+    return dedupeInFlight(agentTaskListAllInFlight, key, () => requestAgentTaskListAll(forceRefresh, refreshAgent));
 }
 
-async function requestAgentTaskListAll(forceRefresh: boolean): Promise<QaapAgentTaskListSnapshot> {
+async function requestAgentTaskListAll(forceRefresh: boolean, refreshAgent?: string): Promise<QaapAgentTaskListSnapshot> {
     const generation = agentTaskListAllGeneration;
-    const endpoint = forceRefresh ? `${QAAP_AGENT_TASK_API_PATH}/all?refresh=1` : `${QAAP_AGENT_TASK_API_PATH}/all`;
+    const endpoint = forceRefresh
+        ? `${QAAP_AGENT_TASK_API_PATH}/all?refresh=1${refreshAgent ? `&agent=${encodeURIComponent(refreshAgent)}` : ''}`
+        : `${QAAP_AGENT_TASK_API_PATH}/all`;
     const response = await fetchQaapGetWithTransientRetry(endpoint, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
         throw new Error(response.statusText);

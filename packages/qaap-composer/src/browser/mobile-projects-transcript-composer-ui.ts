@@ -86,7 +86,7 @@ export interface MobileProjectsTranscriptComposerHost {
     stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
     stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
 
-    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<{
+    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<{
         agents: QaapAgentTaskAgentOption[];
         qaiqModels: QaapQaiqModelOption[];
         defaultAgent?: string;
@@ -281,7 +281,7 @@ export class MobileProjectsTranscriptComposerUi {
         return readStoredAgentModel(cwd, agentId);
     }
 
-    async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
+    async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.resolveCatalogCwd(project);
         try {

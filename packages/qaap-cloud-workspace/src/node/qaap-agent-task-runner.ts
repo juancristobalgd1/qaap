@@ -660,7 +660,19 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * refreshing owner's rejected sessions are lifted ({@link rejectedAgentSessions}): another user's
      * refresh must not unlock a session a failed turn of this user proved unusable.
      */
-    refreshAgentCatalog(ownerLogin?: string): void {
+    refreshAgentCatalog(ownerLogin?: string, agentId?: string): void {
+        const onlyAgent = agentId?.trim().toLowerCase();
+        if (onlyAgent && this.detectedAgents.has(resolveQaapHarnessBaseId(onlyAgent))) {
+            // One harness after its sign-in: drop only its state, probe and catalog for this owner. Re-detecting
+            // every CLI (synchronous) and re-running every probe on each 2.5 s poll of the Connect dialog
+            // saturated a small backend until the sign-in terminal could not even start.
+            const cacheKey = this.agentConnectionCacheKey(onlyAgent, ownerLogin);
+            this.agentConnectionStates.delete(cacheKey);
+            this.agentConnectionProbes.delete(cacheKey);
+            this.rejectedAgentSessions.delete(cacheKey);
+            invalidateNativeAgentModels(onlyAgent, ownerLogin);
+            return;
+        }
         this.agentConnectionStates.clear();
         this.agentConnectionProbes.clear();
         // Keys are `${agentId}:${owner}` (agentConnectionCacheKey); neither part contains a colon.

@@ -56,7 +56,7 @@ export interface MobileProjectsStickyComposerAgentsHost {
     activeTasks?: MobileProjectsActiveTasks;
     readPreference?: (key: string) => unknown;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot>;
+    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<QaapAgentTaskListSnapshot>;
     resolveConversationAgentLabel(agentId: string | undefined): string;
     projectRowsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
 }
@@ -364,7 +364,7 @@ export class MobileProjectsStickyComposerAgentsUi {
     /** Last catalog request per cwd: re-renders inside the window reuse the loaded catalog. */
     protected lastStickyCatalogRefresh: { readonly cwd: string; readonly at: number } | undefined;
 
-    async refreshStickyComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
+    async refreshStickyComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         // The composer re-renders on every transcript tick; without this each render hit

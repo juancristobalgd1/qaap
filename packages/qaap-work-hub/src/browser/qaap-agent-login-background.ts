@@ -206,7 +206,8 @@ function createDefaultConnectionProbe(ctx: any, project: MobileProjectEntry | un
     return async () => {
         invalidateAgentTaskListAllCache();
         invalidateAgentModelsCache();
-        const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
+        // Only this harness is re-probed: this runs every 2.5 s while the dialog waits for the sign-in.
+        const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true, refreshAgent: agentId });
         await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
         ctx.stickyComposerRenderUi?.renderStickyComposer?.();
         return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(agentId) === true;
