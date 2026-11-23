@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import type { QaapAgentTask } from '../../../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from '../../qaap-agent-task-runner';
+import { QAAP_HARNESS_ADAPTER_REGISTRY } from '../qaap-harness-adapter-registry';
 import { QaapToolGateTokenService } from '../../qaap-tool-gate-token-service';
 import { QAAP_ACP_ASK_TTL_SEC, qaapAcpFlavorPrintsStreamJson, resolveQaapRuntimeHarnessCapabilities } from './qaap-acp-bridge-launch';
 
@@ -52,8 +53,18 @@ describe('ACP flavors in the gate wiring', () => {
         expect(acp.mapToolKind('Edit', {})).to.equal('edit');
     });
 
+    it('gives Grok and Copilot the bridge gate plus delegation over ACP', () => {
+        const grok = resolveQaapRuntimeHarnessCapabilities('grok', { QAAP_HARNESS_ACP_GROK: '1' });
+        expect(grok).to.deep.include({ transport: 'acp', gate: 'acp', canAsk: true, enforcement: 'client-boundary', delegateMcp: 'acp-stdio' });
+        expect(resolveQaapRuntimeHarnessCapabilities('copilot', { QAAP_HARNESS_ACP_COPILOT: '1' }).delegateMcp).to.equal('acp-stdio');
+        expect(resolveQaapHarnessCapabilities('copilot').delegateMcp ?? 'none').to.equal('none');
+        expect(resolveQaapRuntimeHarnessCapabilities('antigravity', { QAAP_HARNESS_ACP_ANTIGRAVITY: '1' }))
+            .to.deep.include({ transport: 'acp', gate: 'acp', canAsk: true, delegateMcp: 'acp-stdio' });
+        expect(data(resolveQaapRuntimeHarnessCapabilities('grok', {}))).to.deep.equal(data(resolveQaapHarnessCapabilities('grok')));
+    });
+
     it('leaves OpenCode and every other harness unchanged (OpenCode keeps its pre-execution plugin)', () => {
-        const env = { QAAP_HARNESS_ACP_COPILOT: '1', QAAP_HARNESS_ACP_OPENCODE: '1' };
+        const env = { QAAP_HARNESS_ACP_COPILOT: '1', QAAP_HARNESS_ACP_OPENCODE: '1', QAAP_HARNESS_ACP_GROK: '1', QAAP_HARNESS_ACP_ANTIGRAVITY: '1' };
         for (const id of ['opencode', 'claude', 'codex', 'pi', 'cursor', undefined]) {
             expect(data(resolveQaapRuntimeHarnessCapabilities(id, env)), String(id)).to.deep.equal(data(resolveQaapHarnessCapabilities(id)));
         }
@@ -82,9 +93,27 @@ describe('ACP flavors in the gate wiring', () => {
         expect(on.OPENCODE_CONFIG_CONTENT).to.equal(undefined);
     });
 
+    it('sends an Antigravity prompt on stdin only in ACP mode (natively agy takes it in argv)', () => {
+        const saved = process.env.QAAP_HARNESS_ACP_ANTIGRAVITY;
+        try {
+            delete process.env.QAAP_HARNESS_ACP_ANTIGRAVITY;
+            expect(QAAP_HARNESS_ADAPTER_REGISTRY.resolvePromptTransport('antigravity', { bin: 'agy' })).to.deep.equal({ kind: 'argv-prompt' });
+            process.env.QAAP_HARNESS_ACP_ANTIGRAVITY = '1';
+            expect(QAAP_HARNESS_ADAPTER_REGISTRY.resolvePromptTransport('antigravity', { bin: 'agy' })).to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit' });
+        } finally {
+            if (saved === undefined) {
+                delete process.env.QAAP_HARNESS_ACP_ANTIGRAVITY;
+            } else {
+                process.env.QAAP_HARNESS_ACP_ANTIGRAVITY = saved;
+            }
+        }
+    });
+
     it('reads a result line only from the flavors that print stream-json', () => {
         expect(qaapAcpFlavorPrintsStreamJson('opencode')).to.equal(true);
         expect(qaapAcpFlavorPrintsStreamJson('copilot')).to.equal(false);
+        expect(qaapAcpFlavorPrintsStreamJson('antigravity')).to.equal(true);
+        expect(qaapAcpFlavorPrintsStreamJson('grok')).to.equal(false);
         expect(qaapAcpFlavorPrintsStreamJson(undefined)).to.equal(false);
     });
 });

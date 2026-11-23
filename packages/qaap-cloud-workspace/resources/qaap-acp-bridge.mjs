@@ -17,8 +17,9 @@
 //   * Lines are capped (4 MiB) and rate-limited (2000 messages/s); a breach kills the agent and exits PROTOCOL.
 //   * On SIGTERM: `session/cancel`, pending permissions answered `cancelled`, exit within 4 s.
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ACP_PROTOCOL_VERSION = 1;
@@ -62,6 +63,7 @@ export const FLAVORS = Object.freeze({
         gateToolNames: 'native',
         modelConfigId: 'model',
         signIn: 'Run `opencode auth login` in a terminal.',
+        mcpStdio: true,
     }),
     copilot: Object.freeze({
         agentId: 'copilot',
@@ -73,6 +75,35 @@ export const FLAVORS = Object.freeze({
         gateToolNames: 'claude',
         modelConfigId: 'model',
         signIn: 'Run `copilot` in a terminal and sign in with /login.',
+        // Copilot ignores stdio MCP servers in session/new (seen with 1.0.114; T3 Code notes the same) but takes HTTP
+        // ones: the bridge runs the stdio servers itself and serves them to Copilot over loopback HTTP.
+        mcpStdio: false,
+        mcpHttpProxy: true,
+    }),
+    antigravity: Object.freeze({
+        agentId: 'antigravity',
+        permissionSource: 'bridge',
+        keepGateEnv: false,
+        // Antigravity's native transcript is already Claude-style stream-json.
+        output: 'stream-json',
+        gateToolNames: 'claude',
+        modelConfigId: 'model',
+        signIn: 'Run `agy` in a terminal and sign in with Google.',
+        mcpStdio: true,
+        // agy loads plugins and hooks from its gemini dir; a broken global hook blocks every tool (seen on a dev
+        // machine). Qaap runs it with its own profile, like T3 Code; the Google sign-in lives in the keychain.
+        ownProfile: 'antigravity-acp',
+    }),
+    grok: Object.freeze({
+        agentId: 'grok',
+        permissionSource: 'bridge',
+        keepGateEnv: false,
+        // Grok's transcript is plain text today, like Copilot's.
+        output: 'text',
+        gateToolNames: 'claude',
+        modelConfigId: 'model',
+        signIn: 'Run `grok login` in a terminal.',
+        mcpStdio: true,
     }),
 });
 
@@ -103,16 +134,16 @@ export function parseBridgeArgs(argv) {
     if (separator < 0 || separator === argv.length - 1) {
         throw new Error('usage: qaap-acp-bridge --flavor <id> [--model <id>] [--mode ask|auto|readonly] -- <agent argv...>');
     }
-    const options = { flavor: undefined, model: undefined, mode: 'ask', gateClient: undefined, gateClientSha256: undefined };
+    const options = { flavor: undefined, model: undefined, mode: 'ask', gateClient: undefined, gateClientSha256: undefined, mcpServers: undefined, promptFile: undefined };
     const own = argv.slice(0, separator);
     for (let index = 0; index < own.length; index++) {
         const flag = own[index];
         const value = own[index + 1];
-        if (flag === '--flavor' || flag === '--model' || flag === '--mode' || flag === '--gate-client' || flag === '--gate-client-sha256') {
+        if (flag === '--flavor' || flag === '--model' || flag === '--mode' || flag === '--gate-client' || flag === '--gate-client-sha256' || flag === '--mcp-servers' || flag === '--prompt-file') {
             if (value === undefined || value.startsWith('--')) {
                 throw new Error(`${flag} needs a value`);
             }
-            const key = flag === '--gate-client' ? 'gateClient' : flag === '--gate-client-sha256' ? 'gateClientSha256' : flag.slice(2);
+            const key = flag === '--gate-client' ? 'gateClient' : flag === '--gate-client-sha256' ? 'gateClientSha256' : flag === '--mcp-servers' ? 'mcpServers' : flag === '--prompt-file' ? 'promptFile' : flag.slice(2);
             options[key] = value;
             index++;
         } else {
@@ -126,6 +157,42 @@ export function parseBridgeArgs(argv) {
         throw new Error(`unknown mode ${options.mode}`);
     }
     return { ...options, agentArgv: argv.slice(separator + 1) };
+}
+
+/**
+ * MCP servers for `session/new`, read from the launcher's 0600 file: stdio entries only (`name`, `command`, `args`,
+ * `env` as name/value pairs). The file never holds a credential, only paths (the delegation token stays in its own
+ * 0600 file). Anything malformed throws: the turn must not start with a half-wired delegation.
+ */
+export function parseMcpServers(text) {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed) || parsed.length > 8) {
+        throw new Error('the MCP server list must be an array of at most 8 entries');
+    }
+    return parsed.map(entry => {
+        const ok = isPlainObject(entry)
+            && typeof entry.name === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(entry.name)
+            && typeof entry.command === 'string' && entry.command.length > 0
+            && Array.isArray(entry.args) && entry.args.every(arg => typeof arg === 'string')
+            && Array.isArray(entry.env) && entry.env.every(pair => isPlainObject(pair) && typeof pair.name === 'string' && typeof pair.value === 'string');
+        if (!ok) {
+            throw new Error('malformed MCP server entry');
+        }
+        return { name: entry.name, command: entry.command, args: [...entry.args], env: entry.env.map(pair => ({ name: pair.name, value: pair.value })) };
+    });
+}
+
+/**
+ * The agent's argv with the flavor's own additions: Antigravity gets Qaap's own profile (an absolute gemini dir under
+ * HOME, created 0700) so global plugins and hooks of the user's agy profile do not apply.
+ */
+export function buildAgentArgv(flavor, argv, env, mkdir = dir => mkdirSync(dir, { recursive: true, mode: 0o700 })) {
+    if (!flavor.ownProfile || !env.HOME) {
+        return [...argv];
+    }
+    const profile = `${env.HOME.replace(/\/+$/, '')}/.cache/qaaq/${flavor.ownProfile}`;
+    mkdir(profile);
+    return [...argv, '--gemini-dir', profile, '--app-data-dir', flavor.ownProfile];
 }
 
 /** The agent's env: the bridge's own, without gate credentials unless the flavor's plugin needs them. */
@@ -178,9 +245,11 @@ export function canonicalToolInput(kind, rawInput, locations, cwd) {
     };
     const firstPath = Array.isArray(locations) ? locations.find(entry => isPlainObject(entry) && typeof entry.path === 'string')?.path : undefined;
     const input = {};
-    const command = pick('command', 'cmd');
-    const filePath = pick('filePath', 'file_path', 'filepath', 'path') ?? (kind === 'execute' ? undefined : firstPath);
-    const workdir = pick('workdir', 'cwd') ?? (kind === 'execute' ? firstPath : undefined);
+    // Field names differ per agent: OpenCode (filePath, workdir), Copilot (path, old_str), Antigravity (PascalCase).
+    const command = pick('command', 'cmd', 'CommandLine', 'commandLine', 'Command');
+    const filePath = pick('filePath', 'file_path', 'filepath', 'path', 'Path', 'TargetFile', 'targetFile', 'AbsolutePath')
+        ?? (kind === 'execute' ? undefined : firstPath);
+    const workdir = pick('workdir', 'cwd', 'Cwd', 'WorkingDirectory') ?? (kind === 'execute' ? firstPath : undefined);
     if (command) {
         input.command = command;
     }
@@ -192,7 +261,8 @@ export function canonicalToolInput(kind, rawInput, locations, cwd) {
     }
     for (const [from, to] of [['oldString', 'old_string'], ['old_string', 'old_string'], ['old_str', 'old_string'],
         ['newString', 'new_string'], ['new_string', 'new_string'], ['new_str', 'new_string'],
-        ['content', 'content'], ['file_text', 'content'], ['pattern', 'pattern'], ['url', 'url'], ['destination', 'destination']]) {
+        ['content', 'content'], ['file_text', 'content'], ['Content', 'content'], ['CodeContent', 'content'],
+        ['TargetContent', 'old_string'], ['ReplacementContent', 'new_string'], ['pattern', 'pattern'], ['url', 'url'], ['destination', 'destination']]) {
         if (typeof raw[from] === 'string' && input[to] === undefined) {
             input[to] = raw[from];
         }
@@ -383,19 +453,39 @@ function toolResultText(update) {
  * Plain-text rendering of translated lines, for a flavor whose transcript is plain text: the reply as it streams,
  * one line per tool call, nothing else (warnings and denials already go to stderr).
  */
-export function renderLinesAsText(lines) {
+export function renderLinesAsText(lines, shownTools = new Map()) {
     let text = '';
-    for (const line of lines) {
-        if (line.type === 'stream_event' && line.event?.delta?.type === 'text_delta') {
-            text += line.event.delta.text;
-        } else if (line.type === 'assistant') {
-            for (const block of line.message?.content ?? []) {
-                if (block.type === 'tool_use') {
-                    const detail = block.input?.command ?? block.input?.file_path ?? block.input?.url ?? block.input?.pattern ?? '';
-                    text += `\n▸ ${block.name}${detail ? `: ${String(detail).split('\n')[0].slice(0, 200)}` : ''}\n`;
+    const line = (name, detail) => `\n▸ ${name}${detail ? `: ${String(detail).split('\n')[0].slice(0, 200)}` : ''}\n`;
+    for (const entry of lines) {
+        if (entry.type === 'stream_event' && entry.event?.delta?.type === 'text_delta') {
+            text += entry.event.delta.text;
+        } else if (entry.type === 'assistant') {
+            for (const block of entry.message?.content ?? []) {
+                if (block.type !== 'tool_use') {
+                    continue;
+                }
+                // One line per call, printed once its input names what it does (a call is re-announced when the
+                // input arrives); a call that never gets one is printed when it finishes.
+                const detail = block.input?.command ?? block.input?.file_path ?? block.input?.url ?? block.input?.pattern;
+                if (shownTools.get(block.id) === true) {
+                    continue;
+                }
+                if (detail) {
+                    shownTools.set(block.id, true);
+                    text += line(block.name, detail);
+                } else {
+                    shownTools.set(block.id, block.name);
                 }
             }
-        } else if (line.type === 'result') {
+        } else if (entry.type === 'user') {
+            for (const block of entry.message?.content ?? []) {
+                const pending = block.type === 'tool_result' ? shownTools.get(block.tool_use_id) : undefined;
+                if (typeof pending === 'string') {
+                    shownTools.set(block.tool_use_id, true);
+                    text += line(pending);
+                }
+            }
+        } else if (entry.type === 'result') {
             text += '\n';
         }
     }
@@ -438,6 +528,171 @@ export function isAuthError(error) {
         return false;
     }
     return error.code === -32000 || /auth|sign.?in|log.?in|credential/i.test(String(error.message ?? ''));
+}
+
+/** Largest MCP request body the loopback proxy accepts. */
+export const MCP_PROXY_MAX_BODY_BYTES = 4 * 1024 * 1024;
+/** Open connections and pending requests per server the proxy accepts. */
+export const MCP_PROXY_MAX_CONNECTIONS = 16;
+export const MCP_PROXY_MAX_PENDING = 64;
+
+/**
+ * Serves stdio MCP servers over MCP Streamable HTTP (JSON responses) on 127.0.0.1, for an agent that only takes HTTP
+ * MCP servers (Copilot). Each server gets its own path and the whole proxy one random 32-byte bearer secret, which
+ * only the agent learns (in session/new). The real credentials stay where the stdio server reads them (a 0600 file).
+ * `spawnServer(entry)` returns a child with stdio pipes. Returns `{ entries, close }`.
+ */
+export async function startMcpHttpProxy(servers, spawnServer) {
+    const secret = randomBytes(32).toString('base64url');
+    const expected = Buffer.from(`Bearer ${secret}`);
+    const routes = new Map();
+    const children = [];
+    for (const [index, entry] of servers.entries()) {
+        const child = spawnServer(entry);
+        children.push(child);
+        const waiting = new Map();
+        const lines = new LineSplitter(line => {
+            let message;
+            try {
+                message = JSON.parse(line);
+            } catch {
+                return;
+            }
+            if (message && message.id !== undefined && waiting.has(message.id)) {
+                waiting.get(message.id)(message);
+                waiting.delete(message.id);
+            }
+        });
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', chunk => lines.push(chunk));
+        const failAll = () => {
+            for (const resolve of waiting.values()) {
+                resolve(undefined);
+            }
+            waiting.clear();
+        };
+        // A dead server (killed, or its node missing) answers 502; it never takes the bridge down.
+        child.on('error', failAll);
+        child.stdin.on('error', failAll);
+        child.on('close', failAll);
+        routes.set(`/mcp/${index}`, { child, waiting });
+    }
+    let hostHeader;
+    const server = createServer((req, res) => {
+        // Defence in depth against DNS rebinding: loopback Host only, and no browser Origin.
+        if (req.headers.origin !== undefined || req.headers.host !== hostHeader) {
+            res.writeHead(403).end();
+            return;
+        }
+        const auth = Buffer.from(String(req.headers.authorization ?? ''));
+        if (auth.length !== expected.length || !timingSafeEqual(auth, expected)) {
+            res.writeHead(401).end();
+            return;
+        }
+        const route = routes.get(String(req.url ?? '').split('?')[0]);
+        if (!route) {
+            res.writeHead(404).end();
+            return;
+        }
+        if (req.method !== 'POST') {
+            // No server-initiated stream: the shim never sends requests of its own.
+            res.writeHead(405, { allow: 'POST' }).end();
+            return;
+        }
+        let size = 0;
+        const chunks = [];
+        req.on('data', chunk => {
+            size += chunk.length;
+            if (size > MCP_PROXY_MAX_BODY_BYTES) {
+                res.writeHead(413).end();
+                req.destroy();
+                return;
+            }
+            chunks.push(chunk);
+        });
+        req.on('end', () => {
+            if (res.writableEnded) {
+                return;
+            }
+            let message;
+            try {
+                message = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            } catch {
+                res.writeHead(400).end();
+                return;
+            }
+            if (!isPlainObject(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
+                res.writeHead(400).end();
+                return;
+            }
+            const alive = route.child.exitCode === null && !route.child.stdin.destroyed;
+            if (message.id === undefined) {
+                if (alive) {
+                    route.child.stdin.write(`${JSON.stringify(message)}\n`);
+                }
+                res.writeHead(202).end();
+                return;
+            }
+            // Only primitive ids can be matched to a reply; anything else would hang the request.
+            if (typeof message.id !== 'string' && !Number.isInteger(message.id)) {
+                res.writeHead(400).end();
+                return;
+            }
+            if (!alive) {
+                res.writeHead(502).end();
+                return;
+            }
+            if (route.waiting.has(message.id)) {
+                res.writeHead(409).end();
+                return;
+            }
+            if (route.waiting.size >= MCP_PROXY_MAX_PENDING) {
+                res.writeHead(503).end();
+                return;
+            }
+            route.waiting.set(message.id, reply => {
+                if (res.writableEnded) {
+                    return;
+                }
+                if (!reply) {
+                    res.writeHead(502).end();
+                    return;
+                }
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(reply));
+            });
+            // `res` closes when the client goes away (Node's `req` closes as soon as the body is read).
+            res.on('close', () => {
+                if (!res.writableEnded) {
+                    route.waiting.delete(message.id);
+                }
+            });
+            route.child.stdin.write(`${JSON.stringify(message)}\n`);
+        });
+    });
+    // Long delegation waits keep a request open for minutes; connections are few and bounded.
+    server.requestTimeout = 0;
+    server.maxConnections = MCP_PROXY_MAX_CONNECTIONS;
+    server.headersTimeout = 30000;
+    await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = server.address().port;
+    hostHeader = `127.0.0.1:${port}`;
+    return {
+        entries: servers.map((entry, index) => ({
+            type: 'http', name: entry.name, url: `http://127.0.0.1:${port}/mcp/${index}`,
+            headers: [{ name: 'Authorization', value: `Bearer ${secret}` }],
+        })),
+        close: () => {
+            server.close();
+            server.closeAllConnections?.();
+            for (const child of children) {
+                child.kill('SIGTERM');
+            }
+        },
+    };
 }
 
 /** Splits a text stream into lines; a line longer than 64 KiB is cut so a hostile agent cannot grow the buffer. */
@@ -548,9 +803,10 @@ export class LimitedLineReader {
 export async function runBridgeTurn(options, prompt, io) {
     const flavor = FLAVORS[options.flavor];
     const translator = new AcpStreamTranslator(flavor);
+    const shownTools = new Map();
     const out = lines => {
         if (flavor.output === 'text') {
-            const text = renderLinesAsText(lines);
+            const text = renderLinesAsText(lines, shownTools);
             if (text) {
                 io.writeOut(text);
             }
@@ -569,7 +825,8 @@ export async function runBridgeTurn(options, prompt, io) {
 
     let child;
     try {
-        child = io.spawnAgent(options.agentArgv[0], options.agentArgv.slice(1), buildAgentEnv(io.env, flavor));
+        const argv = buildAgentArgv(flavor, options.agentArgv, io.env);
+        child = io.spawnAgent(argv[0], argv.slice(1), buildAgentEnv(io.env, flavor));
     } catch (error) {
         note(`Could not start ${flavor.agentId}: ${error instanceof Error ? error.message : String(error)}`);
         return EXIT.SPAWN;
@@ -606,6 +863,30 @@ export async function runBridgeTurn(options, prompt, io) {
             note(text);
         }
         settle(code);
+    };
+
+    // MCP servers for session/new: stdio entries as given, or (Copilot) the same servers behind a loopback HTTP proxy.
+    let mcpProxy;
+    const sessionMcpServers = async () => {
+        const servers = io.mcpServers ?? [];
+        if (servers.length === 0) {
+            return [];
+        }
+        if (flavor.mcpStdio) {
+            return servers;
+        }
+        if (flavor.mcpHttpProxy && io.startMcpHttpProxy) {
+            const proxy = await io.startMcpHttpProxy(servers);
+            if (finished || cancelling) {
+                // The turn ended while the proxy started: it must not outlive it.
+                proxy.close();
+                return [];
+            }
+            mcpProxy = proxy;
+            return proxy.entries;
+        }
+        note(`${flavor.agentId} does not take the delegation tools in this mode.`);
+        return [];
     };
 
     const answerPermission = async message => {
@@ -747,7 +1028,7 @@ export async function runBridgeTurn(options, prompt, io) {
         }
         let created;
         try {
-            created = await request('session/new', { cwd: io.cwd, mcpServers: [] });
+            created = await request('session/new', { cwd: io.cwd, mcpServers: await sessionMcpServers() });
         } catch (error) {
             if (isAuthError(error.rpc)) {
                 return fail(EXIT.AUTH_REQUIRED, `${flavor.agentId} needs you to sign in. ${flavor.signIn}`);
@@ -790,6 +1071,7 @@ export async function runBridgeTurn(options, prompt, io) {
     // One process per turn: the agent never outlives it (a no-op when it already exited).
     child.stdin.end();
     child.kill('SIGTERM');
+    mcpProxy?.close();
     return code;
 }
 
@@ -832,7 +1114,25 @@ async function main() {
         process.exitCode = EXIT.USAGE;
         return;
     }
-    const prompt = await readStdin();
+    let mcpServers = [];
+    if (options.mcpServers) {
+        try {
+            mcpServers = parseMcpServers(readFileSync(options.mcpServers, 'utf8'));
+        } catch (error) {
+            process.stderr.write(`[qaap] The ACP bridge could not read its MCP servers (${error instanceof Error ? error.message : String(error)}).\n`);
+            process.exitCode = EXIT.USAGE;
+            return;
+        }
+    }
+    // A harness whose native CLI takes `--prompt-file` (Grok) hands the bridge the same file; otherwise stdin.
+    let prompt;
+    try {
+        prompt = options.promptFile ? readFileSync(options.promptFile, 'utf8') : await readStdin();
+    } catch (error) {
+        process.stderr.write(`[qaap] The ACP bridge could not read its prompt (${error instanceof Error ? error.message : String(error)}).\n`);
+        process.exitCode = EXIT.USAGE;
+        return;
+    }
     let onCancel;
     process.on('SIGTERM', () => onCancel?.());
     process.on('SIGINT', () => onCancel?.());
@@ -847,6 +1147,11 @@ async function main() {
         },
         env: process.env,
         cwd: process.cwd(),
+        mcpServers,
+        startMcpHttpProxy: servers => startMcpHttpProxy(servers, entry => spawn(entry.command, entry.args, {
+            env: { ...buildAgentEnv(process.env, FLAVORS[options.flavor]), ...Object.fromEntries(entry.env.map(pair => [pair.name, pair.value])) },
+            stdio: ['pipe', 'pipe', 'ignore'],
+        })),
     });
     process.exitCode = code;
     // Do not linger on a stuck agent pipe.

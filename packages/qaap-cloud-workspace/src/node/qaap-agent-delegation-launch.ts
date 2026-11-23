@@ -89,7 +89,7 @@ export interface QaapDelegationMcpConfigOptions {
 
 /** What one parent turn's delegation wiring needs: the per-task server name and its credentials. */
 export interface QaapDelegationWiring {
-    readonly transport: 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension';
+    readonly transport: 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension' | 'acp-stdio';
     readonly mcpServerName: string;
     readonly url: string;
     readonly token: string;

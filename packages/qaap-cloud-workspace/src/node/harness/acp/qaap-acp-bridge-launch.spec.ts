@@ -10,6 +10,8 @@ import * as path from 'path';
 import { releaseQaapDelegationMcpConfigFile } from '../../qaap-agent-delegation-launch';
 import {
     buildQaapAcpBridgeArgv,
+    buildQaapAcpDelegationMcpServers,
+    extractQaapAcpPromptFileFromCommand,
     extractQaapAcpModelFromCommand,
     resolveQaapAcpBridgePath,
     resolveQaapAcpFlavor,
@@ -28,6 +30,12 @@ describe('qaap-acp-bridge-launch', () => {
         expect(resolveQaapAcpFlavor('opencode', { QAAP_HARNESS_ACP_OPENCODE: 'true' })).to.equal(undefined);
         expect(resolveQaapAcpFlavor('opencode', { QAAP_HARNESS_ACP_COPILOT: '1' })).to.equal(undefined);
         expect(resolveQaapAcpFlavor('copilot', { QAAP_HARNESS_ACP_COPILOT: '1' })).to.equal('copilot');
+        expect(resolveQaapAcpFlavor('grok', { QAAP_HARNESS_ACP_GROK: '1' })).to.equal('grok');
+        expect(resolveQaapAcpFlavor('grok', { QAAP_HARNESS_ACP_COPILOT: '1' })).to.equal(undefined);
+        // `gemini` is an alias of Antigravity.
+        expect(resolveQaapAcpFlavor('antigravity', { QAAP_HARNESS_ACP_ANTIGRAVITY: '1' })).to.equal('antigravity');
+        expect(resolveQaapAcpFlavor('gemini', { QAAP_HARNESS_ACP_ANTIGRAVITY: '1' })).to.equal('antigravity');
+        expect(resolveQaapAcpFlavor('antigravity', {})).to.equal(undefined);
         for (const id of ['claude', 'codex', 'pi', 'my-opencode', undefined]) {
             expect(resolveQaapAcpFlavor(id, { QAAP_HARNESS_ACP_OPENCODE: '1', QAAP_HARNESS_ACP_COPILOT: '1' }), String(id)).to.equal(undefined);
         }
@@ -38,6 +46,32 @@ describe('qaap-acp-bridge-launch', () => {
             .to.deep.equal(['node', '/r/b.mjs', '--flavor', 'opencode', '--mode', 'ask', '--gate-client', '/r/g.mjs', '--model', 'a/b', '--', 'opencode', 'acp']);
         expect(buildQaapAcpBridgeArgv({ flavor: 'copilot', nodeBin: 'node', bridgePath: 'b', gateClientPath: 'g', mode: 'readonly', agentBin: '/opt/copilot' }))
             .to.deep.equal(['node', 'b', '--flavor', 'copilot', '--mode', 'readonly', '--gate-client', 'g', '--', '/opt/copilot', '--acp']);
+    });
+
+    it('starts Grok in its asking permission mode and passes the MCP server file and the prompt file', () => {
+        expect(buildQaapAcpBridgeArgv({
+            flavor: 'grok', nodeBin: 'node', bridgePath: 'b', gateClientPath: 'g', mode: 'ask', mcpServersFile: '/s/acp-mcp.json', promptFile: '/t/prompt.txt',
+        })).to.deep.equal(['node', 'b', '--flavor', 'grok', '--mode', 'ask', '--gate-client', 'g', '--mcp-servers', '/s/acp-mcp.json', '--prompt-file', '/t/prompt.txt',
+            '--', 'grok', '--permission-mode', 'default', 'agent', 'stdio']);
+    });
+
+    it('reads the prompt file of the native command line', () => {
+        expect(extractQaapAcpPromptFileFromCommand('grok -m grok-4 -p --prompt-file /tmp/qaap-agent-prompt-ab/prompt.txt')).to.equal('/tmp/qaap-agent-prompt-ab/prompt.txt');
+        expect(extractQaapAcpPromptFileFromCommand("grok -p --prompt-file '/tmp/a b/it'\\''s.txt'")).to.equal("/tmp/a b/it's.txt");
+        expect(extractQaapAcpPromptFileFromCommand('copilot -p x')).to.equal(undefined);
+        // The runner appends its own flag last: an earlier one (inside a model name) is never taken.
+        expect(extractQaapAcpPromptFileFromCommand("grok -m 'x --prompt-file /etc/passwd' -p --prompt-file /t/real.txt")).to.equal('/t/real.txt');
+        const command = resolveQaapAcpSpawnCommand({ flavor: 'grok', taskId: 't', command: "grok -p --prompt-file '/t/p.txt'", env: {}, quoteShellArg: quote });
+        expect(command).to.contain('\'--prompt-file\' \'/t/p.txt\'');
+    });
+
+    it('builds the session/new delegation server with the token file path, never the token', () => {
+        const json = buildQaapAcpDelegationMcpServers({ nodeBin: 'node', shimPath: '/s/qaap-delegate-mcp.mjs', electronRunAsNode: false },
+            { mcpServerName: 'qaaq_ab12', url: 'http://10.0.0.2:3000' }, '/s/token');
+        expect(JSON.parse(json)).to.deep.equal([{
+            name: 'qaaq_ab12', command: 'node', args: ['/s/qaap-delegate-mcp.mjs'],
+            env: [{ name: 'QAAP_DELEGATION_URL', value: 'http://10.0.0.2:3000' }, { name: 'QAAP_DELEGATION_TOKEN_FILE', value: '/s/token' }],
+        }]);
     });
 
     it('reads the model of the native command line', () => {

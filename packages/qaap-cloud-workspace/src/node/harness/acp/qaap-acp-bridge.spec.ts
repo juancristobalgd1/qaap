@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -28,6 +28,9 @@ interface BridgeModule {
     exitForStopReason(stopReason: string): number;
     gateToolName(flavor: any, kind: string, nativeName: string): string;
     refusePermissionLocally(mode: string, kind: string, input: Record<string, string>): string | undefined;
+    parseMcpServers(text: string): unknown[];
+    buildAgentArgv(flavor: any, argv: string[], env: Record<string, string | undefined>, mkdir?: (dir: string) => void): string[];
+    startMcpHttpProxy(servers: unknown[], spawnServer: (entry: any) => ChildProcess): Promise<{ entries: any[]; close(): void }>;
     AcpStreamTranslator: new (flavor: any) => any;
     LimitedLineReader: new (onMessage: (message: unknown) => void, onViolation: (reason: string) => void, now?: () => number) => { push(chunk: string): void };
 }
@@ -43,6 +46,26 @@ interface BridgeRun {
     stdout: string;
     stderr: string;
     lines: any[];
+}
+
+/** Sends SIGTERM to the bridge once the fake agent recorded the prompt (a fixed delay is flaky on slow CI runners). */
+function killOncePrompted(record: string, pid: number, onKill?: () => void): void {
+    const poll = setInterval(() => {
+        let recorded = '';
+        try {
+            recorded = fs.readFileSync(record, 'utf8');
+        } catch {
+            return;
+        }
+        if (recorded.includes('"session/prompt"')) {
+            clearInterval(poll);
+            setTimeout(() => {
+                onKill?.();
+                process.kill(pid, 'SIGTERM');
+            }, 100);
+        }
+    }, 20);
+    setTimeout(() => clearInterval(poll), 15000).unref();
 }
 
 function runBridge(args: string[], env: NodeJS.ProcessEnv, prompt = 'hello', onSpawn?: (pid: number) => void): Promise<BridgeRun> {
@@ -80,7 +103,7 @@ describe('qaap-acp-bridge.mjs', function (): void {
     describe('arguments', () => {
         it('reads its own options before -- and the agent argv after it', () => {
             expect(bridge.parseBridgeArgs(['--flavor', 'opencode', '--model', 'a/b', '--', 'opencode', 'acp'])).to.deep.equal({
-                flavor: 'opencode', model: 'a/b', mode: 'ask', gateClient: undefined, gateClientSha256: undefined, agentArgv: ['opencode', 'acp'],
+                flavor: 'opencode', model: 'a/b', mode: 'ask', gateClient: undefined, gateClientSha256: undefined, mcpServers: undefined, promptFile: undefined, agentArgv: ['opencode', 'acp'],
             });
             expect(bridge.parseBridgeArgs(['--flavor', 'copilot', '--gate-client', '/s/g.mjs', '--mode', 'readonly', '--', 'copilot', '--acp']))
                 .to.deep.include({ gateClient: '/s/g.mjs', mode: 'readonly', agentArgv: ['copilot', '--acp'] });
@@ -136,6 +159,12 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(bridge.canonicalToolInput('execute', { command: 'ls' }, [], '/w')).to.deep.equal({ command: 'ls', cwd: '/w' });
         });
 
+        it('maps Copilot and Antigravity field names too', () => {
+            expect(bridge.canonicalToolInput('edit', { path: '/w/a', old_str: 'x', new_str: 'y' }, [], '/w')).to.deep.equal({ file_path: '/w/a', old_string: 'x', new_string: 'y' });
+            expect(bridge.canonicalToolInput('edit', { Path: '/w/a', Content: 'x', Overwrite: true }, [], '/w')).to.deep.equal({ file_path: '/w/a', content: 'x' });
+            expect(bridge.canonicalToolInput('execute', { CommandLine: 'touch b', Cwd: '/w/sub' }, [], '/w')).to.deep.equal({ command: 'touch b', cwd: '/w/sub' });
+        });
+
         it('falls back to the first location for a path and ignores non-string values', () => {
             expect(bridge.canonicalToolInput('edit', {}, [{ path: '/w/b.txt' }], '/w')).to.deep.equal({ file_path: '/w/b.txt' });
             expect(bridge.canonicalToolInput('edit', { filePath: 7, content: { a: 1 } }, 'x', '/w')).to.deep.equal({});
@@ -164,6 +193,36 @@ describe('qaap-acp-bridge.mjs', function (): void {
         expect(bridge.refusePermissionLocally('auto', 'delete', {})).to.match(/without a path/);
         expect(bridge.refusePermissionLocally('auto', 'execute', { command: 'ls' })).to.equal(undefined);
         expect(bridge.refusePermissionLocally('auto', 'edit', { file_path: '/w/a' })).to.equal(undefined);
+    });
+
+    it('accepts only well-formed stdio MCP server entries for session/new', () => {
+        const entry = { name: 'qaaq_ab12', command: 'node', args: ['/s/shim.mjs'], env: [{ name: 'QAAP_DELEGATION_TOKEN_FILE', value: '/s/token' }] };
+        expect(bridge.parseMcpServers(JSON.stringify([entry]))).to.deep.equal([entry]);
+        expect(bridge.parseMcpServers('[]')).to.deep.equal([]);
+        for (const bad of [
+            '{}', 'not json', JSON.stringify([{ ...entry, name: 'bad name!' }]), JSON.stringify([{ ...entry, args: [1] }]),
+            JSON.stringify([{ ...entry, env: { A: 'b' } }]), JSON.stringify([{ ...entry, command: '' }]), JSON.stringify(Array(9).fill(entry)),
+        ]) {
+            expect(() => bridge.parseMcpServers(bad), bad).to.throw();
+        }
+        // Extra fields (a smuggled `headers` with a token, a `type`) are dropped.
+        expect(bridge.parseMcpServers(JSON.stringify([{ ...entry, headers: [{ name: 'Authorization', value: 'x' }] }]))).to.deep.equal([entry]);
+    });
+
+    it('runs Antigravity with Qaap\'s own profile, so the user\'s global agy plugins and hooks do not apply', () => {
+        const made: string[] = [];
+        expect(bridge.FLAVORS.antigravity).to.deep.include({ agentId: 'antigravity', permissionSource: 'bridge', output: 'stream-json', gateToolNames: 'claude', mcpStdio: true });
+        expect(bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: '/home/u/' }, dir => made.push(dir)))
+            .to.deep.equal(['agy', 'acp', '--gemini-dir', '/home/u/.cache/qaaq/antigravity-acp', '--app-data-dir', 'antigravity-acp']);
+        expect(made).to.deep.equal(['/home/u/.cache/qaaq/antigravity-acp']);
+        expect(bridge.buildAgentArgv(bridge.FLAVORS.grok, ['grok', 'agent', 'stdio'], { HOME: '/home/u' }, dir => made.push(dir))).to.deep.equal(['grok', 'agent', 'stdio']);
+        expect(made).to.have.length(1);
+    });
+
+    it('declares Grok as a bridge-gated flavor that takes stdio MCP servers and prints plain text', () => {
+        expect(bridge.FLAVORS.grok).to.deep.include({ agentId: 'grok', permissionSource: 'bridge', keepGateEnv: false, output: 'text', gateToolNames: 'claude', mcpStdio: true });
+        expect(bridge.FLAVORS.copilot.mcpStdio).to.equal(false);
+        expect(bridge.FLAVORS.opencode.mcpStdio).to.equal(true);
     });
 
     it('maps every stop reason to its exit code', () => {
@@ -270,6 +329,84 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(granted.update(sneak, '/w').warning).to.equal(undefined);
             const read = { ...sneak, toolCallId: 'r', kind: 'read' };
             expect(new bridge.AcpStreamTranslator(bridge.FLAVORS.copilot).update(read, '/w').warning).to.equal(undefined);
+        });
+    });
+
+    describe('loopback HTTP MCP proxy', () => {
+        // A tiny stdio MCP server: answers initialize and tools/list, echoes the method otherwise.
+        const ECHO_SERVER = `process.stdin.setEncoding('utf8'); let b='';
+process.stdin.on('data', c => { b += c; let n; while ((n = b.indexOf('\\n')) >= 0) { const l = b.slice(0, n); b = b.slice(n + 1);
+const m = JSON.parse(l); if (m.id === undefined) continue;
+const result = m.method === 'tools/list' ? { tools: [{ name: 'qaaq_delegate' }] } : { method: m.method, token: process.env.QAAP_DELEGATION_TOKEN_FILE };
+process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n'); } });`;
+        const spawnEcho = (entry: any): ChildProcess => spawn(process.execPath, ['-e', ECHO_SERVER], {
+            env: { ...process.env, ...Object.fromEntries(entry.env.map((pair: any) => [pair.name, pair.value])) }, stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        const entry = { name: 'qaaq_ab12', command: 'node', args: [], env: [{ name: 'QAAP_DELEGATION_TOKEN_FILE', value: '/s/token' }] };
+
+        it('serves the stdio server over HTTP only to the bearer of its random secret', async () => {
+            const proxy = await bridge.startMcpHttpProxy([entry], spawnEcho);
+            try {
+                const { url, headers } = proxy.entries[0];
+                const auth = headers[0].value as string;
+                expect(auth).to.match(/^Bearer [A-Za-z0-9_-]{43}$/);
+                const post = (body: unknown, authorization?: string): Promise<Response> => fetch(url, {
+                    method: 'POST', headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) }, body: JSON.stringify(body),
+                });
+                const listed = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, auth);
+                expect(listed.status).to.equal(200);
+                expect((await listed.json()).result.tools[0].name).to.equal('qaaq_delegate');
+                expect((await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, auth)).status).to.equal(202);
+                expect((await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).status).to.equal(401);
+                expect((await post({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, 'Bearer wrong')).status).to.equal(401);
+                expect((await fetch(url, { headers: { authorization: auth } })).status).to.equal(405);
+                expect((await fetch(url.replace(/\/0$/, '/9'), { method: 'POST', headers: { authorization: auth }, body: '{}' })).status).to.equal(404);
+                expect((await post({ not: 'json-rpc' }, auth)).status).to.equal(400);
+            } finally {
+                proxy.close();
+            }
+        });
+
+        it('refuses a browser Origin, a foreign Host and a non-primitive id, and answers 502 once the server died', async () => {
+            const proxy = await bridge.startMcpHttpProxy([entry], spawnEcho);
+            try {
+                const { url, headers } = proxy.entries[0];
+                const auth = headers[0].value as string;
+                const send = (body: unknown, extra: Record<string, string> = {}): Promise<Response> => fetch(url, {
+                    method: 'POST', headers: { 'content-type': 'application/json', authorization: auth, ...extra }, body: JSON.stringify(body),
+                });
+                expect((await send({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { origin: 'http://evil.example' })).status).to.equal(403);
+                const foreignHost = await new Promise<number>(resolve => {
+                    const u = new URL(url);
+                    const req = http.request({ host: '127.0.0.1', port: u.port, path: u.pathname, method: 'POST', headers: { host: 'evil.example', authorization: auth } },
+                        res => resolve(res.statusCode ?? 0));
+                    req.end('{}');
+                });
+                expect(foreignHost).to.equal(403);
+                expect((await send({ jsonrpc: '2.0', id: { a: 1 }, method: 'tools/list' })).status).to.equal(400);
+                expect((await send({ jsonrpc: '2.0', id: null, method: 'tools/list' })).status).to.equal(400);
+            } finally {
+                proxy.close();
+            }
+            const dead = await bridge.startMcpHttpProxy([entry], () => spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: ['pipe', 'pipe', 'ignore'] }));
+            try {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const { url, headers } = dead.entries[0];
+                const reply = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: headers[0].value }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+                expect(reply.status).to.equal(502);
+            } finally {
+                dead.close();
+            }
+        });
+
+        it('listens on loopback only and never puts the stdio server\'s environment in the entries', async () => {
+            const proxy = await bridge.startMcpHttpProxy([entry], spawnEcho);
+            try {
+                expect(new URL(proxy.entries[0].url).hostname).to.equal('127.0.0.1');
+                expect(JSON.stringify(proxy.entries)).to.not.contain('/s/token');
+            } finally {
+                proxy.close();
+            }
         });
     });
 
@@ -402,17 +539,19 @@ describe('qaap-acp-bridge.mjs', function (): void {
 
         posixIt('cancels on SIGTERM within 4 s, even when the agent ignores session/cancel, and leaves no agent behind', async () => {
             const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'record.jsonl');
-            const started = Date.now();
-            const run = await runBridge(agent('hang'), env({ FAKE_ACP_RECORD: record }), 'go', pid => setTimeout(() => process.kill(pid, 'SIGTERM'), 700));
+            let killedAt = 0;
+            const run = await runBridge(agent('hang'), env({ FAKE_ACP_RECORD: record }), 'go', pid => killOncePrompted(record, pid, () => killedAt = Date.now()));
             expect(run.code).to.equal(bridge.EXIT.CANCELLED);
-            expect(Date.now() - started).to.be.lessThan(4700);
+            expect(killedAt).to.be.greaterThan(0);
+            // Measured from the SIGTERM, not from start-up (slow CI runners).
+            expect(Date.now() - killedAt).to.be.lessThan(4000);
             const methods = fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line).method);
             expect(methods).to.include('session/cancel');
         });
 
         posixIt('answers cancelled to a permission asked after the cancel, without asking the gate', async () => {
             const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'record.jsonl');
-            const run = await runBridge(agent('cancelperm'), env({ FAKE_ACP_RECORD: record }), 'go', pid => setTimeout(() => process.kill(pid, 'SIGTERM'), 500));
+            const run = await runBridge(agent('cancelperm'), env({ FAKE_ACP_RECORD: record }), 'go', pid => killOncePrompted(record, pid));
             expect(run.code).to.equal(bridge.EXIT.CANCELLED);
             expect(seen).to.have.length(0);
             const late = fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).find(entry => entry.lateOutcome);
@@ -446,6 +585,37 @@ describe('qaap-acp-bridge.mjs', function (): void {
             run = await runBridge(['--flavor', 'opencode', '--gate-client', client, '--gate-client-sha256', '0'.repeat(64), '--', process.execPath, FAKE_AGENT, 'echo'], env());
             expect(run.code).to.equal(bridge.EXIT.USAGE);
             expect(run.stderr).to.contain('expected hash');
+        });
+
+        it('passes the launcher\'s MCP servers in session/new to a flavor that takes them, and none to Copilot', async () => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-'));
+            const servers = path.join(dir, 'acp-mcp.json');
+            const entry = { name: 'qaaq_ab12', command: process.execPath, args: ['/s/shim.mjs'], env: [{ name: 'QAAP_DELEGATION_TOKEN_FILE', value: '/s/token' }] };
+            fs.writeFileSync(servers, JSON.stringify([entry]));
+            const newSession = async (flavor: string): Promise<any> => {
+                const record = path.join(dir, `${flavor}.jsonl`);
+                await runBridge(['--flavor', flavor, '--mcp-servers', servers, '--', process.execPath, FAKE_AGENT, 'echo'], env({ FAKE_ACP_RECORD: record }));
+                return fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).find(message => message.method === 'session/new');
+            };
+            expect((await newSession('grok')).params.mcpServers).to.deep.equal([entry]);
+            // Copilot ignores stdio MCP servers: it gets the same server behind the bridge's loopback HTTP proxy.
+        const copilot = (await newSession('copilot')).params.mcpServers;
+        expect(copilot).to.have.length(1);
+        expect(copilot[0]).to.deep.include({ type: 'http', name: 'qaaq_ab12' });
+        expect(copilot[0].url).to.match(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/0$/);
+        expect(copilot[0].headers[0].name).to.equal('Authorization');
+        expect(JSON.stringify(copilot)).to.not.contain('/s/token');
+            fs.writeFileSync(servers, '{"not":"a list"}');
+            const broken = await runBridge(['--flavor', 'grok', '--mcp-servers', servers, '--', process.execPath, FAKE_AGENT, 'echo'], env());
+            expect(broken.code).to.equal(bridge.EXIT.USAGE);
+        });
+
+        it('reads the prompt from --prompt-file when given (Grok\'s native transport)', async () => {
+            const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'prompt.txt');
+            fs.writeFileSync(file, 'from the file');
+            const run = await runBridge(['--flavor', 'grok', '--prompt-file', file, '--', process.execPath, FAKE_AGENT, 'echo'], env(), 'from stdin');
+            expect(run.stdout).to.contain('You said: from the file');
+            expect(run.stdout).to.not.contain('from stdin');
         });
 
         it('announces neither fs nor terminal and sends no MCP server', async () => {
