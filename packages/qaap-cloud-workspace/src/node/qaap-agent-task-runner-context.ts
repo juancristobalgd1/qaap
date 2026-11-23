@@ -372,6 +372,8 @@ export interface QaapAgentTaskRunnerContext {
     applyProviderPreferenceEnv(env: NodeJS.ProcessEnv, ownerLogin?: string): void;
     stripSharedProviderEnv(env: NodeJS.ProcessEnv, ownerLogin: string | undefined): void;
     readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown>;
+    /** Settings keys whose sealed value this backend cannot open (names only). */
+    listUnreadableSealedSettings?(ownerLogin?: string): readonly string[];
     preferenceReaderForOwner(ownerLogin?: string): QaapPreferenceReader;
     applyOpenRouterOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;

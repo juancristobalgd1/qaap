@@ -102,7 +102,7 @@ import {
     noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
     changedSensitiveFiles as changedSensitiveFilesHelper,
 } from './qaap-agent-task-runner-utils';
-import { parseCustomAgent as parseCustomAgentHelper, maxConcurrentAgents as maxConcurrentAgentsHelper, maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper, maxConcurrentAgentsPerRepo as maxConcurrentAgentsPerRepoHelper, buildRepoTree as buildRepoTreeHelper, buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper, readGitStatusSnapshot as readGitStatusSnapshotHelper, captureWorktreeStatus as captureWorktreeStatusHelper, captureWorktreeFingerprint as captureWorktreeFingerprintHelper, resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper, appendBoundedCommandOutput as appendBoundedCommandOutputHelper, readUserSettingsFromDisk as readUserSettingsFromDiskHelper, preferenceReaderForOwner as preferenceReaderForOwnerHelper, stripSharedProviderEnv as stripSharedProviderEnvHelper, } from './qaap-agent-task-runner-utils2';
+import { parseCustomAgent as parseCustomAgentHelper, maxConcurrentAgents as maxConcurrentAgentsHelper, maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper, maxConcurrentAgentsPerRepo as maxConcurrentAgentsPerRepoHelper, buildRepoTree as buildRepoTreeHelper, buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper, readGitStatusSnapshot as readGitStatusSnapshotHelper, captureWorktreeStatus as captureWorktreeStatusHelper, captureWorktreeFingerprint as captureWorktreeFingerprintHelper, resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper, appendBoundedCommandOutput as appendBoundedCommandOutputHelper, readUserSettingsFromDisk as readUserSettingsFromDiskHelper, listUnreadableSealedUserSettings as listUnreadableSealedUserSettingsHelper, preferenceReaderForOwner as preferenceReaderForOwnerHelper, stripSharedProviderEnv as stripSharedProviderEnvHelper, } from './qaap-agent-task-runner-utils2';
 import { QaapGitExecConfigChecker, type QaapGitExecCheckOptions } from './qaap-git-exec-config-checker';
 import { QaapShellPathContainmentChecker } from './qaap-shell-path-containment-checker';
 import {
@@ -2231,6 +2231,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
         return readUserSettingsFromDiskHelper(ownerLogin);
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public listUnreadableSealedSettings(ownerLogin?: string): readonly string[] {
+        return listUnreadableSealedUserSettingsHelper(ownerLogin);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

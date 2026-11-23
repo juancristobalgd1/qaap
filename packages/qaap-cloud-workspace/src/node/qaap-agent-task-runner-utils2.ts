@@ -395,6 +395,29 @@ export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = 
     return openSealedSettings(settings, ownerLogin, QaapSecretCipher.fromEnvironment(env));
 }
 
+/**
+ * Settings keys whose sealed value this backend cannot open (for example `QAAP_SECRETS_KEYS` is missing,
+ * or the value was sealed with another server's key). {@link readUserSettingsFromDisk} drops such values,
+ * so a turn would otherwise run without the user's key and fail at the provider with a misleading error.
+ * Returns key names only.
+ */
+export function listUnreadableSealedUserSettings(ownerLogin?: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): string[] {
+    const settings = readRawUserSettingsFromDisk(ownerLogin, homeDir, env);
+    const cipher = QaapSecretCipher.fromEnvironment(env);
+    return Object.entries(settings)
+        .filter(([key, value]) => cipher.isEncrypted(value) && !canOpenSealedSetting(cipher, value, ownerLogin, key))
+        .map(([key]) => key);
+}
+
+function canOpenSealedSetting(cipher: QaapSecretCipher, value: string, ownerLogin: string | undefined, key: string): boolean {
+    try {
+        cipher.decrypt(value, userSettingAad(ownerLogin, key));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 function readRawUserSettingsFromDisk(ownerLogin: string | undefined, homeDir: string, env: NodeJS.ProcessEnv): Record<string, unknown> {
     try {
         const sharedSettingsPath = path.join(homeDir, '.theia', 'settings.json');
