@@ -29,6 +29,7 @@ interface BridgeModule {
     gateToolName(flavor: any, kind: string, nativeName: string): string;
     refusePermissionLocally(mode: string, kind: string, input: Record<string, string>): string | undefined;
     parseMcpServers(text: string): unknown[];
+    buildAgentArgv(flavor: any, argv: string[], env: Record<string, string | undefined>, mkdir?: (dir: string) => void): string[];
     startMcpHttpProxy(servers: unknown[], spawnServer: (entry: any) => ChildProcess): Promise<{ entries: any[]; close(): void }>;
     AcpStreamTranslator: new (flavor: any) => any;
     LimitedLineReader: new (onMessage: (message: unknown) => void, onViolation: (reason: string) => void, now?: () => number) => { push(chunk: string): void };
@@ -138,6 +139,12 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(bridge.canonicalToolInput('execute', { command: 'ls' }, [], '/w')).to.deep.equal({ command: 'ls', cwd: '/w' });
         });
 
+        it('maps Copilot and Antigravity field names too', () => {
+            expect(bridge.canonicalToolInput('edit', { path: '/w/a', old_str: 'x', new_str: 'y' }, [], '/w')).to.deep.equal({ file_path: '/w/a', old_string: 'x', new_string: 'y' });
+            expect(bridge.canonicalToolInput('edit', { Path: '/w/a', Content: 'x', Overwrite: true }, [], '/w')).to.deep.equal({ file_path: '/w/a', content: 'x' });
+            expect(bridge.canonicalToolInput('execute', { CommandLine: 'touch b', Cwd: '/w/sub' }, [], '/w')).to.deep.equal({ command: 'touch b', cwd: '/w/sub' });
+        });
+
         it('falls back to the first location for a path and ignores non-string values', () => {
             expect(bridge.canonicalToolInput('edit', {}, [{ path: '/w/b.txt' }], '/w')).to.deep.equal({ file_path: '/w/b.txt' });
             expect(bridge.canonicalToolInput('edit', { filePath: 7, content: { a: 1 } }, 'x', '/w')).to.deep.equal({});
@@ -180,6 +187,16 @@ describe('qaap-acp-bridge.mjs', function (): void {
         }
         // Extra fields (a smuggled `headers` with a token, a `type`) are dropped.
         expect(bridge.parseMcpServers(JSON.stringify([{ ...entry, headers: [{ name: 'Authorization', value: 'x' }] }]))).to.deep.equal([entry]);
+    });
+
+    it('runs Antigravity with Qaap\'s own profile, so the user\'s global agy plugins and hooks do not apply', () => {
+        const made: string[] = [];
+        expect(bridge.FLAVORS.antigravity).to.deep.include({ agentId: 'antigravity', permissionSource: 'bridge', output: 'stream-json', gateToolNames: 'claude', mcpStdio: true });
+        expect(bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: '/home/u/' }, dir => made.push(dir)))
+            .to.deep.equal(['agy', 'acp', '--gemini-dir', '/home/u/.cache/qaaq/antigravity-acp', '--app-data-dir', 'antigravity-acp']);
+        expect(made).to.deep.equal(['/home/u/.cache/qaaq/antigravity-acp']);
+        expect(bridge.buildAgentArgv(bridge.FLAVORS.grok, ['grok', 'agent', 'stdio'], { HOME: '/home/u' }, dir => made.push(dir))).to.deep.equal(['grok', 'agent', 'stdio']);
+        expect(made).to.have.length(1);
     });
 
     it('declares Grok as a bridge-gated flavor that takes stdio MCP servers and prints plain text', () => {

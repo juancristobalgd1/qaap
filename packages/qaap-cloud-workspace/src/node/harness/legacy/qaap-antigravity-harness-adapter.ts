@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentPromptTransport } from '../../qaap-agent-task-runner-utils';
+import { resolveQaapAcpFlavor } from '../acp/qaap-acp-bridge-launch';
 import type { QaapHarnessPromptTransportProbe, QaapHarnessSpawnQuirks } from '../qaap-harness-adapter';
 import { QAAP_NO_HARNESS_SPAWN_QUIRKS, QaapNativeHarnessAdapter } from './qaap-native-harness-adapter';
 
@@ -20,6 +21,10 @@ export class QaapAntigravityHarnessAdapter extends QaapNativeHarnessAdapter {
     }
 
     override matchPromptTransport(probe: QaapHarnessPromptTransportProbe): QaapAgentPromptTransport | undefined {
+        if ((probe.agentId === 'antigravity' || probe.agentId === 'gemini') && resolveQaapAcpFlavor(probe.agentId) === 'antigravity') {
+            // ACP mode (QAAP_HARNESS_ACP_ANTIGRAVITY): the bridge reads the prompt on stdin and sends it in session/prompt.
+            return { kind: 'plain-stdin', placeholder: 'omit' };
+        }
         // agy reads no prompt from stdin in text mode (verified with 1.5.9), so its prompt travels in argv.
         if (probe.bin === 'agy' || (probe.bin === undefined && probe.agentId === 'antigravity')) {
             return { kind: 'argv-prompt' };

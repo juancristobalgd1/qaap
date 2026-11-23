@@ -27,12 +27,13 @@ import { QAAP_TOOL_GATE_PI_EXTENSION_FILE } from '../../qaap-tool-gate-pi-adapte
 export const QAAP_ACP_BRIDGE_FILE = 'qaap-acp-bridge.mjs';
 
 /** ACP flavors the bridge knows (`FLAVORS` in the bridge), each behind its own flag until its E2E passes. */
-export type QaapAcpFlavorId = 'opencode' | 'copilot' | 'grok';
+export type QaapAcpFlavorId = 'opencode' | 'copilot' | 'grok' | 'antigravity';
 
 const FLAVOR_FLAGS: Readonly<Record<QaapAcpFlavorId, string>> = {
     opencode: 'QAAP_HARNESS_ACP_OPENCODE',
     copilot: 'QAAP_HARNESS_ACP_COPILOT',
     grok: 'QAAP_HARNESS_ACP_GROK',
+    antigravity: 'QAAP_HARNESS_ACP_ANTIGRAVITY',
 };
 
 /** The agent command each flavor starts in ACP mode. */
@@ -42,6 +43,8 @@ const FLAVOR_AGENT_ARGV: Readonly<Record<QaapAcpFlavorId, readonly string[]>> = 
     // `--permission-mode default` (a global flag, before the subcommand) makes Grok ask before edits and commands;
     // without it Grok runs them unasked. It also overrides an `always-approve` in the user's Grok config.
     grok: ['grok', '--permission-mode', 'default', 'agent', 'stdio'],
+    // The bridge adds Qaap's own profile (--gemini-dir / --app-data-dir); in its default mode agy asks before edits.
+    antigravity: ['agy', 'acp'],
 };
 
 export function resolveQaapAcpBridgePath(): string {
@@ -55,8 +58,10 @@ export function resolveQaapAcpGateClientPath(): string {
 
 /** The ACP flavor of a harness id, when its flag is on (`1`); undefined keeps the native one-shot CLI. */
 export function resolveQaapAcpFlavor(agentId: string | undefined, env: NodeJS.ProcessEnv = process.env): QaapAcpFlavorId | undefined {
-    const id = agentId?.trim().toLowerCase();
-    if (id !== 'opencode' && id !== 'copilot' && id !== 'grok') {
+    const raw = agentId?.trim().toLowerCase();
+    // `gemini` is an alias of Antigravity (isAntigravityAgent).
+    const id = raw === 'gemini' ? 'antigravity' : raw;
+    if (id !== 'opencode' && id !== 'copilot' && id !== 'grok' && id !== 'antigravity') {
         return undefined;
     }
     return env[FLAVOR_FLAGS[id]]?.trim() === '1' ? id : undefined;
@@ -189,7 +194,7 @@ export const QAAP_ACP_ASK_TTL_SEC = 600;
 export function resolveQaapRuntimeHarnessCapabilities(agentId: string | undefined, env: NodeJS.ProcessEnv = process.env): QaapHarnessCapabilities {
     const capabilities = resolveQaapHarnessCapabilities(agentId);
     const flavor = resolveQaapAcpFlavor(agentId, env);
-    if (flavor !== 'copilot' && flavor !== 'grok') {
+    if (flavor !== 'copilot' && flavor !== 'grok' && flavor !== 'antigravity') {
         return capabilities;
     }
     return {
@@ -208,7 +213,7 @@ export function resolveQaapRuntimeHarnessCapabilities(agentId: string | undefine
 
 /** Whether the bridge prints Claude stream-json (ending in a `result` line) for this flavor, rather than plain text. */
 export function qaapAcpFlavorPrintsStreamJson(flavor: QaapAcpFlavorId | undefined): boolean {
-    return flavor === 'opencode';
+    return flavor === 'opencode' || flavor === 'antigravity';
 }
 
 /**

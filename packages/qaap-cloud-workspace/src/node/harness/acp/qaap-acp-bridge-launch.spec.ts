@@ -32,6 +32,10 @@ describe('qaap-acp-bridge-launch', () => {
         expect(resolveQaapAcpFlavor('copilot', { QAAP_HARNESS_ACP_COPILOT: '1' })).to.equal('copilot');
         expect(resolveQaapAcpFlavor('grok', { QAAP_HARNESS_ACP_GROK: '1' })).to.equal('grok');
         expect(resolveQaapAcpFlavor('grok', { QAAP_HARNESS_ACP_COPILOT: '1' })).to.equal(undefined);
+        // `gemini` is an alias of Antigravity.
+        expect(resolveQaapAcpFlavor('antigravity', { QAAP_HARNESS_ACP_ANTIGRAVITY: '1' })).to.equal('antigravity');
+        expect(resolveQaapAcpFlavor('gemini', { QAAP_HARNESS_ACP_ANTIGRAVITY: '1' })).to.equal('antigravity');
+        expect(resolveQaapAcpFlavor('antigravity', {})).to.equal(undefined);
         for (const id of ['claude', 'codex', 'pi', 'my-opencode', undefined]) {
             expect(resolveQaapAcpFlavor(id, { QAAP_HARNESS_ACP_OPENCODE: '1', QAAP_HARNESS_ACP_COPILOT: '1' }), String(id)).to.equal(undefined);
         }

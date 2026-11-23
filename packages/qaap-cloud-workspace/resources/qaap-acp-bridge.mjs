@@ -19,7 +19,7 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
-import { readFileSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ACP_PROTOCOL_VERSION = 1;
@@ -79,6 +79,20 @@ export const FLAVORS = Object.freeze({
         // ones: the bridge runs the stdio servers itself and serves them to Copilot over loopback HTTP.
         mcpStdio: false,
         mcpHttpProxy: true,
+    }),
+    antigravity: Object.freeze({
+        agentId: 'antigravity',
+        permissionSource: 'bridge',
+        keepGateEnv: false,
+        // Antigravity's native transcript is already Claude-style stream-json.
+        output: 'stream-json',
+        gateToolNames: 'claude',
+        modelConfigId: 'model',
+        signIn: 'Run `agy` in a terminal and sign in with Google.',
+        mcpStdio: true,
+        // agy loads plugins and hooks from its gemini dir; a broken global hook blocks every tool (seen on a dev
+        // machine). Qaap runs it with its own profile, like T3 Code; the Google sign-in lives in the keychain.
+        ownProfile: 'antigravity-acp',
     }),
     grok: Object.freeze({
         agentId: 'grok',
@@ -168,6 +182,19 @@ export function parseMcpServers(text) {
     });
 }
 
+/**
+ * The agent's argv with the flavor's own additions: Antigravity gets Qaap's own profile (an absolute gemini dir under
+ * HOME, created 0700) so global plugins and hooks of the user's agy profile do not apply.
+ */
+export function buildAgentArgv(flavor, argv, env, mkdir = dir => mkdirSync(dir, { recursive: true, mode: 0o700 })) {
+    if (!flavor.ownProfile || !env.HOME) {
+        return [...argv];
+    }
+    const profile = `${env.HOME.replace(/\/+$/, '')}/.cache/qaaq/${flavor.ownProfile}`;
+    mkdir(profile);
+    return [...argv, '--gemini-dir', profile, '--app-data-dir', flavor.ownProfile];
+}
+
 /** The agent's env: the bridge's own, without gate credentials unless the flavor's plugin needs them. */
 export function buildAgentEnv(env, flavor) {
     const out = { ...env };
@@ -218,9 +245,11 @@ export function canonicalToolInput(kind, rawInput, locations, cwd) {
     };
     const firstPath = Array.isArray(locations) ? locations.find(entry => isPlainObject(entry) && typeof entry.path === 'string')?.path : undefined;
     const input = {};
-    const command = pick('command', 'cmd');
-    const filePath = pick('filePath', 'file_path', 'filepath', 'path') ?? (kind === 'execute' ? undefined : firstPath);
-    const workdir = pick('workdir', 'cwd') ?? (kind === 'execute' ? firstPath : undefined);
+    // Field names differ per agent: OpenCode (filePath, workdir), Copilot (path, old_str), Antigravity (PascalCase).
+    const command = pick('command', 'cmd', 'CommandLine', 'commandLine', 'Command');
+    const filePath = pick('filePath', 'file_path', 'filepath', 'path', 'Path', 'TargetFile', 'targetFile', 'AbsolutePath')
+        ?? (kind === 'execute' ? undefined : firstPath);
+    const workdir = pick('workdir', 'cwd', 'Cwd', 'WorkingDirectory') ?? (kind === 'execute' ? firstPath : undefined);
     if (command) {
         input.command = command;
     }
@@ -232,7 +261,8 @@ export function canonicalToolInput(kind, rawInput, locations, cwd) {
     }
     for (const [from, to] of [['oldString', 'old_string'], ['old_string', 'old_string'], ['old_str', 'old_string'],
         ['newString', 'new_string'], ['new_string', 'new_string'], ['new_str', 'new_string'],
-        ['content', 'content'], ['file_text', 'content'], ['pattern', 'pattern'], ['url', 'url'], ['destination', 'destination']]) {
+        ['content', 'content'], ['file_text', 'content'], ['Content', 'content'], ['CodeContent', 'content'],
+        ['TargetContent', 'old_string'], ['ReplacementContent', 'new_string'], ['pattern', 'pattern'], ['url', 'url'], ['destination', 'destination']]) {
         if (typeof raw[from] === 'string' && input[to] === undefined) {
             input[to] = raw[from];
         }
@@ -795,7 +825,8 @@ export async function runBridgeTurn(options, prompt, io) {
 
     let child;
     try {
-        child = io.spawnAgent(options.agentArgv[0], options.agentArgv.slice(1), buildAgentEnv(io.env, flavor));
+        const argv = buildAgentArgv(flavor, options.agentArgv, io.env);
+        child = io.spawnAgent(argv[0], argv.slice(1), buildAgentEnv(io.env, flavor));
     } catch (error) {
         note(`Could not start ${flavor.agentId}: ${error instanceof Error ? error.message : String(error)}`);
         return EXIT.SPAWN;
