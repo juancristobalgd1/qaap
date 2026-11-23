@@ -27,7 +27,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage, localizeQaiqProviderKeyMissingMessage, type QaapAgentTurnTimeoutCause } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { localizeMissingCodingAgentMessage, localizeProviderKeyUnreadableMessage, localizeQaiqProviderKeyMissingMessage, type QaapAgentTurnTimeoutCause } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     checkQaiqProviderCredential,
@@ -43,6 +43,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
+import { findQaiqByokProvider, listByokVendorCredentialEnv } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
 import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import {
@@ -793,6 +794,7 @@ export function previewProviderEnvExtracted(ctx: QaapAgentTaskRunnerContext, own
 
 export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string, ownerLogin?: string,
         agentModel?: QaapCreateAgentTaskQaiqModel): void {
+        assertProviderKeyReadableExtracted(ctx, agentId, ownerLogin, agentModel);
         // OpenClaude has its own model/auth configuration. The shared stream protocol does not
         // make QAIQ's Settings catalog a prerequisite for running it.
         if (!agentUsesSettingsModelCatalog(agentId)) {
@@ -806,6 +808,31 @@ export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, a
         // "issue with the selected model" 404. The thrown copy becomes the failed turn's reason.
         logQaiqProviderOperatorHintOnce(failure, mustWithholdOperatorProviderCredentials(ownerLogin));
         throw new QaapQaiqProviderKeyMissingError(localizeQaiqProviderKeyMissingMessage(failure.providerLabel), failure);
+}
+
+/**
+ * Refuses a turn whose provider key is saved but cannot be opened on this backend (no or another
+ * `QAAP_SECRETS_KEYS`). Without it the key is dropped silently: the agent then runs on whatever login of
+ * its own it still has (Pi kept a stale OpenRouter sign-in), the provider answers 401 and every fallback
+ * model fails the same way. Any agent whose turn names a BYOK vendor is checked, not only QAIQ.
+ */
+export function assertProviderKeyReadableExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string, ownerLogin?: string,
+        agentModel?: QaapCreateAgentTaskQaiqModel): void {
+        const vendor = agentModel?.vendor
+            ?? (agentUsesSettingsModelCatalog(agentId) ? ctx.resolveQaapQaiqBinding(ownerLogin)?.vendor : undefined);
+        const descriptor = findQaiqByokProvider(vendor);
+        if (!descriptor || !ctx.listUnreadableSealedSettings?.(ownerLogin).includes(descriptor.credentialPref)) {
+            return;
+        }
+        const credentialEnv = listByokVendorCredentialEnv(descriptor)[0];
+        if (credentialEnv && ctx.previewProviderEnv(ownerLogin)[credentialEnv]?.trim()) {
+            return;
+        }
+        console.warn(`[qaap-agent-tasks] turn refused before spawn: the saved ${descriptor.label} key (${descriptor.credentialPref}) cannot be opened `
+            + 'on this backend. Check that QAAP_SECRETS_KEYS holds the key it was sealed with (doc/qaap-secrets-at-rest.md), or ask the user to enter it again.');
+        throw new QaapQaiqProviderKeyMissingError(localizeProviderKeyUnreadableMessage(descriptor.label), {
+            vendor, providerLabel: descriptor.label, credentialEnv, credentialPref: descriptor.credentialPref,
+        });
 }
 
 /**

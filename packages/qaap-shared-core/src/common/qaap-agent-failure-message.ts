@@ -297,8 +297,8 @@ const EGRESS_PROXY_PATTERNS: readonly RegExp[] = [
 /** QAIQ / Claude-Code-compatible CLIs on a provider 404: names the model the provider refused. */
 const SELECTED_MODEL_ACCESS_FAILURE = /\bissue\s+with\s+the\s+selected\s+model\s*\(([^)\n]+)\)/i;
 
-/** Persisted (English, backend-locale) form of {@link localizeQaiqProviderKeyMissingMessage}. */
-const STORED_PROVIDER_KEY_MISSING = /^(?:Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b|Connect a harness in Settings → Harness to run this turn\b)/m;
+/** Persisted (English, backend-locale) form of {@link localizeQaiqProviderKeyMissingMessage} and {@link localizeProviderKeyUnreadableMessage}. */
+const STORED_PROVIDER_KEY_MISSING = /^(?:Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b|Connect a harness in Settings → Harness to run this turn\b|Your saved .+ key cannot be read on this server\.)/m;
 /** Persisted (English, backend-locale) form of {@link localizeProviderModelAccessMessage}. */
 const STORED_MODEL_ACCESS_DENIED = /^The model provider (?:refused|rejected access to) /m;
 /**
@@ -1128,6 +1128,18 @@ export function localizeMissingQaiqMessage(): string {
     return nls.localize(
         'qaap/agentFailure/qaiqMissing',
         'QAIQ is not installed or is not on the server PATH. Install QAIQ in the QAAP server/container, then restart the backend and try again.',
+    );
+}
+
+/**
+ * Turn refused before spawn: the user's saved key for `providerLabel` (e.g. "OpenRouter") is sealed with a
+ * key this server does not hold, so it cannot be used. Entering it again stores it with this server's key.
+ */
+export function localizeProviderKeyUnreadableMessage(providerLabel: string): string {
+    return nls.localize(
+        'qaap/agentFailure/providerKeyUnreadable',
+        'Your saved {0} key cannot be read on this server. Enter it again in Settings → Harness, then retry.',
+        providerLabel,
     );
 }
 

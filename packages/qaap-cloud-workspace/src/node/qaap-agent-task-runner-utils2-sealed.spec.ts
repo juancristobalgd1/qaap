@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { resolveUserSettingsFilePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { readUserSettingsFromDisk, writeUserSettingsToDisk } from './qaap-agent-task-runner-utils2';
+import { listUnreadableSealedUserSettings, readUserSettingsFromDisk, writeUserSettingsToDisk } from './qaap-agent-task-runner-utils2';
 
 const KEY = Buffer.alloc(32, 4).toString('base64');
 const ENV: NodeJS.ProcessEnv = { QAAP_SECRETS_KEYS: `k1:${KEY}` };
@@ -69,6 +69,17 @@ describe('user AI settings sealed at rest (utils2)', () => {
         fs.mkdirSync(path.dirname(bobFile), { recursive: true });
         fs.copyFileSync(resolveUserSettingsFilePath('alice', home), bobFile);
         expect(readUserSettingsFromDisk('bob', home, ENV)[GOOGLE_KEY]).to.equal(undefined);
+    });
+
+    it('lists, by name only, the sealed keys this server cannot open', () => {
+        writeUserSettingsToDisk('alice', { [GOOGLE_KEY]: 'AIza-secret-value', [DEFAULT_AGENT]: 'Coder' }, home, ENV);
+        expect(listUnreadableSealedUserSettings('alice', home, ENV)).to.deep.equal([]);
+        // A server without QAAP_SECRETS_KEYS (staging holding a copy of production's settings).
+        expect(listUnreadableSealedUserSettings('alice', home, {})).to.deep.equal([GOOGLE_KEY]);
+        // A server with another key id.
+        expect(listUnreadableSealedUserSettings('alice', home, { QAAP_SECRETS_KEYS: `stg1:${Buffer.alloc(32, 9).toString('base64')}` }))
+            .to.deep.equal([GOOGLE_KEY]);
+        expect(readUserSettingsFromDisk('alice', home, {})[GOOGLE_KEY]).to.equal(undefined);
     });
 
     it('keeps credentials in plain text when no key is configured', () => {

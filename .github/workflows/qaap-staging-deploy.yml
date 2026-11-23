@@ -198,6 +198,15 @@ jobs:
             # tenant backend gets EACCES on its own folders and imports fail with "not writable".
             sed -i '/^QAAP_TENANT_CONTAINER_[UG]ID=/d' "$STAGE/staging.env"
             printf 'QAAP_TENANT_CONTAINER_UID=0\nQAAP_TENANT_CONTAINER_GID=0\n' >> "$STAGE/staging.env"
+            # Staging's own key for user secrets at rest (QAAP_SECRETS_KEYS), created once; production's is
+            # never read. Its id differs from production's, so a key copied with COPY_DATA reads as "sealed
+            # with another server's key" and the user is asked to enter it again on staging. staging.env is
+            # rewritten above, so the key lives in its own file and is appended on every deploy.
+            if [ ! -s "$STAGE/secrets-key.env" ]; then
+              ( umask 077; printf 'QAAP_SECRETS_KEYS=stg1:%s\n' "$(openssl rand -base64 32)" > "$STAGE/secrets-key.env" )
+            fi
+            sed -i '/^QAAP_SECRETS_KEYS=/d' "$STAGE/staging.env"
+            cat "$STAGE/secrets-key.env" >> "$STAGE/staging.env"
             # Staging tenants live on the rootless daemon; drop them so they are recreated with that uid.
             docker -H unix:///run/user/1000/docker.sock ps -aq --filter label=com.qaap.namespace=stg | xargs -r docker -H unix:///run/user/1000/docker.sock rm -f
             if [ "$COPY_DATA" = "true" ]; then

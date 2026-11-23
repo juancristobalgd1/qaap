@@ -14,6 +14,8 @@ import {
     formatProviderPreflightNote,
     extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
+    isQaiqProviderKeyMissingFailure as isStoredProviderKeyMissingFailure,
+    localizeProviderKeyUnreadableMessage,
     isGeminiIneligibleTierText,
     localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
@@ -735,5 +737,15 @@ describe('auxiliary-model log lines and persisted limit copies', () => {
 
     it('still classifies the same quota line when the main agent produced it', () => {
         expect(detectAgentFailureKind(titleLine.replace('small=true agent=title mode=primary', 'agent=build mode=primary'))).to.equal('quota');
+    });
+});
+
+describe('unreadable saved provider key copy', () => {
+    it('is kept verbatim as the failed turn reason, from the log and once persisted', () => {
+        const copy = localizeProviderKeyUnreadableMessage('OpenRouter');
+        expect(copy).to.equal('Your saved OpenRouter key cannot be read on this server. Enter it again in Settings → Harness, then retry.');
+        expect(resolveAgentTurnFailureMessage(`${copy}\n`)).to.equal(copy);
+        expect(formatStoredAgentFailureMessage(copy)).to.equal(copy);
+        expect(isStoredProviderKeyMissingFailure(copy)).to.equal(true);
     });
 });
