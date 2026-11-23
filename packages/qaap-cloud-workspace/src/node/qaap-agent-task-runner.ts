@@ -2336,7 +2336,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             || !this.toolGateTokens || !this.helperApiUrl) {
             return false;
         }
-        const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp ?? 'none';
+        // Runtime entry: an ACP flavor (Grok) gets `acp-stdio` delegation only with its flag on.
+        const transport = resolveQaapRuntimeHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp ?? 'none';
         if (transport === 'none') {
             return false;
         }
@@ -2356,8 +2357,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!this.wantsAgentDelegation(task) || !this.toolGateTokens) {
             return undefined;
         }
-        const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp;
-        if (transport !== 'claude-mcp-config' && transport !== 'codex-config' && transport !== 'opencode-config' && transport !== 'pi-extension') {
+        const transport = resolveQaapRuntimeHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp;
+        if (transport !== 'claude-mcp-config' && transport !== 'codex-config' && transport !== 'opencode-config' && transport !== 'pi-extension'
+            && transport !== 'acp-stdio') {
             return undefined;
         }
         if (transport !== 'claude-mcp-config' && !env.QAAP_GATE_TOKEN) {

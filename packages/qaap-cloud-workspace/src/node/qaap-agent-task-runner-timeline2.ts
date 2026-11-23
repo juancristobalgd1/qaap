@@ -1,7 +1,12 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
 import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
-import { qaapAcpFlavorPrintsStreamJson, resolveQaapAcpFlavor, resolveQaapAcpSpawnCommand } from './harness/acp/qaap-acp-bridge-launch';
+import {
+    buildQaapAcpDelegationMcpServers,
+    qaapAcpFlavorPrintsStreamJson,
+    resolveQaapAcpFlavor,
+    resolveQaapAcpSpawnCommand,
+} from './harness/acp/qaap-acp-bridge-launch';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
     opencodeGatePluginSeeded,
@@ -598,6 +603,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let codexGateOverlay: QaapCodexGateOverlay | undefined;
         let spawnCommand = task.command;
         let delegation: QaapDelegationWiring | undefined;
+        // ACP delegation (`acp-stdio`): the 0600 file the bridge reads its session/new MCP servers from.
+        let acpMcpServersFile: string | undefined;
         // ACP mode of this harness (per-harness flag): the turn runs through the ACP bridge, which prints Claude stream-json.
         const acpFlavor = resolveQaapAcpFlavor(ctx.resolveTaskAgentId(task));
         try {
@@ -676,6 +683,19 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     } else {
                         delegation = undefined;
                     }
+                } else if (delegation?.transport === 'acp-stdio' && delegationPlacement) {
+                    // ACP harness through the bridge: the shim goes in session/new; the token in its own 0600 file, and the
+                    // server list (paths only) in another, whose path is the bridge's --mcp-servers argument.
+                    try {
+                        const tokenFile = writeQaapDelegationTokenFile(task.id, delegation.token, owner, delegationPlacement.baseDir);
+                        acpMcpServersFile = writeQaapDelegationMcpConfigFile(
+                            task.id, buildQaapAcpDelegationMcpServers(delegationPlacement.options, delegation, tokenFile), owner, 'acp-mcp.json', delegationPlacement.baseDir,
+                        );
+                    } catch (error) {
+                        console.warn(`[qaap-delegation] the turn runs without delegation: ${error instanceof Error ? error.message : String(error)}`);
+                        delegation = undefined;
+                        acpMcpServersFile = undefined;
+                    }
                 } else if (delegation?.transport === 'pi-extension' && delegationPlacement) {
                     // Only with Pi's gate extension in the command: a Pi turn without it runs ungated and gets no delegation.
                     // In a task sandbox the config and the extension go below its shared root, like the shim.
@@ -742,6 +762,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     quoteShellArg,
                     // Design 3.8: no ACP agent outside a task sandbox in a hosted deployment.
                     requireSandbox: isQaapHostedEnvironment(),
+                    ...(acpMcpServersFile ? { mcpServersFile: acpMcpServersFile } : {}),
                 });
             }
             if (requestedAdapter.spawnQuirks.removesStaleSnapshotLocks) {

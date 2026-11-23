@@ -62,6 +62,7 @@ export const FLAVORS = Object.freeze({
         gateToolNames: 'native',
         modelConfigId: 'model',
         signIn: 'Run `opencode auth login` in a terminal.',
+        mcpStdio: true,
     }),
     copilot: Object.freeze({
         agentId: 'copilot',
@@ -73,6 +74,20 @@ export const FLAVORS = Object.freeze({
         gateToolNames: 'claude',
         modelConfigId: 'model',
         signIn: 'Run `copilot` in a terminal and sign in with /login.',
+        // Copilot ignores stdio MCP servers in session/new (seen with 1.0.114; T3 Code notes the same): delegation
+        // would need an HTTP MCP endpoint.
+        mcpStdio: false,
+    }),
+    grok: Object.freeze({
+        agentId: 'grok',
+        permissionSource: 'bridge',
+        keepGateEnv: false,
+        // Grok's transcript is plain text today, like Copilot's.
+        output: 'text',
+        gateToolNames: 'claude',
+        modelConfigId: 'model',
+        signIn: 'Run `grok login` in a terminal.',
+        mcpStdio: true,
     }),
 });
 
@@ -103,16 +118,16 @@ export function parseBridgeArgs(argv) {
     if (separator < 0 || separator === argv.length - 1) {
         throw new Error('usage: qaap-acp-bridge --flavor <id> [--model <id>] [--mode ask|auto|readonly] -- <agent argv...>');
     }
-    const options = { flavor: undefined, model: undefined, mode: 'ask', gateClient: undefined, gateClientSha256: undefined };
+    const options = { flavor: undefined, model: undefined, mode: 'ask', gateClient: undefined, gateClientSha256: undefined, mcpServers: undefined, promptFile: undefined };
     const own = argv.slice(0, separator);
     for (let index = 0; index < own.length; index++) {
         const flag = own[index];
         const value = own[index + 1];
-        if (flag === '--flavor' || flag === '--model' || flag === '--mode' || flag === '--gate-client' || flag === '--gate-client-sha256') {
+        if (flag === '--flavor' || flag === '--model' || flag === '--mode' || flag === '--gate-client' || flag === '--gate-client-sha256' || flag === '--mcp-servers' || flag === '--prompt-file') {
             if (value === undefined || value.startsWith('--')) {
                 throw new Error(`${flag} needs a value`);
             }
-            const key = flag === '--gate-client' ? 'gateClient' : flag === '--gate-client-sha256' ? 'gateClientSha256' : flag.slice(2);
+            const key = flag === '--gate-client' ? 'gateClient' : flag === '--gate-client-sha256' ? 'gateClientSha256' : flag === '--mcp-servers' ? 'mcpServers' : flag === '--prompt-file' ? 'promptFile' : flag.slice(2);
             options[key] = value;
             index++;
         } else {
@@ -126,6 +141,29 @@ export function parseBridgeArgs(argv) {
         throw new Error(`unknown mode ${options.mode}`);
     }
     return { ...options, agentArgv: argv.slice(separator + 1) };
+}
+
+/**
+ * MCP servers for `session/new`, read from the launcher's 0600 file: stdio entries only (`name`, `command`, `args`,
+ * `env` as name/value pairs). The file never holds a credential, only paths (the delegation token stays in its own
+ * 0600 file). Anything malformed throws: the turn must not start with a half-wired delegation.
+ */
+export function parseMcpServers(text) {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed) || parsed.length > 8) {
+        throw new Error('the MCP server list must be an array of at most 8 entries');
+    }
+    return parsed.map(entry => {
+        const ok = isPlainObject(entry)
+            && typeof entry.name === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(entry.name)
+            && typeof entry.command === 'string' && entry.command.length > 0
+            && Array.isArray(entry.args) && entry.args.every(arg => typeof arg === 'string')
+            && Array.isArray(entry.env) && entry.env.every(pair => isPlainObject(pair) && typeof pair.name === 'string' && typeof pair.value === 'string');
+        if (!ok) {
+            throw new Error('malformed MCP server entry');
+        }
+        return { name: entry.name, command: entry.command, args: [...entry.args], env: entry.env.map(pair => ({ name: pair.name, value: pair.value })) };
+    });
 }
 
 /** The agent's env: the bridge's own, without gate credentials unless the flavor's plugin needs them. */
@@ -383,19 +421,39 @@ function toolResultText(update) {
  * Plain-text rendering of translated lines, for a flavor whose transcript is plain text: the reply as it streams,
  * one line per tool call, nothing else (warnings and denials already go to stderr).
  */
-export function renderLinesAsText(lines) {
+export function renderLinesAsText(lines, shownTools = new Map()) {
     let text = '';
-    for (const line of lines) {
-        if (line.type === 'stream_event' && line.event?.delta?.type === 'text_delta') {
-            text += line.event.delta.text;
-        } else if (line.type === 'assistant') {
-            for (const block of line.message?.content ?? []) {
-                if (block.type === 'tool_use') {
-                    const detail = block.input?.command ?? block.input?.file_path ?? block.input?.url ?? block.input?.pattern ?? '';
-                    text += `\n▸ ${block.name}${detail ? `: ${String(detail).split('\n')[0].slice(0, 200)}` : ''}\n`;
+    const line = (name, detail) => `\n▸ ${name}${detail ? `: ${String(detail).split('\n')[0].slice(0, 200)}` : ''}\n`;
+    for (const entry of lines) {
+        if (entry.type === 'stream_event' && entry.event?.delta?.type === 'text_delta') {
+            text += entry.event.delta.text;
+        } else if (entry.type === 'assistant') {
+            for (const block of entry.message?.content ?? []) {
+                if (block.type !== 'tool_use') {
+                    continue;
+                }
+                // One line per call, printed once its input names what it does (a call is re-announced when the
+                // input arrives); a call that never gets one is printed when it finishes.
+                const detail = block.input?.command ?? block.input?.file_path ?? block.input?.url ?? block.input?.pattern;
+                if (shownTools.get(block.id) === true) {
+                    continue;
+                }
+                if (detail) {
+                    shownTools.set(block.id, true);
+                    text += line(block.name, detail);
+                } else {
+                    shownTools.set(block.id, block.name);
                 }
             }
-        } else if (line.type === 'result') {
+        } else if (entry.type === 'user') {
+            for (const block of entry.message?.content ?? []) {
+                const pending = block.type === 'tool_result' ? shownTools.get(block.tool_use_id) : undefined;
+                if (typeof pending === 'string') {
+                    shownTools.set(block.tool_use_id, true);
+                    text += line(pending);
+                }
+            }
+        } else if (entry.type === 'result') {
             text += '\n';
         }
     }
@@ -548,9 +606,10 @@ export class LimitedLineReader {
 export async function runBridgeTurn(options, prompt, io) {
     const flavor = FLAVORS[options.flavor];
     const translator = new AcpStreamTranslator(flavor);
+    const shownTools = new Map();
     const out = lines => {
         if (flavor.output === 'text') {
-            const text = renderLinesAsText(lines);
+            const text = renderLinesAsText(lines, shownTools);
             if (text) {
                 io.writeOut(text);
             }
@@ -747,7 +806,7 @@ export async function runBridgeTurn(options, prompt, io) {
         }
         let created;
         try {
-            created = await request('session/new', { cwd: io.cwd, mcpServers: [] });
+            created = await request('session/new', { cwd: io.cwd, mcpServers: flavor.mcpStdio ? (io.mcpServers ?? []) : [] });
         } catch (error) {
             if (isAuthError(error.rpc)) {
                 return fail(EXIT.AUTH_REQUIRED, `${flavor.agentId} needs you to sign in. ${flavor.signIn}`);
@@ -832,7 +891,25 @@ async function main() {
         process.exitCode = EXIT.USAGE;
         return;
     }
-    const prompt = await readStdin();
+    let mcpServers = [];
+    if (options.mcpServers) {
+        try {
+            mcpServers = parseMcpServers(readFileSync(options.mcpServers, 'utf8'));
+        } catch (error) {
+            process.stderr.write(`[qaap] The ACP bridge could not read its MCP servers (${error instanceof Error ? error.message : String(error)}).\n`);
+            process.exitCode = EXIT.USAGE;
+            return;
+        }
+    }
+    // A harness whose native CLI takes `--prompt-file` (Grok) hands the bridge the same file; otherwise stdin.
+    let prompt;
+    try {
+        prompt = options.promptFile ? readFileSync(options.promptFile, 'utf8') : await readStdin();
+    } catch (error) {
+        process.stderr.write(`[qaap] The ACP bridge could not read its prompt (${error instanceof Error ? error.message : String(error)}).\n`);
+        process.exitCode = EXIT.USAGE;
+        return;
+    }
     let onCancel;
     process.on('SIGTERM', () => onCancel?.());
     process.on('SIGINT', () => onCancel?.());
@@ -847,6 +924,7 @@ async function main() {
         },
         env: process.env,
         cwd: process.cwd(),
+        mcpServers,
     });
     process.exitCode = code;
     // Do not linger on a stuck agent pipe.

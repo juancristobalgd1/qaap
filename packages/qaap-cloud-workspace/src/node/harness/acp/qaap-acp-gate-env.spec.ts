@@ -52,8 +52,15 @@ describe('ACP flavors in the gate wiring', () => {
         expect(acp.mapToolKind('Edit', {})).to.equal('edit');
     });
 
+    it('gives Grok the same bridge gate plus stdio delegation, and Copilot no delegation (it ignores stdio MCP)', () => {
+        const grok = resolveQaapRuntimeHarnessCapabilities('grok', { QAAP_HARNESS_ACP_GROK: '1' });
+        expect(grok).to.deep.include({ transport: 'acp', gate: 'acp', canAsk: true, enforcement: 'client-boundary', delegateMcp: 'acp-stdio' });
+        expect(resolveQaapRuntimeHarnessCapabilities('copilot', { QAAP_HARNESS_ACP_COPILOT: '1' }).delegateMcp).to.equal('none');
+        expect(data(resolveQaapRuntimeHarnessCapabilities('grok', {}))).to.deep.equal(data(resolveQaapHarnessCapabilities('grok')));
+    });
+
     it('leaves OpenCode and every other harness unchanged (OpenCode keeps its pre-execution plugin)', () => {
-        const env = { QAAP_HARNESS_ACP_COPILOT: '1', QAAP_HARNESS_ACP_OPENCODE: '1' };
+        const env = { QAAP_HARNESS_ACP_COPILOT: '1', QAAP_HARNESS_ACP_OPENCODE: '1', QAAP_HARNESS_ACP_GROK: '1' };
         for (const id of ['opencode', 'claude', 'codex', 'pi', 'cursor', undefined]) {
             expect(data(resolveQaapRuntimeHarnessCapabilities(id, env)), String(id)).to.deep.equal(data(resolveQaapHarnessCapabilities(id)));
         }

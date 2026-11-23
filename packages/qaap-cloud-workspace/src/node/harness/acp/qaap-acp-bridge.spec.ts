@@ -28,6 +28,7 @@ interface BridgeModule {
     exitForStopReason(stopReason: string): number;
     gateToolName(flavor: any, kind: string, nativeName: string): string;
     refusePermissionLocally(mode: string, kind: string, input: Record<string, string>): string | undefined;
+    parseMcpServers(text: string): unknown[];
     AcpStreamTranslator: new (flavor: any) => any;
     LimitedLineReader: new (onMessage: (message: unknown) => void, onViolation: (reason: string) => void, now?: () => number) => { push(chunk: string): void };
 }
@@ -80,7 +81,7 @@ describe('qaap-acp-bridge.mjs', function (): void {
     describe('arguments', () => {
         it('reads its own options before -- and the agent argv after it', () => {
             expect(bridge.parseBridgeArgs(['--flavor', 'opencode', '--model', 'a/b', '--', 'opencode', 'acp'])).to.deep.equal({
-                flavor: 'opencode', model: 'a/b', mode: 'ask', gateClient: undefined, gateClientSha256: undefined, agentArgv: ['opencode', 'acp'],
+                flavor: 'opencode', model: 'a/b', mode: 'ask', gateClient: undefined, gateClientSha256: undefined, mcpServers: undefined, promptFile: undefined, agentArgv: ['opencode', 'acp'],
             });
             expect(bridge.parseBridgeArgs(['--flavor', 'copilot', '--gate-client', '/s/g.mjs', '--mode', 'readonly', '--', 'copilot', '--acp']))
                 .to.deep.include({ gateClient: '/s/g.mjs', mode: 'readonly', agentArgv: ['copilot', '--acp'] });
@@ -164,6 +165,26 @@ describe('qaap-acp-bridge.mjs', function (): void {
         expect(bridge.refusePermissionLocally('auto', 'delete', {})).to.match(/without a path/);
         expect(bridge.refusePermissionLocally('auto', 'execute', { command: 'ls' })).to.equal(undefined);
         expect(bridge.refusePermissionLocally('auto', 'edit', { file_path: '/w/a' })).to.equal(undefined);
+    });
+
+    it('accepts only well-formed stdio MCP server entries for session/new', () => {
+        const entry = { name: 'qaaq_ab12', command: 'node', args: ['/s/shim.mjs'], env: [{ name: 'QAAP_DELEGATION_TOKEN_FILE', value: '/s/token' }] };
+        expect(bridge.parseMcpServers(JSON.stringify([entry]))).to.deep.equal([entry]);
+        expect(bridge.parseMcpServers('[]')).to.deep.equal([]);
+        for (const bad of [
+            '{}', 'not json', JSON.stringify([{ ...entry, name: 'bad name!' }]), JSON.stringify([{ ...entry, args: [1] }]),
+            JSON.stringify([{ ...entry, env: { A: 'b' } }]), JSON.stringify([{ ...entry, command: '' }]), JSON.stringify(Array(9).fill(entry)),
+        ]) {
+            expect(() => bridge.parseMcpServers(bad), bad).to.throw();
+        }
+        // Extra fields (a smuggled `headers` with a token, a `type`) are dropped.
+        expect(bridge.parseMcpServers(JSON.stringify([{ ...entry, headers: [{ name: 'Authorization', value: 'x' }] }]))).to.deep.equal([entry]);
+    });
+
+    it('declares Grok as a bridge-gated flavor that takes stdio MCP servers and prints plain text', () => {
+        expect(bridge.FLAVORS.grok).to.deep.include({ agentId: 'grok', permissionSource: 'bridge', keepGateEnv: false, output: 'text', gateToolNames: 'claude', mcpStdio: true });
+        expect(bridge.FLAVORS.copilot.mcpStdio).to.equal(false);
+        expect(bridge.FLAVORS.opencode.mcpStdio).to.equal(true);
     });
 
     it('maps every stop reason to its exit code', () => {
@@ -446,6 +467,31 @@ describe('qaap-acp-bridge.mjs', function (): void {
             run = await runBridge(['--flavor', 'opencode', '--gate-client', client, '--gate-client-sha256', '0'.repeat(64), '--', process.execPath, FAKE_AGENT, 'echo'], env());
             expect(run.code).to.equal(bridge.EXIT.USAGE);
             expect(run.stderr).to.contain('expected hash');
+        });
+
+        it('passes the launcher\'s MCP servers in session/new to a flavor that takes them, and none to Copilot', async () => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-'));
+            const servers = path.join(dir, 'acp-mcp.json');
+            const entry = { name: 'qaaq_ab12', command: process.execPath, args: ['/s/shim.mjs'], env: [{ name: 'QAAP_DELEGATION_TOKEN_FILE', value: '/s/token' }] };
+            fs.writeFileSync(servers, JSON.stringify([entry]));
+            const newSession = async (flavor: string): Promise<any> => {
+                const record = path.join(dir, `${flavor}.jsonl`);
+                await runBridge(['--flavor', flavor, '--mcp-servers', servers, '--', process.execPath, FAKE_AGENT, 'echo'], env({ FAKE_ACP_RECORD: record }));
+                return fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).find(message => message.method === 'session/new');
+            };
+            expect((await newSession('grok')).params.mcpServers).to.deep.equal([entry]);
+            expect((await newSession('copilot')).params.mcpServers).to.deep.equal([]);
+            fs.writeFileSync(servers, '{"not":"a list"}');
+            const broken = await runBridge(['--flavor', 'grok', '--mcp-servers', servers, '--', process.execPath, FAKE_AGENT, 'echo'], env());
+            expect(broken.code).to.equal(bridge.EXIT.USAGE);
+        });
+
+        it('reads the prompt from --prompt-file when given (Grok\'s native transport)', async () => {
+            const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'prompt.txt');
+            fs.writeFileSync(file, 'from the file');
+            const run = await runBridge(['--flavor', 'grok', '--prompt-file', file, '--', process.execPath, FAKE_AGENT, 'echo'], env(), 'from stdin');
+            expect(run.stdout).to.contain('You said: from the file');
+            expect(run.stdout).to.not.contain('from stdin');
         });
 
         it('announces neither fs nor terminal and sends no MCP server', async () => {
