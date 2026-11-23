@@ -21,6 +21,7 @@ export const MOBILE_HORIZONTAL_SCROLL_SELECTOR = [
     '.theia-mobile-agent-transcript-empty-actions',
     '.theia-mobile-sticky-composer-changes-pill-row',
     '.theia-mobile-work-hub-settings-activity-scroll',
+    '.theia-mobile-agent-login-dialog-provider-strip',
 ].join(',');
 
 /** Prefer horizontal pan on tab strips so Lumino tab-drag does not steal the gesture. */

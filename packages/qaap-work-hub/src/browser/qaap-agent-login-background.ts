@@ -31,7 +31,7 @@ import {
     resolveQaapHarnessAuthProfile,
     type QaapHarnessLoginPhase,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-auth-profile';
-import { QAAP_PI_LOGIN_PROVIDERS } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
+import { QAAP_PI_API_KEY_SAVED_PATTERN, QAAP_PI_LOGIN_PROVIDERS, QAAP_PI_SECRET_PROMPT_PATTERN } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import {
     QAAP_DISABLED_HARNESSES_PREF,
     isQaapHarnessEnabled,
@@ -396,7 +396,12 @@ export async function openAgentLoginDialogInBackground(
             return agyLogin || authProfile?.login.alwaysAcceptsCode === true;
         },
         get extraSuccessPatterns(): readonly string[] | undefined {
-            return authProfile?.login.extraSuccessPatterns;
+            const profile = authProfile?.login.extraSuccessPatterns;
+            // Pi stores a pasted API key at once and says so; no browser step follows.
+            return agentId === 'pi' ? [...(profile ?? []), QAAP_PI_API_KEY_SAVED_PATTERN] : profile;
+        },
+        get secretPromptPattern(): string | undefined {
+            return agentId === 'pi' ? QAAP_PI_SECRET_PROMPT_PATTERN : undefined;
         },
         get extraFailurePatterns(): readonly string[] | undefined {
             return authProfile?.login.extraFailurePatterns;
@@ -768,7 +773,12 @@ export async function openAgentLoginDialogInBackground(
         onClose: close,
         ...(connectionFlow.kind === 'tui-login' && connectionFlow.provider !== undefined ? {
             loginProviders: {
-                options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({ id: provider.id, label: provider.name })),
+                options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({
+                    id: provider.id,
+                    label: provider.name,
+                    method: provider.method,
+                    ...(provider.brand ? { brand: provider.brand } : {}),
+                })),
                 selectedId: connectionFlow.provider,
                 onSelect: selectLoginProvider,
             },
@@ -779,6 +789,14 @@ export async function openAgentLoginDialogInBackground(
             }
             surface.terminal.sendText(`${code}\r`);
             flow.codeSubmitted(Date.now());
+        },
+        onSubmitSecret: secret => {
+            if (!surface || surface.terminal.isDisposed) {
+                return;
+            }
+            // Redacted from the kept output first: the TUI echoes what it is typed.
+            flow.secretSubmitted(secret, Date.now());
+            surface.terminal.sendText(`${secret}\r`);
         },
         onRetry: () => {
             if (hiddenLogin) {

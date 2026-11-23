@@ -33,9 +33,10 @@ export function resolveAgentPickerConnectionDescription(
 }
 
 /**
- * @param providerName the account provider Pi signs in to (its picker name); Pi only.
+ * @param providerName the provider Pi connects (its picker name); Pi only.
+ * @param method how Pi connects it: a browser account sign-in (default) or a pasted API key; Pi only.
  */
-export function resolveAgentLoginDialogSubtitle(agentId: string, providerName?: string): string {
+export function resolveAgentLoginDialogSubtitle(agentId: string, providerName?: string, method: 'account' | 'api_key' = 'account'): string {
     switch (agentId.trim().toLowerCase()) {
         case 'codex':
             return nls.localize(
@@ -48,6 +49,13 @@ export function resolveAgentLoginDialogSubtitle(agentId: string, providerName?: 
                 'Sign in to Claude Code with your Claude account, then finish the browser authorization to connect it on this workspace.',
             );
         case 'pi':
+            if (method === 'api_key') {
+                return nls.localize(
+                    'qaap/mobileProjects/agentLoginDialogPiApiKeySubtitle',
+                    'Connect Pi to {0} with your API key. Pi keeps it on this workspace only.',
+                    providerName ?? 'OpenRouter',
+                );
+            }
             return nls.localize(
                 'qaap/mobileProjects/agentLoginDialogPiProviderSubtitle',
                 'Sign in to Pi with your {0} account, then finish the browser authorization to connect it on this workspace.',

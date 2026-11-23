@@ -562,46 +562,68 @@ describe('createQaapAgentLoginDialog', () => {
 
     describe('Pi sign-in provider picker', () => {
         const providers = [
-            { id: 'openrouter', label: 'OpenRouter' },
-            { id: 'anthropic', label: 'Anthropic (Claude Pro/Max)' },
-            { id: 'github-copilot', label: 'GitHub Copilot' },
+            { id: 'openrouter', label: 'OpenRouter', method: 'account' as const, brand: 'openrouter' },
+            { id: 'anthropic', label: 'Anthropic (Claude Pro/Max)', method: 'account' as const, brand: 'anthropic' },
+            { id: 'github-copilot', label: 'GitHub Copilot', method: 'account' as const, brand: 'copilot' },
+            { id: 'groq', label: 'Groq', method: 'api_key' as const },
         ];
-        const openWithProviders = (onSelect: (id: string) => void = () => undefined) => {
+        const openWithProviders = (onSelect: (id: string) => void = () => undefined, onSubmitSecret?: (secret: string) => void) => {
             dialog = createQaapAgentLoginDialog({
                 agentId: 'pi',
                 agentLabel: 'Pi',
                 onClose: () => undefined,
                 loginProviders: { options: providers, selectedId: 'openrouter', onSelect },
+                ...(onSubmitSecret ? { onSubmitSecret } : {}),
             });
             return dialog;
         };
-        const providerSelect = (root: HTMLElement): HTMLSelectElement => root.querySelector<HTMLSelectElement>('.theia-mobile-agent-login-dialog-provider-select')!;
+        const chips = (root: HTMLElement): HTMLElement[] =>
+            Array.from(root.querySelectorAll<HTMLElement>('.theia-mobile-agent-login-dialog-provider-chip'));
+        const chip = (root: HTMLElement, id: string): HTMLElement => chips(root).find(element => element.dataset.providerId === id)!;
         const subtitle = (root: HTMLElement): string => root.querySelector('.theia-mobile-agent-login-dialog-subtitle')?.textContent ?? '';
 
-        it('lists the providers with OpenRouter selected and the subtitle naming it', () => {
+        it('shows every provider as a logo chip in a radio group, OpenRouter checked, the subtitle naming it', () => {
             const controller = openWithProviders();
-            const select = providerSelect(controller.root);
-            expect(Array.from(select.options).map(option => option.value)).to.deep.equal(['openrouter', 'anthropic', 'github-copilot']);
-            expect(select.value).to.equal('openrouter');
+            const strip = controller.root.querySelector('.theia-mobile-agent-login-dialog-provider-strip');
+            expect(strip?.getAttribute('role')).to.equal('radiogroup');
+            expect(chips(controller.root).map(element => element.dataset.providerId)).to.deep.equal(['openrouter', 'anthropic', 'github-copilot', 'groq']);
+            expect(chip(controller.root, 'openrouter').getAttribute('aria-checked')).to.equal('true');
+            expect(chip(controller.root, 'anthropic').getAttribute('aria-checked')).to.equal('false');
+            expect(chip(controller.root, 'openrouter').querySelector('.theia-qaap-agent-brand-icon')).to.not.equal(null);
+            expect(chip(controller.root, 'groq').textContent).to.contain('API key');
             expect(subtitle(controller.root)).to.contain('Sign in to Pi with your OpenRouter account');
         });
 
-        it('calls back with the picked provider and follows its name in the subtitle', () => {
+        it('calls back with the picked provider and follows its name and method in the subtitle', () => {
             const picked: string[] = [];
             const controller = openWithProviders(id => picked.push(id));
-            const select = providerSelect(controller.root);
-            select.value = 'anthropic';
-            select.dispatchEvent(new window.Event('change'));
+            chip(controller.root, 'anthropic').click();
             expect(picked).to.deep.equal(['anthropic']);
+            expect(chip(controller.root, 'anthropic').getAttribute('aria-checked')).to.equal('true');
             expect(subtitle(controller.root)).to.contain('Sign in to Pi with your Anthropic (Claude Pro/Max) account');
+            chip(controller.root, 'groq').click();
+            expect(subtitle(controller.root)).to.contain('Connect Pi to Groq with your API key');
+            chip(controller.root, 'groq').click();
+            expect(picked).to.deep.equal(['anthropic', 'groq']);
+        });
+
+        it('moves the choice with the arrow keys, Home and End', () => {
+            const picked: string[] = [];
+            const controller = openWithProviders(id => picked.push(id));
+            const strip = controller.root.querySelector<HTMLElement>('.theia-mobile-agent-login-dialog-provider-strip')!;
+            strip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+            strip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+            strip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+            strip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+            expect(picked).to.deep.equal(['anthropic', 'groq', 'openrouter']);
         });
 
         it('keeps the picker outside the challenge body, so a restart re-renders the steps only', () => {
             const controller = openWithProviders();
             controller.render({ phase: 'waiting', startedAt: 0 });
             controller.render({ phase: 'challenge', challenge: { mode: 'session', url: 'https://github.com/login/device', userCode: 'ABCD-1234' } });
-            expect(providerSelect(controller.root)).to.not.equal(null);
-            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-challenge .theia-mobile-agent-login-dialog-provider-select')).to.equal(null);
+            expect(chips(controller.root).length).to.equal(4);
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-challenge .theia-mobile-agent-login-dialog-provider-chip')).to.equal(null);
         });
 
         it('shows a device code read-only with a copy button, without a paste field when none is asked', () => {
@@ -612,9 +634,25 @@ describe('createQaapAgentLoginDialog', () => {
             expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-code-input')).to.equal(null);
         });
 
+        it('asks for the API key in a masked field and sends it once, then locks the field', () => {
+            const sent: string[] = [];
+            const controller = openWithProviders(undefined, secret => sent.push(secret));
+            controller.render({ phase: 'secret-input', label: 'Groq API key' });
+            const input = controller.root.querySelector<HTMLInputElement>('.theia-mobile-agent-login-dialog-secret-form input')!;
+            expect(input.type).to.equal('password');
+            expect(input.getAttribute('aria-label')).to.equal('Groq API key');
+            input.value = '  gsk-secret  ';
+            input.dispatchEvent(new window.Event('input'));
+            input.form!.dispatchEvent(new window.Event('submit', { cancelable: true }));
+            expect(sent).to.deep.equal(['gsk-secret']);
+            expect(input.value).to.equal('');
+            controller.render({ phase: 'secret-submitted', label: 'Groq API key', submittedAt: 1 });
+            expect(controller.root.querySelector<HTMLInputElement>('.theia-mobile-agent-login-dialog-secret-form input')!.disabled).to.equal(true);
+        });
+
         it('renders no provider picker for other harnesses', () => {
             const controller = open();
-            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-provider-select')).to.equal(null);
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-provider-strip')).to.equal(null);
         });
     });
 });

@@ -14981,12 +14981,99 @@ body.theia-mod-work-hub-settings-resizing * {
 }
 
 .theia-mobile-agent-login-dialog-provider {
-  margin: 0 0 12px;
+  /* The strip bleeds to the content's edges so chips scroll under its padding, not against it. */
+  margin: 0 -22px 12px;
 }
 
-.theia-mobile-agent-login-dialog-provider-select {
+
+/* Pi's providers: a horizontal, scroll-snapping strip of logo chips (radio group). */
+.theia-mobile-agent-login-dialog-provider-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 22px;
+  padding: 4px 22px 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+
+.theia-mobile-agent-login-dialog-provider-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.theia-mobile-agent-login-dialog-provider-chip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 84px;
+  min-height: 84px;
+  padding: 10px 6px 8px;
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+  border-radius: 12px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.theia-mobile-agent-login-dialog-provider-chip:hover {
+  background: var(--theia-list-hoverBackground);
+}
+
+.theia-mobile-agent-login-dialog-provider-chip:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.theia-mobile-agent-login-dialog-provider-chip.theia-mod-selected {
+  border-color: var(--theia-focusBorder);
+  background: var(--theia-list-activeSelectionBackground, var(--theia-list-hoverBackground));
+}
+
+.theia-mobile-agent-login-dialog-provider-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.theia-mobile-agent-login-dialog-provider-logo .theia-qaap-agent-brand-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.theia-mobile-agent-login-dialog-provider-logo .theia-qaap-agent-brand-icon svg,
+.theia-mobile-agent-login-dialog-provider-logo .theia-qaap-agent-brand-icon img {
   width: 100%;
-  min-height: 40px;
+  height: 100%;
+}
+
+.theia-mobile-agent-login-dialog-provider-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.25;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.theia-mobile-agent-login-dialog-provider-caption {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-login-dialog-secret-form .theia-mobile-agent-login-dialog-code-input {
+  font-family: var(--theia-code-font-family, monospace);
 }
 
 .theia-mobile-agent-login-dialog-challenge {

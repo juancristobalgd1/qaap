@@ -121,6 +121,9 @@ export type QaapAgentLoginFlowState =
     | { readonly phase: 'waiting'; readonly startedAt: number }
     | { readonly phase: 'challenge'; readonly challenge: QaapAgentAuthLoginChallenge }
     | { readonly phase: 'code-submitted'; readonly challenge: QaapAgentAuthLoginChallenge; readonly submittedAt: number }
+    /** The CLI asks for a secret (Pi's `Enter Groq API key`): the dialog shows a masked field. `label` is what it asks for. */
+    | { readonly phase: 'secret-input'; readonly label: string }
+    | { readonly phase: 'secret-submitted'; readonly label: string; readonly submittedAt: number }
     | { readonly phase: 'connected' }
     | {
         readonly phase: 'failed';
@@ -158,6 +161,11 @@ export interface QaapAgentLoginFlowOptions {
      * so (agy): every challenge with a link is published with the paste-back field.
      */
     readonly alwaysAcceptsCode?: boolean;
+    /**
+     * Regex source of the CLI's prompt for a secret (Pi: `Enter <provider> API key`); group 1 names it.
+     * Seeing it switches the dialog to the masked secret field instead of waiting for a link.
+     */
+    readonly secretPromptPattern?: string;
     /** Harness-specific regex sources (case-insensitive) confirming sign-in completion. */
     readonly extraSuccessPatterns?: readonly string[];
     /** Harness-specific regex sources (case-insensitive) indicating sign-in failure (checked before success). */
@@ -224,6 +232,8 @@ export class QaapAgentLoginFlow {
     protected challengeSince: number | undefined;
     /** Host-provided description of the terminal (started, bytes seen); attached to a `timeout` failure. */
     protected diagnostics: string | undefined;
+    /** Secrets typed into the CLI: removed from everything kept, since the TUI echoes them. */
+    protected redactions: string[] = [];
 
     constructor(protected readonly options: QaapAgentLoginFlowOptions) { }
 
@@ -301,7 +311,7 @@ export class QaapAgentLoginFlow {
         if (!this.isRunning()) {
             return;
         }
-        const combined = `${this.rawTail}${raw}`;
+        const combined = this.redact(`${this.rawTail}${raw}`);
         this.rawTail = combined.slice(-RAW_HYPERLINK_WINDOW);
         for (const target of extractAgentLoginHyperlinkTargets(combined)) {
             if (!this.hyperlinkTargets.includes(target)) {
@@ -315,7 +325,7 @@ export class QaapAgentLoginFlow {
         if (!this.isRunning()) {
             return;
         }
-        this.output = `${this.output}${chunk}`.slice(-OUTPUT_LIMIT);
+        this.output = this.redact(`${this.output}${chunk}`).slice(-OUTPUT_LIMIT);
         const exitCode = parseAgentLoginExitMarker(this.output);
         if (exitCode !== undefined) {
             this.exited(exitCode);
@@ -330,7 +340,18 @@ export class QaapAgentLoginFlow {
             this.connected();
             return;
         }
-        if (this.current.phase === 'code-submitted') {
+        if (this.current.phase === 'code-submitted' || this.current.phase === 'secret-submitted') {
+            return;
+        }
+        const secretLabel = this.findSecretPrompt(visible);
+        if (secretLabel) {
+            if (this.current.phase !== 'secret-input') {
+                this.challengeSince = now;
+                this.set({ phase: 'secret-input', label: secretLabel });
+            }
+            return;
+        }
+        if (this.current.phase === 'secret-input') {
             return;
         }
         // Whole hyperlink targets first: a wrapped plain-text copy of the same URL is truncated.
@@ -382,6 +403,22 @@ export class QaapAgentLoginFlow {
         this.set({ phase: 'code-submitted', challenge: this.current.challenge, submittedAt: now });
     }
 
+    /**
+     * The user's secret was typed into the CLI. It is removed from the kept output right away (and from
+     * everything appended later), so no failure tail or diagnostic can show it.
+     */
+    secretSubmitted(secret: string, now: number): void {
+        if (this.current.phase !== 'secret-input') {
+            return;
+        }
+        if (secret && !this.redactions.includes(secret)) {
+            this.redactions = [...this.redactions, secret];
+        }
+        this.output = this.redact(this.output);
+        this.rawTail = this.redact(this.rawTail);
+        this.set({ phase: 'secret-submitted', label: this.current.label, submittedAt: now });
+    }
+
     tick(now: number): void {
         const state = this.current;
         if (state.phase === 'preparing' && state.startedAt !== undefined && now - state.startedAt >= QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS) {
@@ -401,13 +438,14 @@ export class QaapAgentLoginFlow {
             this.installFailed();
             return;
         }
-        if (state.phase === 'challenge' && this.challengeSince !== undefined && now - this.challengeSince >= QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS) {
+        if ((state.phase === 'challenge' || state.phase === 'secret-input') && this.challengeSince !== undefined
+            && now - this.challengeSince >= QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS) {
             this.set({ phase: 'failed', reason: 'sign-in-expired', tail: resolveAgentLoginOutputTail(this.output) });
             return;
         }
         const challengeTimeoutMs = this.options.challengeTimeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS;
         const timedOut = (state.phase === 'waiting' && now - state.startedAt >= challengeTimeoutMs)
-            || (state.phase === 'code-submitted' && now - state.submittedAt >= QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS);
+            || ((state.phase === 'code-submitted' || state.phase === 'secret-submitted') && now - state.submittedAt >= QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS);
         if (timedOut) {
             const tail = resolveAgentLoginOutputTail(this.output);
             // Nothing from the CLI itself: show what the terminal did print (the typed command's echo, the
@@ -438,6 +476,28 @@ export class QaapAgentLoginFlow {
         return isAgentLoginSuccessOutput(visible) || matchesAnyPatternSource(visible, this.options.extraSuccessPatterns);
     }
 
+    protected findSecretPrompt(visible: string): string | undefined {
+        const source = this.options.secretPromptPattern;
+        if (!source) {
+            return undefined;
+        }
+        try {
+            // Only the CLI's latest screen: an earlier, answered prompt must not reopen the field.
+            const recent = resolveAgentLoginOutputTail(visible, 12).join('\n');
+            return new RegExp(source, 'i').exec(recent)?.[1]?.trim() || undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected redact(text: string): string {
+        let result = text;
+        for (const secret of this.redactions) {
+            result = result.split(secret).join('••••');
+        }
+        return result;
+    }
+
     protected resetOutput(): void {
         this.output = '';
         this.rawTail = '';
@@ -448,7 +508,8 @@ export class QaapAgentLoginFlow {
 
     protected isRunning(): boolean {
         const phase = this.current.phase;
-        return phase === 'waiting' || phase === 'challenge' || phase === 'code-submitted';
+        return phase === 'waiting' || phase === 'challenge' || phase === 'code-submitted'
+            || phase === 'secret-input' || phase === 'secret-submitted';
     }
 
     protected set(state: QaapAgentLoginFlowState): void {
