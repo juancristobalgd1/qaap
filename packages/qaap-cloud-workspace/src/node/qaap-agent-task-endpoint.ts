@@ -32,7 +32,7 @@ import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
-import { antigravityBinFor, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels, invalidateNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
 import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
@@ -525,6 +525,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             ? await this.runner.instanceNativeModelSpawner(normalizedAgent, login)
             : this.runner.nativeModelDiscoverySpawner(login);
         const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
+        if (fresh) {
+            // Right after a sign-in or a newly connected provider: a still-fresh cached list predates it.
+            invalidateNativeAgentModels(catalogAgent, login, antigravityBin);
+        }
         await this.withinBudget(prepareNativeAgentModels(catalogAgent, {
             ownerLogin: login,
             spawner,

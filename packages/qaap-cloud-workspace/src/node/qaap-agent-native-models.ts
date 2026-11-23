@@ -607,6 +607,25 @@ export async function discoverCodexAccountModels(
     }
 }
 
+const loggedNativeListingFailures = new Set<string>();
+
+/**
+ * One server-log line per agent and reason when a CLI model listing gives nothing: the picker then falls back
+ * to the curated catalog, and without this a provider the user just connected silently never appeared.
+ */
+function noteNativeListingFailure(agentId: string, reason: string): void {
+    const key = `${agentId}:${reason}`;
+    if (loggedNativeListingFailures.has(key)) {
+        return;
+    }
+    loggedNativeListingFailures.add(key);
+    console.warn(`[qaap-native-models] ${agentId} model listing gave no models (${reason.slice(0, 240)})`);
+}
+
+function firstLine(text: string | undefined): string {
+    return (text ?? '').split('\n').map(line => line.trim()).find(line => line.length > 0) ?? '';
+}
+
 function discoverFromCommand(
     bin: string,
     args: string[],
@@ -635,14 +654,18 @@ function discoverFromCommand(
                 ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
                 // Never inherit the backend env by omission; a spawner env is stripped too.
                 env: childProcessEnv({ ...(spawn?.env ?? process.env), ...extraEnv }),
-            }, (error, stdout) => {
+            }, (error, stdout, stderr) => {
                 // stderr is diagnostic output, never a model catalog. A failed run or an
                 // unparsable answer is "no answer" (empty), so the caller keeps its catalog.
                 if (error) {
+                    noteNativeListingFailure(agentId, `${error.killed ? 'deadline' : error.signal ?? `exit ${String(error.code)}`}: ${firstLine(stderr)}`);
                     resolve([]);
                     return;
                 }
                 const models = parseNativeModelOutput(agentId, String(stdout ?? ''));
+                if (models.length === 0) {
+                    noteNativeListingFailure(agentId, `no models parsed: ${firstLine(stdout) || firstLine(stderr)}`);
+                }
                 // Picker rows belong to the agent that lists them (Pi keeps provider as vendor).
                 resolve(agentId === 'pi' ? models : models.map(model => ({ ...model, vendor: agentId })));
             });
