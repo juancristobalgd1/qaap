@@ -5,7 +5,8 @@
 
 // Pure + DI helpers extracted from QaapAgentTaskRunner (batch 3).
 
-import { execFile, spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
+import { execFileKillingGroup, killProcessGroup } from './qaap-exec-file-group';
+import { spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
@@ -506,11 +507,11 @@ export function probeAgentConnectionState(
             }
         };
         try {
-            const child = execFile(options?.file ?? bin, [...args], {
+            // The deadline kills the probe's whole process tree: a wrapper (`sh -c`, npm shim) left the CLI alive.
+            const child = execFileKillingGroup(options?.file ?? bin, [...args], {
                 cwd: options?.cwd,
                 env: childProcessEnv(options?.env),
-                encoding: 'utf8',
-                timeout: timeoutMs,
+                timeoutMs,
                 windowsHide: true,
             }, (error, stdout, stderr) => {
                 const output = `${stdout ?? ''}\n${stderr ?? ''}`;
@@ -522,8 +523,8 @@ export function probeAgentConnectionState(
             });
             // Hard bound: a probe whose pipes stay open past the timeout is inconclusive, not pending.
             settleTimer = setTimeout(() => {
+                killProcessGroup(child);
                 try {
-                    child.kill('SIGKILL');
                     child.stdout?.destroy();
                     child.stderr?.destroy();
                 } catch {

@@ -657,12 +657,24 @@ export async function openAgentLoginDialogInBackground(
         }
     };
 
-    const startCliLogin = async (command: string, input?: readonly QaapAgentLoginInputStep[]): Promise<void> => {
+    /** The harness status of the last start: a provider switch reuses it (same CLI, same install). */
+    let lastHarnessStatus: AgentLoginHarnessStatus | undefined;
+    /** Bumped by every start, so an older start still waiting on its status never runs after a newer one. */
+    let loginGeneration = 0;
+    const startCliLogin = async (
+        command: string,
+        input?: readonly QaapAgentLoginInputStep[],
+        options?: { readonly reuseStatus?: boolean },
+    ): Promise<void> => {
+        const generation = ++loginGeneration;
         flow.restart(Date.now());
-        const status = await fetchAgentLoginHarnessStatus(agentId);
-        if (closed || flow.state.phase !== 'preparing') {
+        // `harness-status` probes every harness and can take seconds on a busy backend: switching Pi's
+        // provider does not change the CLI, so it reuses the status instead of waiting on it again.
+        const status = options?.reuseStatus && lastHarnessStatus ? lastHarnessStatus : await fetchAgentLoginHarnessStatus(agentId);
+        if (closed || generation !== loginGeneration || flow.state.phase !== 'preparing') {
             return;
         }
+        lastHarnessStatus = status ?? lastHarnessStatus;
         if (status?.loginOverrideError) {
             flow.showManualInstructions(status.loginOverrideError);
             return;
@@ -757,7 +769,7 @@ export async function openAgentLoginDialogInBackground(
         }
         connectionFlow = next;
         hiddenLogin = resolveHiddenLogin(next);
-        void startCliLogin(next.command, next.input);
+        void startCliLogin(next.command, next.input, { reuseStatus: true });
     };
 
     /** Manual route: the visible terminal's command (the Pi fallback is the same for every provider). */

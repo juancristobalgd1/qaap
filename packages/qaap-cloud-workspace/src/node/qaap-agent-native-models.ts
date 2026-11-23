@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { execFileKillingGroup } from './qaap-exec-file-group';
 import { type ChildProcess, execFile, spawn as spawnChild } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -361,15 +362,33 @@ const PROBE_CHILD_KILL_ESCALATION_MS = 2_000;
  * Ends a one-shot probe child: closes its stdin, sends SIGTERM and, if it is still alive after
  * {@link PROBE_CHILD_KILL_ESCALATION_MS}, SIGKILL. A CLI that ignores SIGTERM must not outlive the probe.
  */
+function signalProbeGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+    if (process.platform !== 'win32' && child.pid) {
+        try {
+            process.kill(-child.pid, signal);
+            return;
+        } catch {
+            // Not a group leader, or already gone: signal the child itself.
+        }
+    }
+    try {
+        child.kill(signal);
+    } catch {
+        // Already gone.
+    }
+}
+
 function stopProbeChild(child: ChildProcess): void {
     child.stdin?.end();
-    child.kill('SIGTERM');
+    // The probe leads its own process group (POSIX): signal the group, so the CLI behind a wrapper
+    // (npm shim, `setpriv`) stops too instead of outliving it.
+    signalProbeGroup(child, 'SIGTERM');
     if (child.exitCode !== null || child.signalCode !== null) {
         return;
     }
     const escalation = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) {
-            child.kill('SIGKILL');
+            signalProbeGroup(child, 'SIGKILL');
         }
     }, PROBE_CHILD_KILL_ESCALATION_MS);
     // The escalation timer must never keep the backend alive on its own.
@@ -401,6 +420,7 @@ function askClaudeCliForModels(spawner: NativeModelDiscoverySpawner | undefined,
                 stdio: ['pipe', 'pipe', 'ignore'],
                 shell: windowsShim,
                 windowsHide: true,
+                detached: process.platform !== 'win32',
             });
         } catch {
             resolve([]);
@@ -475,9 +495,8 @@ function listClaudeBundleModels(spawner: NativeModelDiscoverySpawner | undefined
         return Promise.resolve([]);
     }
     return new Promise<QaapQaiqModelOption[]>(resolve => {
-        execFile(command.file, [...command.args], {
-            encoding: 'utf8',
-            timeout: timeoutMs,
+        execFileKillingGroup(command.file, [...command.args], {
+            timeoutMs,
             maxBuffer: 16 * 1024 * 1024,
             ...(command.cwd ? { cwd: command.cwd } : {}),
             env: childProcessEnv({ ...(command.env ?? process.env) }),
@@ -609,9 +628,9 @@ function discoverFromCommand(
             const unwrapped = (spawn?.file ?? bin) === bin;
             const windowsShim = unwrapped && process.platform === 'win32';
             const executable = windowsShim ? `${bin}.cmd` : spawn?.file ?? bin;
-            execFile(executable, spawn ? [...spawn.args] : args, {
-                encoding: 'utf8',
-                timeout: 15_000,
+            // The deadline kills the listing's whole process tree (`agy models` outlived its wrapper).
+            execFileKillingGroup(executable, spawn ? [...spawn.args] : args, {
+                timeoutMs: 15_000,
                 shell: windowsShim,
                 ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
                 // Never inherit the backend env by omission; a spawner env is stripped too.
