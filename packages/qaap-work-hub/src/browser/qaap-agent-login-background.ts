@@ -32,6 +32,7 @@ import {
     type QaapHarnessLoginPhase,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-auth-profile';
 import { QAAP_PI_API_KEY_SAVED_PATTERN, QAAP_PI_LOGIN_PROVIDERS, QAAP_PI_SECRET_PROMPT_PATTERN } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
+import { resolvePiProviderMarkSvg } from '@theia/qaap-shared-core/lib/common/qaap-pi-provider-marks';
 import {
     QAAP_DISABLED_HARNESSES_PREF,
     isQaapHarnessEnabled,
@@ -791,6 +792,7 @@ export async function openAgentLoginDialogInBackground(
                     ...(provider.shortName ? { shortLabel: provider.shortName } : {}),
                     method: provider.method,
                     ...(provider.brand ? { brand: provider.brand } : {}),
+                    ...(resolvePiProviderMarkSvg(provider.id) ? { logoSvg: resolvePiProviderMarkSvg(provider.id) } : {}),
                 })),
                 selectedId: connectionFlow.provider,
                 onSelect: selectLoginProvider,

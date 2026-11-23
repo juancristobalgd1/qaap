@@ -66,6 +66,11 @@ export interface QaapAgentLoginProviderOption {
     readonly method?: 'account' | 'api_key';
     /** Brand id for the logo; the provider id when unset (a monogram when there is no curated logo). */
     readonly brand?: string;
+    /**
+     * Trusted, monochrome SVG markup of the provider's mark (`currentColor`, from a bundled constant,
+     * never from user or CLI input). Preferred over `brand`, so the strip reads alike in both themes.
+     */
+    readonly logoSvg?: string;
 }
 
 function createIcon(className: string): HTMLElement {
@@ -225,9 +230,17 @@ function createProviderStrip(
         chip.title = option.label;
         const logo = document.createElement('span');
         logo.className = 'theia-mobile-agent-login-dialog-provider-logo';
-        const icon = createLlmProviderIcon(option.brand ?? option.id, undefined, 'md');
-        if (icon) {
-            logo.append(icon);
+        if (option.logoSvg) {
+            const mark = document.createElement('span');
+            mark.className = 'theia-mobile-agent-login-dialog-provider-mark';
+            mark.setAttribute('aria-hidden', 'true');
+            mark.innerHTML = option.logoSvg;
+            logo.append(mark);
+        } else {
+            const icon = createLlmProviderIcon(option.brand ?? option.id, undefined, 'md');
+            if (icon) {
+                logo.append(icon);
+            }
         }
         const name = document.createElement('span');
         name.className = 'theia-mobile-agent-login-dialog-provider-name';
