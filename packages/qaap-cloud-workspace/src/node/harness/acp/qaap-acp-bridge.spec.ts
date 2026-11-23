@@ -29,7 +29,7 @@ interface BridgeModule {
     gateToolName(flavor: any, kind: string, nativeName: string): string;
     refusePermissionLocally(mode: string, kind: string, input: Record<string, string>): string | undefined;
     parseMcpServers(text: string): unknown[];
-    buildAgentArgv(flavor: any, argv: string[], env: Record<string, string | undefined>, mkdir?: (dir: string) => void): string[];
+    buildAgentArgv(flavor: any, argv: string[], env: Record<string, string | undefined>): string[];
     startMcpHttpProxy(servers: unknown[], spawnServer: (entry: any) => ChildProcess): Promise<{ entries: any[]; close(): void }>;
     AcpStreamTranslator: new (flavor: any) => any;
     LimitedLineReader: new (onMessage: (message: unknown) => void, onViolation: (reason: string) => void, now?: () => number) => { push(chunk: string): void };
@@ -209,14 +209,60 @@ describe('qaap-acp-bridge.mjs', function (): void {
         expect(bridge.parseMcpServers(JSON.stringify([{ ...entry, headers: [{ name: 'Authorization', value: 'x' }] }]))).to.deep.equal([entry]);
     });
 
-    it('runs Antigravity with Qaap\'s own profile, so the user\'s global agy plugins and hooks do not apply', () => {
-        const made: string[] = [];
-        expect(bridge.FLAVORS.antigravity).to.deep.include({ agentId: 'antigravity', permissionSource: 'bridge', output: 'stream-json', gateToolNames: 'claude', mcpStdio: true });
-        expect(bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: '/home/u/' }, dir => made.push(dir)))
-            .to.deep.equal(['agy', 'acp', '--gemini-dir', '/home/u/.cache/qaaq/antigravity-acp', '--app-data-dir', 'antigravity-acp']);
-        expect(made).to.deep.equal(['/home/u/.cache/qaaq/antigravity-acp']);
-        expect(bridge.buildAgentArgv(bridge.FLAVORS.grok, ['grok', 'agent', 'stdio'], { HOME: '/home/u' }, dir => made.push(dir))).to.deep.equal(['grok', 'agent', 'stdio']);
-        expect(made).to.have.length(1);
+    describe('Antigravity profile', () => {
+        const tmpHome = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agy-home-'));
+        const tokenPath = (home: string): string => path.join(home, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
+        const profileToken = (home: string): string => path.join(home, '.cache', 'qaaq', 'antigravity-acp', 'antigravity-cli', 'antigravity-oauth-token');
+        // Symlinks need a privilege on Windows; there the link is best effort and agy reports a missing sign-in.
+        const posixIt = process.platform === 'win32' ? it.skip : it;
+
+        it('runs agy with Qaap\'s own profile and agy\'s standard data dir', () => {
+            const home = tmpHome();
+            expect(bridge.FLAVORS.antigravity).to.deep.include({ agentId: 'antigravity', permissionSource: 'bridge', output: 'stream-json', gateToolNames: 'claude', mcpStdio: true });
+            expect(bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: `${home}/` }))
+                // The bridge joins with `/` (valid on Windows too), whatever the platform separator.
+                .to.deep.equal(['agy', 'acp', '--gemini-dir', `${home}/.cache/qaaq/antigravity-acp`, '--app-data-dir', 'antigravity-cli']);
+            expect(bridge.buildAgentArgv(bridge.FLAVORS.grok, ['grok', 'agent', 'stdio'], { HOME: home })).to.deep.equal(['grok', 'agent', 'stdio']);
+        });
+
+        posixIt('shares the user\'s sign-in: the profile token links to the default profile\'s (Linux keeps it in a file)', () => {
+            const home = tmpHome();
+            fs.mkdirSync(path.dirname(tokenPath(home)), { recursive: true });
+            fs.writeFileSync(tokenPath(home), 'token-1');
+            bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: home });
+            expect(fs.lstatSync(profileToken(home)).isSymbolicLink()).to.equal(true);
+            expect(fs.readFileSync(profileToken(home), 'utf8')).to.equal('token-1');
+            // A second turn keeps a single, correct link.
+            bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: home });
+            expect(fs.readlinkSync(profileToken(home))).to.equal(tokenPath(home));
+        });
+
+        posixIt('hands a token agy refreshed in the profile back to the default profile before linking again', () => {
+            const home = tmpHome();
+            fs.mkdirSync(path.dirname(tokenPath(home)), { recursive: true });
+            fs.writeFileSync(tokenPath(home), 'old');
+            fs.utimesSync(tokenPath(home), new Date(1000), new Date(1000));
+            fs.mkdirSync(path.dirname(profileToken(home)), { recursive: true });
+            // agy replaced the link with a fresh file (atomic rename on refresh).
+            fs.writeFileSync(profileToken(home), 'refreshed');
+            bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: home });
+            expect(fs.readFileSync(tokenPath(home), 'utf8')).to.equal('refreshed');
+            expect(fs.lstatSync(profileToken(home)).isSymbolicLink()).to.equal(true);
+        });
+
+        posixIt('keeps a newer default token over an older profile copy, and links nothing without a sign-in (macOS keychain)', () => {
+            const home = tmpHome();
+            fs.mkdirSync(path.dirname(profileToken(home)), { recursive: true });
+            fs.writeFileSync(profileToken(home), 'stale');
+            fs.utimesSync(profileToken(home), new Date(1000), new Date(1000));
+            fs.mkdirSync(path.dirname(tokenPath(home)), { recursive: true });
+            fs.writeFileSync(tokenPath(home), 'newer');
+            bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: home });
+            expect(fs.readFileSync(tokenPath(home), 'utf8')).to.equal('newer');
+            const bare = tmpHome();
+            bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: bare });
+            expect(fs.existsSync(profileToken(bare))).to.equal(false);
+        });
     });
 
     it('declares Grok as a bridge-gated flavor that takes stdio MCP servers and prints plain text', () => {
