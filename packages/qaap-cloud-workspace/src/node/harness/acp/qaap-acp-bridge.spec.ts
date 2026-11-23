@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -29,6 +29,7 @@ interface BridgeModule {
     gateToolName(flavor: any, kind: string, nativeName: string): string;
     refusePermissionLocally(mode: string, kind: string, input: Record<string, string>): string | undefined;
     parseMcpServers(text: string): unknown[];
+    startMcpHttpProxy(servers: unknown[], spawnServer: (entry: any) => ChildProcess): Promise<{ entries: any[]; close(): void }>;
     AcpStreamTranslator: new (flavor: any) => any;
     LimitedLineReader: new (onMessage: (message: unknown) => void, onViolation: (reason: string) => void, now?: () => number) => { push(chunk: string): void };
 }
@@ -294,6 +295,52 @@ describe('qaap-acp-bridge.mjs', function (): void {
         });
     });
 
+    describe('loopback HTTP MCP proxy', () => {
+        // A tiny stdio MCP server: answers initialize and tools/list, echoes the method otherwise.
+        const ECHO_SERVER = `process.stdin.setEncoding('utf8'); let b='';
+process.stdin.on('data', c => { b += c; let n; while ((n = b.indexOf('\\n')) >= 0) { const l = b.slice(0, n); b = b.slice(n + 1);
+const m = JSON.parse(l); if (m.id === undefined) continue;
+const result = m.method === 'tools/list' ? { tools: [{ name: 'qaaq_delegate' }] } : { method: m.method, token: process.env.QAAP_DELEGATION_TOKEN_FILE };
+process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n'); } });`;
+        const spawnEcho = (entry: any): ChildProcess => spawn(process.execPath, ['-e', ECHO_SERVER], {
+            env: { ...process.env, ...Object.fromEntries(entry.env.map((pair: any) => [pair.name, pair.value])) }, stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        const entry = { name: 'qaaq_ab12', command: 'node', args: [], env: [{ name: 'QAAP_DELEGATION_TOKEN_FILE', value: '/s/token' }] };
+
+        it('serves the stdio server over HTTP only to the bearer of its random secret', async () => {
+            const proxy = await bridge.startMcpHttpProxy([entry], spawnEcho);
+            try {
+                const { url, headers } = proxy.entries[0];
+                const auth = headers[0].value as string;
+                expect(auth).to.match(/^Bearer [A-Za-z0-9_-]{43}$/);
+                const post = (body: unknown, authorization?: string): Promise<Response> => fetch(url, {
+                    method: 'POST', headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) }, body: JSON.stringify(body),
+                });
+                const listed = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, auth);
+                expect(listed.status).to.equal(200);
+                expect((await listed.json()).result.tools[0].name).to.equal('qaaq_delegate');
+                expect((await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, auth)).status).to.equal(202);
+                expect((await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).status).to.equal(401);
+                expect((await post({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, 'Bearer wrong')).status).to.equal(401);
+                expect((await fetch(url, { headers: { authorization: auth } })).status).to.equal(405);
+                expect((await fetch(url.replace(/\/0$/, '/9'), { method: 'POST', headers: { authorization: auth }, body: '{}' })).status).to.equal(404);
+                expect((await post({ not: 'json-rpc' }, auth)).status).to.equal(400);
+            } finally {
+                proxy.close();
+            }
+        });
+
+        it('listens on loopback only and never puts the stdio server\'s environment in the entries', async () => {
+            const proxy = await bridge.startMcpHttpProxy([entry], spawnEcho);
+            try {
+                expect(new URL(proxy.entries[0].url).hostname).to.equal('127.0.0.1');
+                expect(JSON.stringify(proxy.entries)).to.not.contain('/s/token');
+            } finally {
+                proxy.close();
+            }
+        });
+    });
+
     describe('a turn against a scripted agent', () => {
         let server: http.Server;
         let gateUrl: string;
@@ -480,7 +527,13 @@ describe('qaap-acp-bridge.mjs', function (): void {
                 return fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).find(message => message.method === 'session/new');
             };
             expect((await newSession('grok')).params.mcpServers).to.deep.equal([entry]);
-            expect((await newSession('copilot')).params.mcpServers).to.deep.equal([]);
+            // Copilot ignores stdio MCP servers: it gets the same server behind the bridge's loopback HTTP proxy.
+        const copilot = (await newSession('copilot')).params.mcpServers;
+        expect(copilot).to.have.length(1);
+        expect(copilot[0]).to.deep.include({ type: 'http', name: 'qaaq_ab12' });
+        expect(copilot[0].url).to.match(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/0$/);
+        expect(copilot[0].headers[0].name).to.equal('Authorization');
+        expect(JSON.stringify(copilot)).to.not.contain('/s/token');
             fs.writeFileSync(servers, '{"not":"a list"}');
             const broken = await runBridge(['--flavor', 'grok', '--mcp-servers', servers, '--', process.execPath, FAKE_AGENT, 'echo'], env());
             expect(broken.code).to.equal(bridge.EXIT.USAGE);

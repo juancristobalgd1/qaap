@@ -190,8 +190,9 @@ export function resolveQaapRuntimeHarnessCapabilities(agentId: string | undefine
     }
     return {
         ...capabilities,
-        // Grok takes stdio MCP servers in session/new; Copilot ignores them (it would need an HTTP MCP endpoint).
-        delegateMcp: flavor === 'grok' ? 'acp-stdio' : 'none',
+        // The bridge passes the delegation server as stdio (Grok) or, for Copilot (which ignores stdio MCP), behind
+        // its loopback HTTP proxy; the runner side is the same.
+        delegateMcp: 'acp-stdio',
         transport: 'acp',
         gate: 'acp',
         canAsk: true,

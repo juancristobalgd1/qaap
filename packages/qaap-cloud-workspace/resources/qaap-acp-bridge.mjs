@@ -17,7 +17,8 @@
 //   * Lines are capped (4 MiB) and rate-limited (2000 messages/s); a breach kills the agent and exits PROTOCOL.
 //   * On SIGTERM: `session/cancel`, pending permissions answered `cancelled`, exit within 4 s.
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -74,9 +75,10 @@ export const FLAVORS = Object.freeze({
         gateToolNames: 'claude',
         modelConfigId: 'model',
         signIn: 'Run `copilot` in a terminal and sign in with /login.',
-        // Copilot ignores stdio MCP servers in session/new (seen with 1.0.114; T3 Code notes the same): delegation
-        // would need an HTTP MCP endpoint.
+        // Copilot ignores stdio MCP servers in session/new (seen with 1.0.114; T3 Code notes the same) but takes HTTP
+        // ones: the bridge runs the stdio servers itself and serves them to Copilot over loopback HTTP.
         mcpStdio: false,
+        mcpHttpProxy: true,
     }),
     grok: Object.freeze({
         agentId: 'grok',
@@ -498,6 +500,140 @@ export function isAuthError(error) {
     return error.code === -32000 || /auth|sign.?in|log.?in|credential/i.test(String(error.message ?? ''));
 }
 
+/** Largest MCP request body the loopback proxy accepts. */
+export const MCP_PROXY_MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Serves stdio MCP servers over MCP Streamable HTTP (JSON responses) on 127.0.0.1, for an agent that only takes HTTP
+ * MCP servers (Copilot). Each server gets its own path and the whole proxy one random 32-byte bearer secret, which
+ * only the agent learns (in session/new). The real credentials stay where the stdio server reads them (a 0600 file).
+ * `spawnServer(entry)` returns a child with stdio pipes. Returns `{ entries, close }`.
+ */
+export async function startMcpHttpProxy(servers, spawnServer) {
+    const secret = randomBytes(32).toString('base64url');
+    const expected = Buffer.from(`Bearer ${secret}`);
+    const routes = new Map();
+    const children = [];
+    for (const [index, entry] of servers.entries()) {
+        const child = spawnServer(entry);
+        children.push(child);
+        const waiting = new Map();
+        const lines = new LineSplitter(line => {
+            let message;
+            try {
+                message = JSON.parse(line);
+            } catch {
+                return;
+            }
+            if (message && message.id !== undefined && waiting.has(message.id)) {
+                waiting.get(message.id)(message);
+                waiting.delete(message.id);
+            }
+        });
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', chunk => lines.push(chunk));
+        child.on('close', () => {
+            for (const resolve of waiting.values()) {
+                resolve(undefined);
+            }
+            waiting.clear();
+        });
+        routes.set(`/mcp/${index}`, { child, waiting });
+    }
+    const server = createServer((req, res) => {
+        const auth = Buffer.from(String(req.headers.authorization ?? ''));
+        if (auth.length !== expected.length || !timingSafeEqual(auth, expected)) {
+            res.writeHead(401).end();
+            return;
+        }
+        const route = routes.get(String(req.url ?? '').split('?')[0]);
+        if (!route) {
+            res.writeHead(404).end();
+            return;
+        }
+        if (req.method !== 'POST') {
+            // No server-initiated stream: the shim never sends requests of its own.
+            res.writeHead(405, { allow: 'POST' }).end();
+            return;
+        }
+        let size = 0;
+        const chunks = [];
+        req.on('data', chunk => {
+            size += chunk.length;
+            if (size > MCP_PROXY_MAX_BODY_BYTES) {
+                res.writeHead(413).end();
+                req.destroy();
+                return;
+            }
+            chunks.push(chunk);
+        });
+        req.on('end', () => {
+            if (res.writableEnded) {
+                return;
+            }
+            let message;
+            try {
+                message = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            } catch {
+                res.writeHead(400).end();
+                return;
+            }
+            if (!isPlainObject(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
+                res.writeHead(400).end();
+                return;
+            }
+            if (message.id === undefined) {
+                route.child.stdin.write(`${JSON.stringify(message)}\n`);
+                res.writeHead(202).end();
+                return;
+            }
+            if (route.waiting.has(message.id)) {
+                res.writeHead(409).end();
+                return;
+            }
+            route.waiting.set(message.id, reply => {
+                if (res.writableEnded) {
+                    return;
+                }
+                if (!reply) {
+                    res.writeHead(502).end();
+                    return;
+                }
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(reply));
+            });
+            // `res` closes when the client goes away (Node's `req` closes as soon as the body is read).
+            res.on('close', () => {
+                if (!res.writableEnded) {
+                    route.waiting.delete(message.id);
+                }
+            });
+            route.child.stdin.write(`${JSON.stringify(message)}\n`);
+        });
+    });
+    // Long delegation waits keep a request open for minutes.
+    server.requestTimeout = 0;
+    server.headersTimeout = 30000;
+    await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = server.address().port;
+    return {
+        entries: servers.map((entry, index) => ({
+            type: 'http', name: entry.name, url: `http://127.0.0.1:${port}/mcp/${index}`,
+            headers: [{ name: 'Authorization', value: `Bearer ${secret}` }],
+        })),
+        close: () => {
+            server.close();
+            server.closeAllConnections?.();
+            for (const child of children) {
+                child.kill('SIGTERM');
+            }
+        },
+    };
+}
+
 /** Splits a text stream into lines; a line longer than 64 KiB is cut so a hostile agent cannot grow the buffer. */
 export class LineSplitter {
     constructor(onLine) {
@@ -667,6 +803,24 @@ export async function runBridgeTurn(options, prompt, io) {
         settle(code);
     };
 
+    // MCP servers for session/new: stdio entries as given, or (Copilot) the same servers behind a loopback HTTP proxy.
+    let mcpProxy;
+    const sessionMcpServers = async () => {
+        const servers = io.mcpServers ?? [];
+        if (servers.length === 0) {
+            return [];
+        }
+        if (flavor.mcpStdio) {
+            return servers;
+        }
+        if (flavor.mcpHttpProxy && io.startMcpHttpProxy) {
+            mcpProxy = await io.startMcpHttpProxy(servers);
+            return mcpProxy.entries;
+        }
+        note(`${flavor.agentId} does not take the delegation tools in this mode.`);
+        return [];
+    };
+
     const answerPermission = async message => {
         const params = isPlainObject(message.params) ? message.params : {};
         const respond = outcome => send({ id: message.id, result: { outcome } });
@@ -806,7 +960,7 @@ export async function runBridgeTurn(options, prompt, io) {
         }
         let created;
         try {
-            created = await request('session/new', { cwd: io.cwd, mcpServers: flavor.mcpStdio ? (io.mcpServers ?? []) : [] });
+            created = await request('session/new', { cwd: io.cwd, mcpServers: await sessionMcpServers() });
         } catch (error) {
             if (isAuthError(error.rpc)) {
                 return fail(EXIT.AUTH_REQUIRED, `${flavor.agentId} needs you to sign in. ${flavor.signIn}`);
@@ -849,6 +1003,7 @@ export async function runBridgeTurn(options, prompt, io) {
     // One process per turn: the agent never outlives it (a no-op when it already exited).
     child.stdin.end();
     child.kill('SIGTERM');
+    mcpProxy?.close();
     return code;
 }
 
@@ -925,6 +1080,10 @@ async function main() {
         env: process.env,
         cwd: process.cwd(),
         mcpServers,
+        startMcpHttpProxy: servers => startMcpHttpProxy(servers, entry => spawn(entry.command, entry.args, {
+            env: { ...buildAgentEnv(process.env, FLAVORS[options.flavor]), ...Object.fromEntries(entry.env.map(pair => [pair.name, pair.value])) },
+            stdio: ['pipe', 'pipe', 'ignore'],
+        })),
     });
     process.exitCode = code;
     // Do not linger on a stuck agent pipe.
