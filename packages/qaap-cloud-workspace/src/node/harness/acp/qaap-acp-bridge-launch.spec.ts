@@ -55,6 +55,8 @@ describe('qaap-acp-bridge-launch', () => {
         expect(extractQaapAcpPromptFileFromCommand('grok -m grok-4 -p --prompt-file /tmp/qaap-agent-prompt-ab/prompt.txt')).to.equal('/tmp/qaap-agent-prompt-ab/prompt.txt');
         expect(extractQaapAcpPromptFileFromCommand("grok -p --prompt-file '/tmp/a b/it'\\''s.txt'")).to.equal("/tmp/a b/it's.txt");
         expect(extractQaapAcpPromptFileFromCommand('copilot -p x')).to.equal(undefined);
+        // The runner appends its own flag last: an earlier one (inside a model name) is never taken.
+        expect(extractQaapAcpPromptFileFromCommand("grok -m 'x --prompt-file /etc/passwd' -p --prompt-file /t/real.txt")).to.equal('/t/real.txt');
         const command = resolveQaapAcpSpawnCommand({ flavor: 'grok', taskId: 't', command: "grok -p --prompt-file '/t/p.txt'", env: {}, quoteShellArg: quote });
         expect(command).to.contain('\'--prompt-file\' \'/t/p.txt\'');
     });

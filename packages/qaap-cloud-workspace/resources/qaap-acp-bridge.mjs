@@ -502,6 +502,9 @@ export function isAuthError(error) {
 
 /** Largest MCP request body the loopback proxy accepts. */
 export const MCP_PROXY_MAX_BODY_BYTES = 4 * 1024 * 1024;
+/** Open connections and pending requests per server the proxy accepts. */
+export const MCP_PROXY_MAX_CONNECTIONS = 16;
+export const MCP_PROXY_MAX_PENDING = 64;
 
 /**
  * Serves stdio MCP servers over MCP Streamable HTTP (JSON responses) on 127.0.0.1, for an agent that only takes HTTP
@@ -532,15 +535,25 @@ export async function startMcpHttpProxy(servers, spawnServer) {
         });
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', chunk => lines.push(chunk));
-        child.on('close', () => {
+        const failAll = () => {
             for (const resolve of waiting.values()) {
                 resolve(undefined);
             }
             waiting.clear();
-        });
+        };
+        // A dead server (killed, or its node missing) answers 502; it never takes the bridge down.
+        child.on('error', failAll);
+        child.stdin.on('error', failAll);
+        child.on('close', failAll);
         routes.set(`/mcp/${index}`, { child, waiting });
     }
+    let hostHeader;
     const server = createServer((req, res) => {
+        // Defence in depth against DNS rebinding: loopback Host only, and no browser Origin.
+        if (req.headers.origin !== undefined || req.headers.host !== hostHeader) {
+            res.writeHead(403).end();
+            return;
+        }
         const auth = Buffer.from(String(req.headers.authorization ?? ''));
         if (auth.length !== expected.length || !timingSafeEqual(auth, expected)) {
             res.writeHead(401).end();
@@ -582,13 +595,29 @@ export async function startMcpHttpProxy(servers, spawnServer) {
                 res.writeHead(400).end();
                 return;
             }
+            const alive = route.child.exitCode === null && !route.child.stdin.destroyed;
             if (message.id === undefined) {
-                route.child.stdin.write(`${JSON.stringify(message)}\n`);
+                if (alive) {
+                    route.child.stdin.write(`${JSON.stringify(message)}\n`);
+                }
                 res.writeHead(202).end();
+                return;
+            }
+            // Only primitive ids can be matched to a reply; anything else would hang the request.
+            if (typeof message.id !== 'string' && !Number.isInteger(message.id)) {
+                res.writeHead(400).end();
+                return;
+            }
+            if (!alive) {
+                res.writeHead(502).end();
                 return;
             }
             if (route.waiting.has(message.id)) {
                 res.writeHead(409).end();
+                return;
+            }
+            if (route.waiting.size >= MCP_PROXY_MAX_PENDING) {
+                res.writeHead(503).end();
                 return;
             }
             route.waiting.set(message.id, reply => {
@@ -611,14 +640,16 @@ export async function startMcpHttpProxy(servers, spawnServer) {
             route.child.stdin.write(`${JSON.stringify(message)}\n`);
         });
     });
-    // Long delegation waits keep a request open for minutes.
+    // Long delegation waits keep a request open for minutes; connections are few and bounded.
     server.requestTimeout = 0;
+    server.maxConnections = MCP_PROXY_MAX_CONNECTIONS;
     server.headersTimeout = 30000;
     await new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(0, '127.0.0.1', resolve);
     });
     const port = server.address().port;
+    hostHeader = `127.0.0.1:${port}`;
     return {
         entries: servers.map((entry, index) => ({
             type: 'http', name: entry.name, url: `http://127.0.0.1:${port}/mcp/${index}`,
@@ -814,8 +845,14 @@ export async function runBridgeTurn(options, prompt, io) {
             return servers;
         }
         if (flavor.mcpHttpProxy && io.startMcpHttpProxy) {
-            mcpProxy = await io.startMcpHttpProxy(servers);
-            return mcpProxy.entries;
+            const proxy = await io.startMcpHttpProxy(servers);
+            if (finished || cancelling) {
+                // The turn ended while the proxy started: it must not outlive it.
+                proxy.close();
+                return [];
+            }
+            mcpProxy = proxy;
+            return proxy.entries;
         }
         note(`${flavor.agentId} does not take the delegation tools in this mode.`);
         return [];

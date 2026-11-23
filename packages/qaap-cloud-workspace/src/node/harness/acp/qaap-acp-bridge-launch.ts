@@ -114,9 +114,13 @@ export function extractQaapAcpModelFromCommand(command: string): string | undefi
     return model?.trim() ? model.trim() : undefined;
 }
 
-/** The `--prompt-file` path of a native command line (the runner appends it for Grok), unquoted. */
+/**
+ * The `--prompt-file` path of a native command line, unquoted. The runner appends it after every template value, so
+ * the LAST occurrence is the runner's own (an earlier one could only come from a value such as the model name).
+ */
 export function extractQaapAcpPromptFileFromCommand(command: string): string | undefined {
-    const match = /(?:^|\s)--prompt-file\s+(?:'((?:[^']|'\\'')*)'|"([^"]*)"|(\S+))/.exec(command);
+    const matches = [...command.matchAll(/(?:^|\s)--prompt-file\s+(?:'((?:[^']|'\\'')*)'|"([^"]*)"|(\S+))/g)];
+    const match = matches[matches.length - 1];
     const file = match ? (match[1]?.replace(/'\\''/g, "'") ?? match[2] ?? match[3]) : undefined;
     return file?.trim() ? file : undefined;
 }

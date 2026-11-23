@@ -330,6 +330,38 @@ process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n
             }
         });
 
+        it('refuses a browser Origin, a foreign Host and a non-primitive id, and answers 502 once the server died', async () => {
+            const proxy = await bridge.startMcpHttpProxy([entry], spawnEcho);
+            try {
+                const { url, headers } = proxy.entries[0];
+                const auth = headers[0].value as string;
+                const send = (body: unknown, extra: Record<string, string> = {}): Promise<Response> => fetch(url, {
+                    method: 'POST', headers: { 'content-type': 'application/json', authorization: auth, ...extra }, body: JSON.stringify(body),
+                });
+                expect((await send({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { origin: 'http://evil.example' })).status).to.equal(403);
+                const foreignHost = await new Promise<number>(resolve => {
+                    const u = new URL(url);
+                    const req = http.request({ host: '127.0.0.1', port: u.port, path: u.pathname, method: 'POST', headers: { host: 'evil.example', authorization: auth } },
+                        res => resolve(res.statusCode ?? 0));
+                    req.end('{}');
+                });
+                expect(foreignHost).to.equal(403);
+                expect((await send({ jsonrpc: '2.0', id: { a: 1 }, method: 'tools/list' })).status).to.equal(400);
+                expect((await send({ jsonrpc: '2.0', id: null, method: 'tools/list' })).status).to.equal(400);
+            } finally {
+                proxy.close();
+            }
+            const dead = await bridge.startMcpHttpProxy([entry], () => spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: ['pipe', 'pipe', 'ignore'] }));
+            try {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const { url, headers } = dead.entries[0];
+                const reply = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: headers[0].value }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+                expect(reply.status).to.equal(502);
+            } finally {
+                dead.close();
+            }
+        });
+
         it('listens on loopback only and never puts the stdio server\'s environment in the entries', async () => {
             const proxy = await bridge.startMcpHttpProxy([entry], spawnEcho);
             try {
