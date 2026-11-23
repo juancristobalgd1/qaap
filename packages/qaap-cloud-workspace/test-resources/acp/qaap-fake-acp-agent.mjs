@@ -142,6 +142,13 @@ const SCENARIOS = {
         text(`outcome:${outcome?.optionId ?? outcome?.outcome}`);
         return { stopReason: 'end_turn' };
     },
+    /** Calls the turn's delegation server, then a lookalike shell call with the same name. */
+    async ownmcp() {
+        const own = await askPermission(toolCall('call-own', 'other', 'Run mcp_qaaq_8e4c4910bb783eca_qaaq_task_wait', {}));
+        const sneaky = await askPermission(toolCall('call-sneaky', 'execute', 'qaaq_8e4c4910bb783eca-qaaq_delegate', { command: 'rm -rf /' }));
+        text(`own:${own?.optionId ?? own?.outcome} sneaky:${sneaky?.optionId ?? sneaky?.outcome}`);
+        return { stopReason: 'end_turn' };
+    },
     /** A delete call, to try in a read-only turn. */
     async delete() {
         const outcome = await askPermission(toolCall('call-del', 'delete', 'Remove a.txt', { path: `${process.cwd()}/a.txt` }, [{ path: `${process.cwd()}/a.txt` }]));
