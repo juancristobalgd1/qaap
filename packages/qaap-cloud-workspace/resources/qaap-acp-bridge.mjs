@@ -19,7 +19,7 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { copyFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ACP_PROTOCOL_VERSION = 1;
@@ -182,17 +182,69 @@ export function parseMcpServers(text) {
     });
 }
 
+/** agy's data dir name and the sign-in file in it (Linux keeps the Google sign-in there; macOS uses the keychain). */
+const AGY_APP_DATA_DIR = 'antigravity-cli';
+const AGY_OAUTH_TOKEN_FILE = 'antigravity-oauth-token';
+
+/** File operations {@link buildAgentArgv} needs; injectable for the specs. */
+export const NODE_PROFILE_FS = Object.freeze({
+    mkdir: dir => mkdirSync(dir, { recursive: true, mode: 0o700 }),
+    lstat: file => {
+        try {
+            return lstatSync(file);
+        } catch {
+            return undefined;
+        }
+    },
+    copyFile: (from, to) => copyFileSync(from, to),
+    unlink: file => unlinkSync(file),
+    symlink: (target, file) => symlinkSync(target, file),
+});
+
+/**
+ * Points Qaap's own agy profile at the user's sign-in: `<profile>/antigravity-cli/antigravity-oauth-token` becomes a link to
+ * the default profile's token, so the composer's sign-in probe (default profile) and the turn agree. If agy refreshed the
+ * token by replacing the link with a file, that newer token goes back to the default profile first. No default token
+ * (macOS keychain, or not signed in): nothing is linked and agy reports the sign-in itself.
+ */
+export function linkAgyProfileSignIn(home, profile, fsOps = NODE_PROFILE_FS) {
+    const source = `${home}/.gemini/${AGY_APP_DATA_DIR}/${AGY_OAUTH_TOKEN_FILE}`;
+    const target = `${profile}/${AGY_APP_DATA_DIR}/${AGY_OAUTH_TOKEN_FILE}`;
+    fsOps.mkdir(`${profile}/${AGY_APP_DATA_DIR}`);
+    const current = fsOps.lstat(target);
+    const sourceStat = fsOps.lstat(source);
+    if (current && !current.isSymbolicLink()) {
+        if (current.isFile() && (!sourceStat || current.mtimeMs > sourceStat.mtimeMs)) {
+            fsOps.mkdir(`${home}/.gemini/${AGY_APP_DATA_DIR}`);
+            fsOps.copyFile(target, source);
+        }
+        fsOps.unlink(target);
+    } else if (current) {
+        fsOps.unlink(target);
+    }
+    if (fsOps.lstat(source)) {
+        fsOps.symlink(source, target);
+    }
+}
+
 /**
  * The agent's argv with the flavor's own additions: Antigravity gets Qaap's own profile (an absolute gemini dir under
- * HOME, created 0700) so global plugins and hooks of the user's agy profile do not apply.
+ * HOME, created 0700) so global plugins and hooks of the user's agy profile do not apply, while the sign-in is shared
+ * (see {@link linkAgyProfileSignIn}).
  */
-export function buildAgentArgv(flavor, argv, env, mkdir = dir => mkdirSync(dir, { recursive: true, mode: 0o700 })) {
+export function buildAgentArgv(flavor, argv, env, fsOps = NODE_PROFILE_FS) {
     if (!flavor.ownProfile || !env.HOME) {
         return [...argv];
     }
-    const profile = `${env.HOME.replace(/\/+$/, '')}/.cache/qaaq/${flavor.ownProfile}`;
-    mkdir(profile);
-    return [...argv, '--gemini-dir', profile, '--app-data-dir', flavor.ownProfile];
+    const home = env.HOME.replace(/\/+$/, '');
+    const profile = `${home}/.cache/qaaq/${flavor.ownProfile}`;
+    fsOps.mkdir(profile);
+    try {
+        linkAgyProfileSignIn(home, profile, fsOps);
+    } catch {
+        // Best effort: without the link agy reports the missing sign-in, which the runner shows.
+    }
+    return [...argv, '--gemini-dir', profile, '--app-data-dir', AGY_APP_DATA_DIR];
 }
 
 /** The agent's env: the bridge's own, without gate credentials unless the flavor's plugin needs them. */

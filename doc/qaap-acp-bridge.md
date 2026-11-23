@@ -114,6 +114,16 @@ issues the gate token and the endpoint lets it ask. OpenCode's entry does not ch
   command (`cmp`) on its own, without asking, and the bridge reported it as `unpermitted-mutation`. This is the
   `client-boundary` case: the gate sees only what Copilot chooses to ask.
 
+## Antigravity's sign-in
+
+Qaap runs agy with its own profile (`--gemini-dir ~/.cache/qaaq/antigravity-acp --app-data-dir antigravity-cli`), so the user's
+global agy plugins and hooks do not apply. agy keeps the Google sign-in in the macOS keychain, but on Linux it keeps it in
+`~/.gemini/antigravity-cli/antigravity-oauth-token`. Before each turn the bridge links that file into the profile
+(`linkAgyProfileSignIn`). If agy refreshed the token by replacing the link with a file, the newer token is copied back to
+the default profile first. This keeps the composer's sign-in probe (default profile) and the turn in agreement. Without
+the link, a signed-in user's turns failed with "Authentication required" while the composer showed no sign-in prompt
+(found on staging, 23 Nov 2026).
+
 ## Turning a flag on in production
 
 Set `QAAP_HARNESS_ACP_<FLAVOR>=1` in `/opt/qaap/.env` and run `scripts/qaap-vps-safe-restart.sh`. `docker-compose.yml` passes the
