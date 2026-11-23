@@ -74,9 +74,14 @@ issues the gate token and the endpoint lets it ask. OpenCode's entry does not ch
   locally.
 - **Input checks:** the gate judges the permission's own input. The bridge refuses locally a shell call without
   a command and a file change without a path.
-- **Own delegation tools:** a call to this turn's delegation server (its random `qaaq_<hex>` name followed by a `qaaq_`
-  tool) is granted without the gate, never for a mutating kind. The server is scoped by its own delegate-only token,
-  and asking the user for every `qaaq_task_wait` blocked delegation (seen with Antigravity on staging).
+- **Own delegation tools:** the bridge grants a call to this turn's delegation server without the gate. That includes
+  `qaaq_child_apply`, which applies a child's diff or merges it; the child's own edits already went through its gate,
+  and the backend validates the operation. Matching is strict, because titles and kinds are the agent's word:
+  - kind `other` only;
+  - a title that is exactly `[Run ][mcp_]<qaaq_hex><-|_|__><one of the six delegation tools>`;
+  - an input with no command, path, url or content.
+  A descriptive title with the marker embedded never matches. Asking the user for every `qaaq_task_wait` blocked
+  delegation (seen with Antigravity on staging).
 - **Granting:** only with an `allow_once` option, only after a well-formed gate `allow`. An `allow` that carries
   `updatedInput` is a deny, since ACP cannot pass a rewritten input. The bridge never chooses `allow_always`,
   which would make the agent stop asking. It chooses by kind, never by option id or label, and ambiguity or a

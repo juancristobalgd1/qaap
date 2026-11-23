@@ -562,21 +562,31 @@ export function refusePermissionLocally(mode, kind, input) {
     return undefined;
 }
 
+/** The delegation server's tools (`qaap-delegate-mcp.mjs`): a closed list, never a pattern. */
+const QAAP_DELEGATION_TOOL_NAMES = ['qaaq_delegate', 'qaaq_task_wait', 'qaaq_list_agents', 'qaaq_task_status', 'qaaq_task_cancel', 'qaaq_child_apply'];
+
 /**
  * Whether a permission request is a call to this turn's own delegation server (`qaaq_<16 hex>`, from --mcp-servers),
  * which Qaap authorizes itself, as Claude's auto-allow and T3 Code do: the server is scoped by its own delegate-only
- * token, so asking the user for every `qaaq_task_wait` adds nothing. Matched on the exact random server name followed by
- * a `qaaq_` tool (each agent spells the prefix differently: `x-qaaq_…`, `x__qaaq_…`, `x_qaaq_…`, `mcp_x_qaaq_…`), and
- * never for a mutating kind.
+ * token, so asking the user for every `qaaq_task_wait` adds nothing. Strict, because titles and kinds are the agent's
+ * word and a prompt-injected model could embed the marker in a descriptive title:
+ *   * kind `other` only (the kind every agent uses for an MCP call: agy, Grok verified);
+ *   * a name that is EXACTLY `[Run ][mcp_]<server><-|_|__><one of the delegation tools>` (each agent's spelling);
+ *   * an input that names no command, path, url or content (the delegation tools take none of those).
  */
-export function isOwnDelegationToolCall(kind, names, serverNames) {
-    if (MUTATING_KINDS.has(kind) || !Array.isArray(serverNames) || serverNames.length === 0) {
+export function isOwnDelegationToolCall(kind, names, serverNames, rawInput = {}, cwd = '/') {
+    if (kind !== 'other' || !Array.isArray(serverNames) || serverNames.length === 0) {
         return false;
     }
+    const tools = QAAP_DELEGATION_TOOL_NAMES.join('|');
     const patterns = serverNames
         .filter(name => typeof name === 'string' && /^qaaq_[0-9a-f]{8,}$/.test(name))
-        .map(name => new RegExp(`(?:^|[^A-Za-z0-9])${name}[-_]{1,2}qaaq_[a-z_]+(?:$|[^A-Za-z0-9_])`));
-    return names.some(value => typeof value === 'string' && patterns.some(pattern => pattern.test(value)));
+        .map(name => new RegExp(`^(?:Run )?(?:mcp_)?${name}(?:-|_|__)(?:${tools})$`));
+    if (!names.some(value => typeof value === 'string' && patterns.some(pattern => pattern.test(value.trim())))) {
+        return false;
+    }
+    const input = canonicalToolInput(kind, rawInput, [], cwd);
+    return !['command', 'file_path', 'url', 'destination', 'content', 'new_string', 'pattern'].some(key => input[key] !== undefined);
 }
 
 /** Exit code and one-line reason for an ACP stop reason. */
@@ -980,7 +990,7 @@ export async function runBridgeTurn(options, prompt, io) {
             return;
         }
         const serverNames = (io.mcpServers ?? []).map(server => server.name);
-        if (isOwnDelegationToolCall(kind, [known?.name, toolCall.title], serverNames)) {
+        if (isOwnDelegationToolCall(kind, [known?.name, toolCall.title], serverNames, rawInput, io.cwd)) {
             const choice = choosePermissionOption(params.options, true);
             if (choice.outcome === 'selected' && callId) {
                 translator.markPermitted(callId);

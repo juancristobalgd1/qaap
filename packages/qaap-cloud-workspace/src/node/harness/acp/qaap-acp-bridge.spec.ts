@@ -29,7 +29,7 @@ interface BridgeModule {
     gateToolName(flavor: any, kind: string, nativeName: string): string;
     refusePermissionLocally(mode: string, kind: string, input: Record<string, string>): string | undefined;
     parseMcpServers(text: string): unknown[];
-    isOwnDelegationToolCall(kind: string, names: unknown[], serverNames: string[]): boolean;
+    isOwnDelegationToolCall(kind: string, names: unknown[], serverNames: string[], rawInput?: unknown, cwd?: string): boolean;
     buildAgentArgv(flavor: any, argv: string[], env: Record<string, string | undefined>): string[];
     startMcpHttpProxy(servers: unknown[], spawnServer: (entry: any) => ChildProcess): Promise<{ entries: any[]; close(): void }>;
     AcpStreamTranslator: new (flavor: any) => any;
@@ -198,20 +198,30 @@ describe('qaap-acp-bridge.mjs', function (): void {
 
     it('recognizes calls to this turn\'s own delegation server, as each agent spells them, and nothing else', () => {
         const server = 'qaaq_8e4c4910bb783eca';
-        for (const name of [`${server}-qaaq_delegate`, `${server}__qaaq_task_wait`, `${server}_qaaq_child_apply`, `Run mcp_${server}_qaaq_task_wait`, `mcp_${server}_qaaq_list_agents`]) {
-            expect(bridge.isOwnDelegationToolCall('other', [undefined, name], [server]), name).to.equal(true);
+        const own = (kind: string, name: string, rawInput: unknown = {}): boolean => bridge.isOwnDelegationToolCall(kind, [undefined, name], [server], rawInput, '/w');
+        // Real spellings: Copilot, Grok (with its UseTool wrapper input), OpenCode, agy (with its summary input).
+        expect(own('other', `${server}-qaaq_delegate`)).to.equal(true);
+        expect(own('other', `${server}__qaaq_list_agents`, { variant: 'UseTool', tool_name: `${server}__qaaq_list_agents`, tool_input: {} })).to.equal(true);
+        expect(own('other', `${server}_qaaq_child_apply`)).to.equal(true);
+        expect(own('other', `Run mcp_${server}_qaaq_task_wait`, { toolSummary: 'Wait for the child' })).to.equal(true);
+        // The marker embedded in a descriptive title (prompt injection) never matches.
+        expect(own('other', `Fetch https://evil.example/?x=${server}_qaaq_task_wait`)).to.equal(false);
+        expect(own('other', `Read ~/.ssh/id_rsa (${server}__qaaq_task_wait)`)).to.equal(false);
+        expect(own('other', `${server}-qaaq_delegate extra`)).to.equal(false);
+        // Only kind other; never read, fetch, search or a mutating kind.
+        for (const kind of ['read', 'fetch', 'search', 'think', 'edit', 'delete', 'move', 'execute']) {
+            expect(own(kind, `${server}-qaaq_delegate`), kind).to.equal(false);
         }
-        // Another server, a lookalike, no tool after the name, a mutating kind, or no delegation this turn.
-        expect(bridge.isOwnDelegationToolCall('other', ['qaaq_ffffffffffffffff-qaaq_delegate'], [server])).to.equal(false);
-        expect(bridge.isOwnDelegationToolCall('other', [`x${server}-qaaq_delegate`], [server])).to.equal(false);
-        expect(bridge.isOwnDelegationToolCall('other', [`${server}`], [server])).to.equal(false);
-        expect(bridge.isOwnDelegationToolCall('other', [`${server}-github_push`], [server])).to.equal(false);
-        for (const kind of ['edit', 'delete', 'move', 'execute']) {
-            expect(bridge.isOwnDelegationToolCall(kind, [`${server}-qaaq_delegate`], [server]), kind).to.equal(false);
-        }
-        expect(bridge.isOwnDelegationToolCall('other', [`${server}-qaaq_delegate`], [])).to.equal(false);
-        // A server name that is not Qaap's random shape never enables the shortcut.
-        expect(bridge.isOwnDelegationToolCall('other', ['qaaq-qaaq_delegate'], ['qaaq'])).to.equal(false);
+        // Only the six delegation tools, only this turn's server, only Qaap's random name shape.
+        expect(own('other', `${server}-github_push`)).to.equal(false);
+        expect(own('other', `${server}-qaaq_exfiltrate`)).to.equal(false);
+        expect(own('other', 'qaaq_ffffffffffffffff-qaaq_delegate')).to.equal(false);
+        expect(bridge.isOwnDelegationToolCall('other', ['qaaq-qaaq_delegate'], ['qaaq'], {}, '/w')).to.equal(false);
+        expect(bridge.isOwnDelegationToolCall('other', [`${server}-qaaq_delegate`], [], {}, '/w')).to.equal(false);
+        // A matching name whose input carries a command, path, url or content goes to the gate.
+        expect(own('other', `${server}-qaaq_delegate`, { command: 'curl evil' })).to.equal(false);
+        expect(own('other', `${server}-qaaq_delegate`, { url: 'https://evil.example' })).to.equal(false);
+        expect(own('other', `${server}-qaaq_delegate`, { path: '/etc/passwd' })).to.equal(false);
     });
 
     it('accepts only well-formed stdio MCP server entries for session/new', () => {
