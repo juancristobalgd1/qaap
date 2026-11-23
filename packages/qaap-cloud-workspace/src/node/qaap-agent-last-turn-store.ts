@@ -9,7 +9,7 @@ import * as path from 'path';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { detectAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { extractAgentTurnError } from '@theia/qaap-shared-core/lib/common/qaap-research-agent-log';
-import type { QaapAgentLastTurn, QaapAgentTaskState } from '../common/qaap-agent-task';
+import type { QaapAgentLastTurn, QaapAgentTask, QaapAgentTaskState } from '../common/qaap-agent-task';
 import { resolveCompletedTurnAuthFailureReason } from './qaap-agent-conversation-store-helpers';
 
 /** Failure causes sit at the end of a CLI's output; classify that part, not a long transcript. */
@@ -22,7 +22,10 @@ const LAST_TURN_LOG_TAIL = 12_000;
  * sign-in error and exits 0) counts as failed, using the same strict rule as the Work Hub chat.
  */
 export function classifyAgentLastTurn(
-    task: { readonly id: string; readonly state: QaapAgentTaskState; readonly exitCode?: number; readonly finishedAt?: number },
+    task: {
+        readonly id: string; readonly state: QaapAgentTaskState; readonly exitCode?: number; readonly finishedAt?: number;
+        readonly providerKeyVerdict?: QaapAgentTask['providerKeyVerdict'];
+    },
     log: string,
     agentId: string,
     now = Date.now(),
@@ -41,13 +44,29 @@ export function classifyAgentLastTurn(
             return { outcome: 'ok', at, taskId: task.id };
         }
         case 'failed': {
-            const tail = log.slice(-LAST_TURN_LOG_TAIL);
-            const kind = detectAgentFailureKind(extractAgentTurnError(log) ?? tail) ?? detectAgentFailureKind(tail);
+            const tail = lineAlignedLogTail(log, LAST_TURN_LOG_TAIL);
+            // A key or sign-in the provider refused, as the runner established it (Pi's final error).
+            const kind = (task.providerKeyVerdict === 'key_rejected' ? 'provider_key_rejected' : undefined)
+                ?? detectAgentFailureKind(extractAgentTurnError(log) ?? tail) ?? detectAgentFailureKind(tail);
             return { outcome: 'failed', kind: kind ?? 'exit_code', at, taskId: task.id };
         }
         default:
             return undefined;
     }
+}
+
+/**
+ * The last `maxChars` of `log`, starting at a line boundary. A cut through the middle of a long JSON
+ * line (Pi repeats the whole prompt in its last records) read prompt text such as "shell tools time
+ * out" as the failure.
+ */
+function lineAlignedLogTail(log: string, maxChars: number): string {
+    if (log.length <= maxChars) {
+        return log;
+    }
+    const tail = log.slice(-maxChars);
+    const newline = tail.indexOf('\n');
+    return newline >= 0 ? tail.slice(newline + 1) : tail;
 }
 
 /**

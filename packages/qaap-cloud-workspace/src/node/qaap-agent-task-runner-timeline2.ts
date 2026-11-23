@@ -89,6 +89,7 @@ import {
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
+import { isPiProviderSignInRefusal } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { applyQaapHarnessBinaryOverride, applyQaapHarnessUserEnv, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
 import { QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
@@ -1133,6 +1134,14 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             const piProviderError = piProviderErrorWatcher?.finalError();
             const turnFailed = code !== 0 || piProviderError !== undefined;
             const settledExitCode = code === 0 && turnFailed ? 1 : code ?? undefined;
+            if (isPiProviderSignInRefusal(piProviderError)) {
+                // The provider refused Pi's own sign-in (or key): every model of Pi runs on it, so no
+                // fallback model is tried, and the settle locks Pi until the owner signs in again.
+                const refused = ctx.tasks.get(task.id);
+                if (refused?.state === 'running') {
+                    ctx.tasks.set(task.id, { ...refused, providerKeyVerdict: 'key_rejected' });
+                }
+            }
             if (!turnFailed && QAAP_AGENT_VERIFY_ENABLED && !isConversationalTurnTask(ctx.tasks.get(task.id) ?? task)) {
                 void ctx.finishSuccessfulTaskAfterVerification(task, code ?? undefined);
                 return;

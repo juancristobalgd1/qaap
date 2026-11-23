@@ -17,6 +17,7 @@ import {
     isQaiqProviderKeyMissingFailure as isStoredProviderKeyMissingFailure,
     localizeProviderKeyUnreadableMessage,
     isPiSignInRejectedFailure,
+    isPiProviderSignInRefusal,
     isGeminiIneligibleTierText,
     localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
@@ -770,5 +771,15 @@ describe('Pi sign-in refused by its provider', () => {
         expect(isPiSignInRejectedFailure('qaiq', 'provider_key_rejected')).to.equal(false);
         expect(isPiSignInRejectedFailure('pi', 'quota')).to.equal(false);
         expect(resolveAgentTurnFailureMessage(PI_LOG, { state: 'failed', agentId: 'qaiq' })).not.to.match(/^Pi needs/);
+    });
+});
+
+describe('isPiProviderSignInRefusal', () => {
+    it('reads a 401/403 or a refused key from Pi\'s final provider error only', () => {
+        expect(isPiProviderSignInRefusal('401: {"message":"User not found.","code":401}')).to.equal(true);
+        expect(isPiProviderSignInRefusal('403 Forbidden')).to.equal(true);
+        expect(isPiProviderSignInRefusal('429: {"message":"Rate limit exceeded"}')).to.equal(false);
+        expect(isPiProviderSignInRefusal('500 Internal Server Error')).to.equal(false);
+        expect(isPiProviderSignInRefusal(undefined)).to.equal(false);
     });
 });
