@@ -251,7 +251,17 @@ export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string
  * EROFS diagnostic. Those two directories are therefore pointed at a fresh writable temp dir, while
  * `XDG_DATA_HOME` (where the owner's sign-in lives) is left alone so paid models stay listed.
  */
-function openCodeListingEnv(): { readonly env: NodeJS.ProcessEnv; readonly cleanup: () => void } {
+function openCodeListingEnv(agentHome?: string): { readonly env: NodeJS.ProcessEnv; readonly cleanup: () => void } {
+    if (agentHome) {
+        // A dropped process: keep the listing's cache and state in its own (writable) HOME.
+        return {
+            env: {
+                XDG_CACHE_HOME: path.posix.join(agentHome, '.cache', 'qaap-opencode-listing'),
+                XDG_STATE_HOME: path.posix.join(agentHome, '.local', 'state', 'qaap-opencode-listing'),
+            },
+            cleanup: () => undefined,
+        };
+    }
     try {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-opencode-models-'));
         return {
@@ -272,7 +282,10 @@ function openCodeListingEnv(): { readonly env: NodeJS.ProcessEnv; readonly clean
 async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelDiscoverySpawner): Promise<QaapQaiqModelOption[]> {
     switch (agentId) {
         case 'opencode': {
-            const listing = openCodeListingEnv();
+            // Run as the agent uid (tenant backend), OpenCode cannot write a temp dir the backend created (0700,
+            // root): EACCES on `cache/opencode/bin` and an empty catalog. Its own HOME is writable.
+            const agentHome = spawner?.('opencode', ['models'])?.env?.HOME?.trim();
+            const listing = openCodeListingEnv(agentHome);
             try {
                 return await discoverFromCommand('opencode', ['models'], agentId, spawner, listing.env);
             } finally {
