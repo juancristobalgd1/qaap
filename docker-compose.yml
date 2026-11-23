@@ -93,6 +93,11 @@ services:
       # evaluates the flag, so the control plane passes it (and the two optional limits) on to tenant
       # backends; changing any of them recreates the tenants.
       QAAP_AGENT_DELEGATION: ${QAAP_AGENT_DELEGATION:-0}
+      # ACP harnesses through the bridge (doc/qaap-acp-bridge.md); off by default, forwarded to tenant backends.
+      QAAP_HARNESS_ACP_OPENCODE: ${QAAP_HARNESS_ACP_OPENCODE:-0}
+      QAAP_HARNESS_ACP_COPILOT: ${QAAP_HARNESS_ACP_COPILOT:-0}
+      QAAP_HARNESS_ACP_GROK: ${QAAP_HARNESS_ACP_GROK:-0}
+      QAAP_HARNESS_ACP_ANTIGRAVITY: ${QAAP_HARNESS_ACP_ANTIGRAVITY:-0}
       QAAP_DELEGATE_MAX_CONCURRENT: ${QAAP_DELEGATE_MAX_CONCURRENT:-}
       QAAP_DELEGATION_WAIT_CAP_SEC: ${QAAP_DELEGATION_WAIT_CAP_SEC:-}
       QAAP_TASK_SANDBOX_MEMORY: ${QAAP_TASK_SANDBOX_MEMORY:-}

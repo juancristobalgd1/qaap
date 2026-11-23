@@ -226,6 +226,11 @@ export interface QaapTenantBackendEnsureOptions {
 const TENANT_IMAGE_STALE_CACHE_MS = 5_000;
 
 /** One hardened worker container per tenant when `QAAP_CLOUD_MODE=docker`. */
+
+/** Per-harness ACP flags the control plane forwards to tenant backends (`qaap-acp-bridge-launch.ts`). */
+const QAAP_TENANT_HARNESS_ACP_FLAGS: readonly string[] = [
+    'QAAP_HARNESS_ACP_OPENCODE', 'QAAP_HARNESS_ACP_COPILOT', 'QAAP_HARNESS_ACP_GROK', 'QAAP_HARNESS_ACP_ANTIGRAVITY',
+];
 @injectable()
 export class QaapDockerOrchestrator {
 
@@ -1257,6 +1262,21 @@ export class QaapDockerOrchestrator {
     }
 
     /**
+     * ACP harness flags (doc/qaap-acp-bridge.md): the tenant backend spawns the agents and reads
+     * `QAAP_HARNESS_ACP_<FLAVOR>` there, so each flag the control plane has on must reach it. Only the
+     * normalized `=1` passes, never the raw value.
+     */
+    protected tenantBackendHarnessAcpEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+        return QAAP_TENANT_HARNESS_ACP_FLAGS.filter(key => env[key]?.trim() === '1').map(key => `${key}=1`);
+    }
+
+    /** Whether a backend container's env carries exactly the ACP flags the control plane has on (else it is recreated). */
+    protected tenantBackendHarnessAcpEnvIsCurrent(containerEnv: ReadonlySet<string>, expected: string[] = this.tenantBackendHarnessAcpEnv()): boolean {
+        return expected.every(entry => containerEnv.has(entry))
+            && [...containerEnv].every(entry => !QAAP_TENANT_HARNESS_ACP_FLAGS.some(key => entry.startsWith(`${key}=`)) || expected.includes(entry));
+    }
+
+    /**
      * Tasks started from GitHub issues (doc/qaap-external-task-inputs.md): the tenant backend owns the opt-in,
      * the intake route and the notifier, so it needs the flag; the webhook secret stays on the control plane.
      */
@@ -1713,6 +1733,7 @@ export class QaapDockerOrchestrator {
                 ...this.tenantBackendPublicUrlEnv(),
                 ...this.tenantBackendTaskSandboxEnv(),
                 ...this.tenantBackendDelegationEnv(),
+                ...this.tenantBackendHarnessAcpEnv(),
                 ...this.tenantBackendExternalTaskEnv(),
                 ...this.tenantBackendLimitsEnv(),
                 ...this.tenantBackendSecretsEnv(),
@@ -2426,6 +2447,7 @@ export class QaapDockerOrchestrator {
             ...this.tenantBackendPublicUrlEnv(),
             ...this.tenantBackendTaskSandboxEnv(),
             ...this.tenantBackendDelegationEnv(),
+            ...this.tenantBackendHarnessAcpEnv(),
             ...this.tenantBackendExternalTaskEnv(),
             ...this.tenantBackendLimitsEnv(),
         ];
@@ -2447,6 +2469,7 @@ export class QaapDockerOrchestrator {
             && (this.tenantBackendTaskSandboxEnv().length > 0 || ![...env].some(entry => entry.startsWith('QAAP_TASK_SANDBOX=')))
             // Delegation: turning the flag off (or dropping a limit) must recreate backends still carrying it.
             && this.tenantBackendDelegationEnvIsCurrent(env)
+            && this.tenantBackendHarnessAcpEnvIsCurrent(env)
             // Same for GitHub issue tasks: a backend still running the opt-in and intake after the flag went off.
             && (this.tenantBackendExternalTaskEnv().length > 0 || ![...env].some(entry => entry.startsWith('QAAP_EXTERNAL_TASKS_')))
             && this.tenantContainerHasExpectedNetworks(inspect, networkMode, directEgressNetwork)

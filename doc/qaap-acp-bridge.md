@@ -114,6 +114,13 @@ issues the gate token and the endpoint lets it ask. OpenCode's entry does not ch
   command (`cmp`) on its own, without asking, and the bridge reported it as `unpermitted-mutation`. This is the
   `client-boundary` case: the gate sees only what Copilot chooses to ask.
 
+## Turning a flag on in production
+
+Set `QAAP_HARNESS_ACP_<FLAVOR>=1` in `/opt/qaap/.env` and run `scripts/qaap-vps-safe-restart.sh`. `docker-compose.yml` passes the
+four flags to the control plane, which forwards exactly the ones at `1` to the tenant backends (where agents run) and
+recreates any backend whose flags changed (`tenantBackendHarnessAcpEnv` in `qaap-docker-orchestrator.ts`). Rollback: set it back
+to `0` and restart the same way. The production image ships `opencode`, `copilot` and `agy`, but not Grok.
+
 ## Pending before enabling in production
 
 - E2E in VPS staging with the task sandbox, including a parent→child delegation, a cancel with the kill checked

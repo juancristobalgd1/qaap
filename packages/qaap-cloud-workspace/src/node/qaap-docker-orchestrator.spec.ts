@@ -411,6 +411,34 @@ describe('QaapDockerOrchestrator', () => {
         });
     });
 
+    describe('tenantBackendHarnessAcpEnv', () => {
+
+        interface HarnessAcpAccess {
+            tenantBackendHarnessAcpEnv(env: NodeJS.ProcessEnv): string[];
+            tenantBackendHarnessAcpEnvIsCurrent(containerEnv: ReadonlySet<string>, expected: string[]): boolean;
+        }
+        const orchestrator = (): HarnessAcpAccess => new QaapDockerOrchestrator() as unknown as HarnessAcpAccess;
+        const acpEnv = (env: NodeJS.ProcessEnv): string[] => orchestrator().tenantBackendHarnessAcpEnv(env);
+
+        it('forwards only the ACP flags that are exactly 1, normalized', () => {
+            expect(acpEnv({})).to.deep.equal([]);
+            expect(acpEnv({ QAAP_HARNESS_ACP_COPILOT: ' 1 ', QAAP_HARNESS_ACP_GROK: '0', QAAP_HARNESS_ACP_ANTIGRAVITY: 'true' }))
+                .to.deep.equal(['QAAP_HARNESS_ACP_COPILOT=1']);
+            expect(acpEnv({ QAAP_HARNESS_ACP_OPENCODE: '1', QAAP_HARNESS_ACP_COPILOT: '1', QAAP_HARNESS_ACP_GROK: '1', QAAP_HARNESS_ACP_ANTIGRAVITY: '1' }))
+                .to.deep.equal(['QAAP_HARNESS_ACP_OPENCODE=1', 'QAAP_HARNESS_ACP_COPILOT=1', 'QAAP_HARNESS_ACP_GROK=1', 'QAAP_HARNESS_ACP_ANTIGRAVITY=1']);
+            // Never a smuggled value, never an unknown harness.
+            expect(acpEnv({ QAAP_HARNESS_ACP_COPILOT: '1\nNODE_OPTIONS=--inspect', QAAP_HARNESS_ACP_CURSOR: '1' })).to.deep.equal([]);
+        });
+
+        it('recreates a backend when an ACP flag goes on or off', () => {
+            const on = acpEnv({ QAAP_HARNESS_ACP_COPILOT: '1' });
+            expect(orchestrator().tenantBackendHarnessAcpEnvIsCurrent(new Set(['PORT=3000']), [])).to.equal(true);
+            expect(orchestrator().tenantBackendHarnessAcpEnvIsCurrent(new Set(['PORT=3000']), on)).to.equal(false);
+            expect(orchestrator().tenantBackendHarnessAcpEnvIsCurrent(new Set(['PORT=3000', ...on]), on)).to.equal(true);
+            expect(orchestrator().tenantBackendHarnessAcpEnvIsCurrent(new Set(['PORT=3000', 'QAAP_HARNESS_ACP_COPILOT=1']), [])).to.equal(false);
+        });
+    });
+
     describe('tenantBackendDelegationEnv', () => {
 
         interface DelegationAccess {
