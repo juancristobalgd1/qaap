@@ -811,15 +811,18 @@ export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, a
 }
 
 /**
- * Refuses a turn whose provider key is saved but cannot be opened on this backend (no or another
- * `QAAP_SECRETS_KEYS`). Without it the key is dropped silently: the agent then runs on whatever login of
- * its own it still has (Pi kept a stale OpenRouter sign-in), the provider answers 401 and every fallback
- * model fails the same way. Any agent whose turn names a BYOK vendor is checked, not only QAIQ.
+ * Refuses a QAIQ turn whose provider key is saved but cannot be opened on this backend (no or another
+ * `QAAP_SECRETS_KEYS`). Without it the key is dropped silently, the provider answers 401 and every
+ * fallback model fails the same way.
  */
 export function assertProviderKeyReadableExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string, ownerLogin?: string,
         agentModel?: QaapCreateAgentTaskQaiqModel): void {
-        const vendor = agentModel?.vendor
-            ?? (agentUsesSettingsModelCatalog(agentId) ? ctx.resolveQaapQaiqBinding(ownerLogin)?.vendor : undefined);
+        // Product rule: only QAIQ runs on a Settings key. Sign-in harnesses (Pi included: its own `/login`
+        // wins over any key) never need it, and their refused sign-in leads to the composer's sign-in instead.
+        if (!agentUsesSettingsModelCatalog(agentId)) {
+            return;
+        }
+        const vendor = agentModel?.vendor ?? ctx.resolveQaapQaiqBinding(ownerLogin)?.vendor;
         const descriptor = findQaiqByokProvider(vendor);
         if (!descriptor || !ctx.listUnreadableSealedSettings?.(ownerLogin).includes(descriptor.credentialPref)) {
             return;

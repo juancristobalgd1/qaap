@@ -136,7 +136,7 @@ import {
     readDisabledHarnessIds,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
 import { QAAP_HARNESS_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
-import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { isPiSignInRejectedFailure, localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import {
     resolveQaapReposRoot,
     resolveUserReposRoot,
@@ -2457,7 +2457,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             if (turn) {
                 this.lastTurns?.record(task.ownerLogin, agentId, turn);
             }
-            if (turn?.outcome === 'failed' && turn.kind === 'auth') {
+            if (turn?.outcome === 'failed' && (turn.kind === 'auth' || isPiSignInRejectedFailure(agentId, turn.kind))) {
                 this.rejectAgentSessionAfterAuthFailure(task, agentId);
             }
         } catch (error) {
@@ -2479,7 +2479,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return;
         }
         const model = resolveTaskAgentModel(task);
-        if (model && QaapHarnessModelAvailability.tier(normalized, { modelId: model.modelId, vendor: model.vendor }) === 'free') {
+        // Pi's free models (OpenRouter `:free`) still run on Pi's own provider sign-in.
+        if (normalized !== 'pi' && model && QaapHarnessModelAvailability.tier(normalized, { modelId: model.modelId, vendor: model.vendor }) === 'free') {
             return;
         }
         this.sessionAttestations?.revoke(task.ownerLogin, normalized);
