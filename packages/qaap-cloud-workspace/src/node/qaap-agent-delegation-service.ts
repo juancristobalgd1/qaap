@@ -56,7 +56,7 @@ import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import type { QaapGoalLoopTurnOutcome, QaapGoalLoopTurnSettlement } from './qaap-agent-conversation-store-constants';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import { QaapNeutralGit } from './qaap-neutral-git';
-import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
+import { resolveQaapRuntimeHarnessCapabilities } from './harness/acp/qaap-acp-bridge-launch';
 import { sweepStaleQaapDelegationMcpConfigs } from './qaap-agent-delegation-launch';
 
 /** Runs the message as a raw shell command with no model and no tool gate: never a delegation target. */
@@ -362,7 +362,9 @@ export class QaapAgentDelegationService {
         return runner.listAgents(parent.ownerLogin)
             .filter(agent => agent.id.trim().toLowerCase() !== SHELL_AGENT_ID && /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$/.test(agent.id))
             .map(agent => {
-                const cannotAsk = requestApproval && !resolveQaapHarnessCapabilities(agent.id).canAsk;
+                // Runtime capabilities: a harness running through the ACP bridge (Copilot, Grok, Antigravity with their flag)
+                // asks through the bridge, so it can run a child of a conversation that requires approval.
+                const cannotAsk = requestApproval && !resolveQaapRuntimeHarnessCapabilities(agent.id).canAsk;
                 const reason = !agent.available ? 'not-connected' as const : cannotAsk ? 'cannot-ask' as const : undefined;
                 const models = agent.available
                     ? runner.listModelsForAgent(agent.id, parent.ownerLogin)
@@ -1578,7 +1580,7 @@ export class QaapAgentDelegationService {
                     `Agent "${agentId}" is not connected for this account. Call qaaq_list_agents to see the selectable ones.`);
             }
         }
-        if (this.requiresApproval(parent) && !resolveQaapHarnessCapabilities(agentId).canAsk) {
+        if (this.requiresApproval(parent) && !resolveQaapRuntimeHarnessCapabilities(agentId).canAsk) {
             throw new QaapAgentDelegationError('unsupported-agent',
                 `Agent "${agentId}" cannot ask for approval, so it cannot run a child of a conversation that requires approval.`);
         }

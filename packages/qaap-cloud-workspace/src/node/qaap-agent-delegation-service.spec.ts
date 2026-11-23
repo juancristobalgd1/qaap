@@ -12,7 +12,7 @@ import {
 } from '../common/qaap-agent-delegation-protocol';
 import type { QaapTurnUsage } from '../common/qaap-turn-usage';
 import { QaapAgentDelegationError, QaapAgentDelegationService, type QaapDelegationCallerContext } from './qaap-agent-delegation-service';
-import { FakeStore, makeService, parentConversation, useDelegationFlag } from './test/qaap-agent-delegation-fake-store';
+import { FakeStore, KNOWN_AGENTS, makeService, parentConversation, useDelegationFlag } from './test/qaap-agent-delegation-fake-store';
 
 const CTX: QaapDelegationCallerContext = { parentConversationId: 'parent', ownerLogin: 'alice', parentTurnId: 'turn-1' };
 
@@ -265,6 +265,26 @@ describe('QaapAgentDelegationService', function (): void {
         expect(await errorCode(service.delegate(CTX, delegateRequest('x', { agent: 'qwen' })))).to.equal('unsupported-agent');
         store.conversations.set('parent', parentConversation({ autoApprove: undefined, approvalPolicyId: 'approve-for-me' }));
         expect((await service.delegate(CTX, delegateRequest('x', { agent: 'qwen' }))).child.agent).to.equal('qwen');
+    });
+
+    it('under request-approval lets a harness that asks through the ACP bridge run a child (runtime capabilities)', async () => {
+        const saved = process.env.QAAP_HARNESS_ACP_COPILOT;
+        KNOWN_AGENTS.push('copilot');
+        try {
+            delete process.env.QAAP_HARNESS_ACP_COPILOT;
+            // Natively Copilot runs unchecked: it cannot ask, so it cannot be the child of an approval-requiring parent.
+            expect(await errorCode(service.delegate(CTX, delegateRequest('x', { agent: 'copilot' })))).to.equal('unsupported-agent');
+            process.env.QAAP_HARNESS_ACP_COPILOT = '1';
+            expect((await service.delegate(CTX, delegateRequest('x', { agent: 'copilot' }))).child.agent).to.equal('copilot');
+            expect(service.listAgents(CTX).agents.find(agent => agent.agent === 'copilot')).to.include({ selectable: true });
+        } finally {
+            KNOWN_AGENTS.splice(KNOWN_AGENTS.indexOf('copilot'), 1);
+            if (saved === undefined) {
+                delete process.env.QAAP_HARNESS_ACP_COPILOT;
+            } else {
+                process.env.QAAP_HARNESS_ACP_COPILOT = saved;
+            }
+        }
     });
 
     it('refuses to delegate from a delegated child or a fan-out subtask (depth 1)', async () => {
