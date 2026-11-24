@@ -166,6 +166,10 @@ function conversationListMetricsFingerprint(input: QaapAgentConversationListMetr
     let fingerprint = `${input.status}|${input.messages.length}`;
     for (const message of input.messages) {
         fingerprint += `|${message.role}${message.createdAt}:${message.content.length}:${message.traceEvents?.length ?? 0}:${message.segments?.length ?? 0}`;
+        // A tool segment gets its result (where the diff stats are) filled in place, without a new segment.
+        for (const segment of (message.segments ?? []) as ReadonlyArray<{ readonly content?: string; readonly result?: string; readonly args?: string }>) {
+            fingerprint += `,${segment.content?.length ?? 0}.${segment.result?.length ?? 0}.${segment.args?.length ?? 0}`;
+        }
     }
     return fingerprint;
 }
@@ -177,6 +181,11 @@ function conversationListMetricsFingerprint(input: QaapAgentConversationListMetr
 export function buildConversationListMetrics(
     input: QaapAgentConversationListMetricsInput,
 ): QaapAgentConversationListMetrics {
+    // A streaming turn changes in place (trace events, tool results): only settled conversations are cached, and
+    // they are what makes a list expensive.
+    if (input.status === 'streaming') {
+        return computeConversationListMetrics(input);
+    }
     const fingerprint = conversationListMetricsFingerprint(input);
     const cached = conversationListMetricsCache.get(input.messages);
     if (cached?.fingerprint === fingerprint) {

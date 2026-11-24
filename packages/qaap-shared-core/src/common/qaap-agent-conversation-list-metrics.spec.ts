@@ -603,6 +603,23 @@ describe('buildConversationListMetrics memoization', () => {
         expect(after.linesRemoved).to.equal(2);
     });
 
+    it('recomputes when a tool segment gets its result filled in place', () => {
+        const segment: { type: 'tool'; id: string; name: string; result?: string } = { type: 'tool', id: 't1', name: 'bash' };
+        const messages = [userTurn(1), { role: 'agent' as const, content: '', createdAt: 2, segments: [segment] }];
+        const before = buildConversationListMetrics({ status: 'idle', messages } as unknown as Parameters<typeof buildConversationListMetrics>[0]);
+        segment.result = '1 file changed, 5 insertions(+), 1 deletion(-)';
+        const after = buildConversationListMetrics({ status: 'idle', messages } as unknown as Parameters<typeof buildConversationListMetrics>[0]);
+        expect(after).to.not.equal(before);
+        expect(after.linesAdded).to.equal(5);
+    });
+
+    it('never caches a streaming conversation, which changes in place', () => {
+        const messages = [userTurn(1), agentReply('2 files changed, 3 insertions(+)', 2)];
+        const first = buildConversationListMetrics({ status: 'streaming', messages });
+        const second = buildConversationListMetrics({ status: 'streaming', messages });
+        expect(second).to.not.equal(first);
+    });
+
     it('recomputes when the status changes for the same messages', () => {
         const messages = [userTurn(1), agentReply('ok', 2)];
         const idle = buildConversationListMetrics({ status: 'idle', messages });
