@@ -715,6 +715,16 @@ export class MobileOpenRepositoryDialog {
             this.statusText.textContent = credential.source === 'gh-cli'
                 ? nls.localize('qaap/mobileOpenRepo/connectedViaGh', 'Connected as {0} through the GitHub CLI', credential.user.login)
                 : nls.localize('qaap/mobileOpenRepo/connectedViaCredential', 'Connected as {0} with your GitHub credential', credential.user.login);
+        } else if (user && this.loadErrorCode === 'session_expired') {
+            // The Qaap session is valid but GitHub refused its token: "Connected as" above "access expired" read as a
+            // contradiction (staging, 24 Nov 2026). The list below offers the new sign-in.
+            this.statusRow.classList.remove('theia-mod-signed-in');
+            this.statusRow.classList.add('theia-mod-signed-out');
+            this.statusText.textContent = nls.localize(
+                'qaap/mobileOpenRepo/githubAccessExpiredFor',
+                'GitHub access for {0} expired',
+                user.login || user.name
+            );
         } else if (user) {
             this.statusText.textContent = nls.localize(
                 'qaap/mobileOpenRepo/connectedAs',
@@ -836,6 +846,7 @@ export class MobileOpenRepositoryDialog {
             this.loadError = QaapUserFacingErrors.toMessageAndLog(err);
         }
         this.loading = false;
+        this.renderConnectedStatus();
         this.list.classList.remove('theia-mod-loading');
         this.renderList();
     }

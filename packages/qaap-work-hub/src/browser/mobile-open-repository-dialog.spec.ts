@@ -267,3 +267,36 @@ describe('MobileOpenRepositoryDialog clone flow', () => {
         expect(error?.hidden).to.equal(false);
     });
 });
+
+describe('MobileOpenRepositoryDialog with an expired GitHub token', () => {
+
+    useSuiteJSDOM();
+
+    it('says GitHub access expired in the header and offers a new GitHub sign-in, instead of "Connected as" and "Sign in"', async () => {
+        const service = {
+            isDesktop: () => false,
+            formatRepositoryLabel: (value: string) => value,
+            listGithubRepositories: async () => {
+                throw Object.assign(new Error('Your GitHub session expired. Please sign in again.'), { code: 'session_expired', status: 401 });
+            },
+            getConnectedUser: () => ({ provider: 'github', login: 'octocat', name: 'Octo Cat' }),
+        } as unknown as MobileProjectsService;
+        const dialog = new MobileOpenRepositoryDialog(service, {
+            onProjectsChanged: () => undefined,
+            onWorkspaceOpened: () => undefined,
+        });
+        document.body.append(dialog.node);
+        await dialog.show();
+        for (let i = 0; i < 20; i++) {
+            await Promise.resolve();
+        }
+        const status = dialog.node.querySelector('.theia-mobile-open-repo-status-text')?.textContent ?? '';
+        expect(status).to.equal('GitHub access for octocat expired');
+        expect(status).not.to.contain('Connected as');
+        const empty = dialog.node.textContent ?? '';
+        expect(empty).to.contain('Your GitHub access expired. Sign in with GitHub again to see your repositories.');
+        expect(empty).not.to.contain('Sign in with GitHub to see your repositories here.');
+        dialog.hide();
+        dialog.node.remove();
+    });
+});
