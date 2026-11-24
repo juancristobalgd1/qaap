@@ -312,13 +312,9 @@ export class MobileProjectsStickyComposerAgentsUi {
             seen.add(key);
             candidates.push(agentId);
         }
-        // Start every harness's model catalog at once. The loop below consumes them in picker order, so the
-        // first usable harness still wins, but a slow or hung catalog no longer delays the ones behind it.
-        for (const agentId of candidates) {
-            if (agentId.toLowerCase() !== 'qaiq') {
-                void fetchAgentModelsForAgent(agentId).catch(() => undefined);
-            }
-        }
+        // Candidates are asked one at a time, in picker order: the current harness first, and the next one only when
+        // the one before has no usable model. Prefetching every catalog at once made each open fire one fetch per
+        // harness, several of them slow on a cold tenant.
         for (const agentId of candidates) {
             const key = agentId.toLowerCase();
             const model = await this.ensureStickyComposerAgentModel(

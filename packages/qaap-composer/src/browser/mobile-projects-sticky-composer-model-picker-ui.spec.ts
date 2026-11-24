@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import { listQaapComposerPickerAgents } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 
@@ -219,9 +220,86 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
             .find(button => button.title === 'Codex');
         expect(codexRail).to.not.equal(undefined);
         codexRail?.click();
+        // Codex is asked for when its rail entry is selected, so its rows arrive after that answer.
+        await new Promise(resolve => setTimeout(resolve, 0));
         const row = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-row');
         row?.click();
         expect(picked).to.deep.equal([{ agentId: 'codex', modelId: 'gpt-5-6-sol' }]);
+    });
+
+    describe('asks harnesses for their models on demand', () => {
+        const agents = [
+            { id: 'pi', label: 'Pi', available: true },
+            { id: 'claude', label: 'Claude Code', available: true },
+            { id: 'codex', label: 'Codex', available: true },
+        ];
+        const options = {
+            cwd: undefined,
+            agents,
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me' as const,
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        };
+        const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+        const railItem = (title: string): HTMLButtonElement | undefined => Array.from(
+            chrome.list.querySelectorAll<HTMLButtonElement>('.qaap-model-picker-rail-item'),
+        ).find(button => button.title === title);
+
+        /** A model source that records each request and how many are in flight at once. */
+        function recordingCatalog(): { asked: string[]; usage: { maxInFlight: number }; ctx: { resolveModelsForAgentPickerSafe: (agentId: string) => Promise<{ models: []; loadFailed: boolean }> } } {
+            const asked: string[] = [];
+            const usage = { maxInFlight: 0 };
+            let inFlight = 0;
+            const ctx = {
+                resolveModelsForAgentPickerSafe: async (agentId: string): Promise<{ models: []; loadFailed: boolean }> => {
+                    asked.push(agentId);
+                    inFlight++;
+                    usage.maxInFlight = Math.max(usage.maxInFlight, inFlight);
+                    await wait(5);
+                    inFlight--;
+                    return { models: [], loadFailed: false };
+                },
+            };
+            return { asked, usage, ctx };
+        }
+
+        it('asks only the selected harness when the picker opens', async () => {
+            const catalog = recordingCatalog();
+            await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
+            await wait(30);
+            expect(catalog.asked).to.deep.equal(['pi']);
+        });
+
+        it('asks a harness when its rail entry is selected, and never again within the same open', async () => {
+            const catalog = recordingCatalog();
+            await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
+            railItem('Claude Code')?.click();
+            await wait(30);
+            railItem('Pi')?.click();
+            railItem('Claude Code')?.click();
+            await wait(30);
+            expect(catalog.asked).to.deep.equal(['pi', 'claude']);
+        });
+
+        it('asks the other harnesses one at a time when a search runs', async () => {
+            const catalog = recordingCatalog();
+            await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
+            const search = chrome.list.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
+            if (search) {
+                search.value = 'gpt';
+                search.dispatchEvent(new window.Event('input'));
+            }
+            await wait(80);
+            // The picker lists every known harness, not only the ones passed in. The selected one was asked on open;
+            // the search asks each of the others once, in picker order.
+            const others = listQaapComposerPickerAgents(agents, []).map(agent => agent.id).filter(agentId => agentId !== 'pi');
+            expect(catalog.asked).to.deep.equal(['pi', ...others]);
+            expect(catalog.usage.maxInFlight).to.equal(1);
+        });
     });
 
     it('refreshes the composer when the picker is removed and paints again on reopen', async () => {
