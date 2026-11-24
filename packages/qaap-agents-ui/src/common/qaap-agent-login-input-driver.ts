@@ -46,9 +46,18 @@ export class QaapAgentLoginInputDriver {
         this.stepStartedAt = options.now;
     }
 
-    /** Every step was typed (or skipped), or the host stopped the driver. */
+    /**
+     * Every step was typed (or skipped) and no restart is pending, or the host stopped the driver. A sequence
+     * whose first step went out by fallback stays live: a slow CLI (Pi draws its TUI 12-23 s after start on a
+     * 1-CPU tenant) may show its ready pattern only after the whole sequence was typed into the void.
+     */
     get done(): boolean {
-        return this.stopped || this.index >= this.options.steps.length;
+        return this.stopped || (this.index >= this.options.steps.length && !this.restartPending);
+    }
+
+    /** A `waitFor` step went out by fallback and the one restart it allows has not happened yet. */
+    protected get restartPending(): boolean {
+        return this.restartCount === 0 && this.fallbackIndex !== undefined;
     }
 
     /** Number of steps typed or skipped so far. */
@@ -80,7 +89,7 @@ export class QaapAgentLoginInputDriver {
     /** Types the next step when it is due; at most one step per tick so the CLI can redraw. */
     tick(now: number): void {
         this.restartIfReady(now);
-        while (!this.done) {
+        while (!this.stopped && this.index < this.options.steps.length) {
             const step = this.options.steps[this.index];
             if (step.skipWhen && this.pattern(step.skipWhen).test(this.buffer)) {
                 // The output stays: the next step may be waiting for the very same screen.

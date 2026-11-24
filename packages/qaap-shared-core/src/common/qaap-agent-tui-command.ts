@@ -97,7 +97,9 @@ export function resolvePiTuiLoginInput(provider: string): readonly QaapAgentLogi
     // One Ctrl-C closes a provider selector a stale Enter opened and clears a stale editor line
     // (a second one within 500 ms would exit Pi, so the reset is a single key).
     const open: readonly QaapAgentLoginInputStep[] = [
-        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 8_000, resetText: '\x03' },
+        // Pi draws its TUI 12-23 s after start on a 1-CPU tenant (staging, 24 Nov 2026): falling back sooner types
+        // into a CLI that is not reading yet (the driver then retypes once the ready pattern shows).
+        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 30_000, resetText: '\x03' },
         { text: '\r' },
     ];
     if (resolved?.method === 'api_key') {
