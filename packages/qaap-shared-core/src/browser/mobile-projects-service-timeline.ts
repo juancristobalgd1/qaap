@@ -354,6 +354,10 @@ export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceCont
                 return [];
             }
             if (isGithubSessionExpiredError(err)) {
+                // The import dialog offers to sign in to GitHub again; an empty list would read as "not signed in".
+                if (surfaceSignInRequired) {
+                    throw err;
+                }
                 if (githubSignInRequiredSince === undefined) {
                     console.info('[qaap] The GitHub session expired; not retrying the repository list until the session changes or a minute passes.');
                 }

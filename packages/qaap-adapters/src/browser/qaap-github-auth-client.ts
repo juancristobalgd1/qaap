@@ -337,9 +337,10 @@ export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositor
                 QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
             );
         }
-        // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
-        // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
-        clearQaapAuthSession();
+        // Stored GitHub token expired/revoked. The Qaap session is left alone: clearing it locally (ONB-5) could not
+        // end the server session, so the next session sync wrote it back and the Work Hub flipped between signed
+        // in and out (and the repository dialog said "Connected as" and "Sign in" at once). Callers show a
+        // "sign in to GitHub again" action instead.
         throw new QaapUserFacingError(
             nls.localize('qaap/githubRepositories/sessionExpired', 'Your GitHub session expired. Please sign in again.'),
             401,

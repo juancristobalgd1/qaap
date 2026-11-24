@@ -86,6 +86,18 @@ describe('mobile-projects-service-timeline: GitHub sign-in required backoff', ()
         expect(fetchRepositories.callCount).to.equal(2);
     });
 
+    it('hands an expired GitHub token to the import dialog instead of an empty list', async () => {
+        fetchRepositories.rejects(new QaapUserFacingError('Your GitHub session expired. Please sign in again.', 401, 'session_expired'));
+        let thrown: unknown;
+        try {
+            await loadGithubProjectsExtracted(ctx, new Map(), true, true);
+        } catch (err) {
+            thrown = err;
+        }
+        // Was: an empty list, so the dialog said "Sign in with GitHub" under "Connected as <login>".
+        expect((thrown as { code?: string } | undefined)?.code).to.equal('session_expired');
+    });
+
     it('stops backing off after a local sign-out and logs again on the next episode', async () => {
         await loadGithubProjectsExtracted(ctx, new Map(), false);
         signedIn.returns(false);

@@ -16,6 +16,7 @@ import {
     saveQaapProjectResources,
     syncQaapAuthSessionFromServer,
     type QaapBillingApiResponse,
+    signOutQaapAuth,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { environment } from '@theia/core/lib/common';
@@ -753,6 +754,35 @@ export class MobileOpenRepositoryDialog {
         this.emptyState.replaceChildren(text, button);
     }
 
+    /**
+     * The stored GitHub token expired or was revoked: the Qaap session is still valid, so the header can say
+     * "Connected as"; only GitHub needs a new sign-in. Desktop runs the device flow; the web signs out and back in,
+     * which renews the token through the GitHub OAuth sign-in.
+     */
+    protected renderGithubSessionExpiredPrompt(): void {
+        const text = document.createElement('p');
+        text.className = 'theia-mobile-open-repo-signin-text';
+        text.textContent = nls.localize(
+            'qaap/mobileOpenRepo/githubSessionExpired',
+            'Your GitHub access expired. Sign in with GitHub again to see your repositories.',
+        );
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mobile-open-repo-progress-action theia-mod-primary theia-mobile-github-device-button';
+        button.textContent = nls.localize('qaap/mobileOpenRepo/githubSignInAgain', 'Sign in with GitHub again');
+        button.addEventListener('click', () => void this.signInToGithubAgain());
+        this.emptyState.replaceChildren(text, button);
+    }
+
+    protected async signInToGithubAgain(): Promise<void> {
+        if (environment.electron.is()) {
+            this.openGithubSignIn();
+            return;
+        }
+        await signOutQaapAuth().catch(() => undefined);
+        window.location.assign('/?signin=1');
+    }
+
     protected openGithubSignIn(): void {
         if (!this.signInDialog) {
             this.signInDialog = new QaapGithubDeviceSignInDialog({
@@ -794,7 +824,9 @@ export class MobileOpenRepositoryDialog {
             this.repositories = await this.service.listGithubRepositories();
         } catch (err) {
             this.repositories = [];
-            this.loadErrorCode = err instanceof QaapApiRequestError ? err.code : undefined;
+            this.loadErrorCode = err instanceof QaapApiRequestError
+                ? err.code
+                : (err as { code?: unknown } | undefined)?.code === 'session_expired' ? 'session_expired' : undefined;
             this.loadError = QaapUserFacingErrors.toMessageAndLog(err);
         }
         this.loading = false;
@@ -820,6 +852,10 @@ export class MobileOpenRepositoryDialog {
             this.emptyState.hidden = false;
             if (this.loadErrorCode === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE && environment.electron.is()) {
                 this.renderDesktopSignInPrompt();
+                return;
+            }
+            if (this.loadErrorCode === 'session_expired') {
+                this.renderGithubSessionExpiredPrompt();
                 return;
             }
             if (this.loadError) {
