@@ -32,7 +32,7 @@ import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
-import { antigravityBinFor, listNativeAgentModels, invalidateNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, hasLiveNativeAgentModels, listNativeAgentModels, invalidateNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
 import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
@@ -529,11 +529,14 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             // Right after a sign-in or a newly connected provider: a still-fresh cached list predates it.
             invalidateNativeAgentModels(catalogAgent, login, antigravityBin);
         }
+        // Without a live CLI list yet (cold start after a restart) the first answer waits the fresh budget too,
+        // or the picker caches the curated fallback for a minute while `pi --list-models` is still running.
+        const awaitLiveDiscovery = fresh || !hasLiveNativeAgentModels(catalogAgent, login, antigravityBin);
         await this.withinBudget(prepareNativeAgentModels(catalogAgent, {
             ownerLogin: login,
             spawner,
             antigravityBin,
-        }), fresh ? QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS : QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
+        }), awaitLiveDiscovery ? QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS : QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;

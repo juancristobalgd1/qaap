@@ -12,6 +12,7 @@ import {
     clearNativeAgentModelCache,
     discoverClaudeCliModels,
     discoverCodexAccountModels,
+    hasLiveNativeAgentModels,
     invalidateNativeAgentModels,
     listNativeAgentModels,
     NATIVE_MODEL_CACHE_TTL_MS,
@@ -73,6 +74,29 @@ describe('qaap-agent-native-models', () => {
         invalidateNativeAgentModels('cursor');
         const discovered = await prepareNativeAgentModels('cursor');
         expect(discovered.map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+    });
+
+    describe('hasLiveNativeAgentModels', () => {
+        it('is false while the cache is empty', () => {
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+            expect(hasLiveNativeAgentModels(undefined)).to.equal(false);
+        });
+
+        it('is true once the CLI answered with a live catalog', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            await prepareNativeAgentModels('cursor');
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(true);
+        });
+
+        it('is false for the curated fallback (CLI missing)', async () => {
+            process.env.PATH = sandbox;
+            await prepareNativeAgentModels('cursor');
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+        });
     });
 
     describe('Codex account catalog (models_cache.json)', () => {

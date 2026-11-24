@@ -158,6 +158,23 @@ export function listNativeAgentModels(
 }
 
 /**
+ * Whether the cache holds a live CLI catalog (not the curated fallback) for this harness, for the same owner and
+ * Antigravity bin as {@link listNativeAgentModels}. False means the picker would only get the curated list, so
+ * the endpoint waits longer for a cold discovery instead of answering with it.
+ */
+export function hasLiveNativeAgentModels(
+    agentId: string | undefined,
+    ownerLogin?: string,
+    antigravityBin?: QaapAntigravityCliBin,
+): boolean {
+    const harnessKey = agentId?.trim().toLowerCase();
+    if (!harnessKey) {
+        return false;
+    }
+    return cache.get(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin))?.live === true;
+}
+
+/**
  * Resolve once the agent's native catalog is current (CLI discovery, else the curated list). A fresh
  * cache answers at once; a stale one is replaced by discovery, but a failed or empty discovery never
  * overwrites a live list it could not improve on. Concurrent calls share one CLI run.
