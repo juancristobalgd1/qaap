@@ -33,6 +33,16 @@ afterEach(() => {
     }
 });
 
+/** Resolves with the error a promise rejected with; fails when it resolved. */
+async function rejectionOf(promise: Promise<unknown>): Promise<Error> {
+    try {
+        await promise;
+    } catch (error) {
+        return error instanceof Error ? error : new Error(String(error));
+    }
+    throw new Error('expected the promise to reject');
+}
+
 /** The `-type` values of a find command, in order (one walk covers directories and files). */
 function findTypes(args: readonly string[]): string[] {
     return args.flatMap((arg, index) => (arg === '-type' ? [args[index + 1]] : []));
@@ -130,9 +140,20 @@ class TenantBackendAclTestService extends QaapTenantSpawnService {
     readonly commands: Array<{ file: string; args: readonly string[] }> = [];
 
     protected override isBackendRoot(): boolean { return true; }
-    protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
+    protected override runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
         this.commands.push({ file, args });
         return { ok: true };
+    }
+    /** The recursive sweeps run through the same recorded command double, resolved on the next tick. */
+    protected override runTenantAccessCommandAsync(file: string, args: readonly string[]): Promise<QaapTenantAccessCommandResult> {
+        return Promise.resolve(this.runTenantAccessCommand(file, args));
+    }
+    /** Keeps the agent storage of the workspace gate off the real home; storage tests call ensureTenantAgentStorage. */
+    protected override tenantAgentStorageEnv(): Record<string, string> {
+        return {};
+    }
+    async settleStorageSweeps(): Promise<void> {
+        await Promise.all([...this.tenantAgentStorageSweeps.values()]);
     }
 }
 
@@ -141,7 +162,7 @@ class FailingStorageSweepService extends TenantBackendAclTestService {
     /** When set, only `find` sweeps rooted at this directory fail; the others succeed. */
     failingSweepDir?: string;
 
-    protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
+    protected override runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
         this.commands.push({ file, args });
         const failed = file === 'find' && (this.failingSweepDir === undefined || args[0] === this.failingSweepDir);
         return failed
@@ -257,7 +278,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
-    it('re-grants the dropped agent uid on harness state written while agents ran as root', () => {
+    it('re-grants the dropped agent uid on harness state written while agents ran as root', async () => {
         class StorageAclTestService extends TenantBackendAclTestService {
             grant(configRoot: string, root: string, uid: number): void {
                 this.grantTenantAgentStorageAccess(configRoot, root, uid);
@@ -266,6 +287,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         const service = new StorageAclTestService();
         const root = '/home/theia/.qaap/.qaap-agent-storage';
         service.grant('/home/theia/.qaap', root, 1001);
+        await service.settleStorageSweeps();
 
         const finds = service.commands.filter(command => command.file === 'find');
         // Existing root-owned dirs and files (opencode.db, opencode.log) under cache and data, and the
@@ -279,7 +301,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
-    it('attempts the agent storage grant once per root and logs its concrete cause once per directory', () => {
+    it('attempts the agent storage grant once per root and logs its concrete cause once per directory', async () => {
         const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-storage-'));
         process.env.QAAP_AGENT_UID = '1001';
         process.env.QAAP_TENANT_CONFIG_ROOT = storageRoot;
@@ -291,6 +313,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             for (let attempt = 0; attempt < 5; attempt++) {
                 service.prepare(storageRoot);
             }
+            await service.settleStorageSweeps();
             // One failing dirs sweep per cache, data and home; the files sweep is skipped after a failure.
             expect(service.commands.filter(command => command.file === 'find')).to.have.length(3);
             expect(warnings).to.have.length(3);
@@ -301,7 +324,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
-    it('keeps sweeping the home directory when the cache sweep fails', () => {
+    it('keeps sweeping the home directory when the cache sweep fails', async () => {
         const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-storage-'));
         process.env.QAAP_AGENT_UID = '1001';
         process.env.QAAP_TENANT_CONFIG_ROOT = storageRoot;
@@ -312,6 +335,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             const service = new FailingStorageSweepService();
             service.failingSweepDir = QaapTenantAgentStorageEnv.cacheDir(storageRoot);
             service.prepare(storageRoot);
+            await service.settleStorageSweeps();
             const finds = service.commands.filter(command => command.file === 'find');
             const homeDir = QaapTenantAgentStorageEnv.homeDir(storageRoot);
             // The cache failure skips only its own file sweep; data and home are still repaired.
@@ -327,7 +351,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
-    it('prepares the storage root even when the harness-state sweep fails, so sign-in links are still created', () => {
+    it('prepares the storage root even when the harness-state sweep fails, so sign-in links are still created', async () => {
         const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-storage-'));
         process.env.QAAP_AGENT_UID = '1001';
         process.env.QAAP_TENANT_CONFIG_ROOT = storageRoot;
@@ -336,6 +360,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         try {
             const service = new FailingStorageSweepService();
             service.prepare(storageRoot);
+            await service.settleStorageSweeps();
             expect(service.isPrepared(storageRoot)).to.equal(true);
             // The fail-closed ACLs on the root, the config dir and the storage children still ran.
             expect(service.commands.filter(command => command.file === 'setfacl')).to.have.length(3);
@@ -437,8 +462,9 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
                 }
                 return { ok: true };
             }
-            prepare(cwd: string): void {
-                this.ensureTenantBackendAgentWorkspaceAccess(cwd);
+            /** The asynchronous gate every agent spawn awaits. */
+            prepare(cwd: string): Promise<void> {
+                return this.prepareTenantIsolationAsync(cwd);
             }
         }
 
@@ -464,28 +490,28 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             fs.rmSync(reposRoot, { recursive: true, force: true });
         });
 
-        it('treats permission-denied-only find diagnostics as success, warns once and marks the root prepared', () => {
+        it('treats permission-denied-only find diagnostics as success, warns once and marks the root prepared', async () => {
             const warnings: string[] = [];
             console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
             const service = new SweepFailureService();
             service.failures.d = permissionDenied;
-            service.prepare(cwd);
+            await service.prepare(cwd);
             expect(warnings).to.have.length(1);
             expect(warnings[0]).to.include('skipped 1 unreadable agent-owned path(s)').and.to.include('/t/alice/octocat/.t3');
             const after = service.commands.length;
-            service.prepare(cwd);
+            await service.prepare(cwd);
             expect(service.commands.length).to.equal(after);
         });
 
-        it('sweeps only what changed since the last complete sweep after a restart, and the whole tree before one', () => {
+        it('sweeps only what changed since the last complete sweep after a restart, and the whole tree before one', async () => {
             const first = new SweepFailureService();
-            first.prepare(cwd);
+            await first.prepare(cwd);
             const firstFinds = first.commands.filter(command => command.file === 'find');
             expect(firstFinds).to.have.length(1);
             expect(firstFinds.every(command => !command.args.includes('-cnewer'))).to.equal(true);
             // A new backend process (container restart) prepares the same root again.
             const second = new SweepFailureService();
-            second.prepare(cwd);
+            await second.prepare(cwd);
             const secondFinds = second.commands.filter(command => command.file === 'find');
             expect(secondFinds).to.have.length(1);
             for (const command of secondFinds) {
@@ -496,51 +522,52 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             }
         });
 
-        it('records no stamp after a failed sweep, so the next attempt sweeps the whole tree', () => {
+        it('records no stamp after a failed sweep, so the next attempt sweeps the whole tree', async () => {
             const failing = new SweepFailureService();
             failing.failures.d = { ok: false, reason: 'find exit status 2: boom', stderr: ['find: boom'] };
-            expect(() => failing.prepare(cwd)).to.throw('Could not prepare tenant workspace directories');
+            expect((await rejectionOf(failing.prepare(cwd))).message).to.include('Could not prepare tenant workspace directories');
             const retry = new SweepFailureService();
-            retry.prepare(cwd);
+            await retry.prepare(cwd);
             expect(retry.commands.filter(command => command.file === 'find').some(command => command.args.includes('-cnewer'))).to.equal(false);
         });
 
-        it('keeps stamps off when QAAP_ACL_SWEEP_STAMP_DIR is off', () => {
+        it('keeps stamps off when QAAP_ACL_SWEEP_STAMP_DIR is off', async () => {
             process.env.QAAP_ACL_SWEEP_STAMP_DIR = 'off';
-            new SweepFailureService().prepare(cwd);
+            await new SweepFailureService().prepare(cwd);
             const again = new SweepFailureService();
-            again.prepare(cwd);
+            await again.prepare(cwd);
             expect(again.commands.filter(command => command.file === 'find').some(command => command.args.includes('-cnewer'))).to.equal(false);
         });
 
-        it('keeps any other diagnostic in the sweep fatal, even next to permission-denied lines', () => {
+        it('keeps any other diagnostic in the sweep fatal, even next to permission-denied lines', async () => {
             const service = new SweepFailureService();
             service.failures.d = {
                 ok: false,
                 reason: 'find exit status 1: setfacl: /t/alice/x: Operation not permitted',
                 stderr: ['find: \'/t/alice/octocat/.t3\': Permission denied', 'setfacl: /t/alice/x: Operation not permitted'],
             };
-            expect(() => service.prepare(cwd)).to.throw('Could not prepare tenant workspace directories for agent uid 1001');
+            expect((await rejectionOf(service.prepare(cwd))).message).to.include('Could not prepare tenant workspace directories for agent uid 1001');
         });
 
-        it('replays a real sweep failure for 60 seconds, then runs the sweep again', () => {
+        it('replays a real sweep failure for 60 seconds, to synchronous callers too, then runs the sweep again', async () => {
             const service = new SweepFailureService();
             service.failures.d = { ok: false, reason: 'find exit status 2: boom', stderr: ['find: boom'] };
-            expect(() => service.prepare(cwd)).to.throw('Could not prepare tenant workspace directories');
+            expect((await rejectionOf(service.prepare(cwd))).message).to.include('Could not prepare tenant workspace directories');
             const afterFirst = service.commands.length;
 
             service.clock += 59_000;
             service.failures.d = undefined;
-            expect(() => service.prepare(cwd)).to.throw('Could not prepare tenant workspace directories');
+            expect((await rejectionOf(service.prepare(cwd))).message).to.include('Could not prepare tenant workspace directories');
+            expect(() => service.prepareTenantIsolation(cwd)).to.throw('Could not prepare tenant workspace directories');
             expect(service.commands.length).to.equal(afterFirst);
 
             service.clock += 2_000;
-            service.prepare(cwd);
+            await service.prepare(cwd);
             expect(service.commands.length).to.be.greaterThan(afterFirst);
         });
     });
 
-    it('sweeps the whole tenant worktrees root for a delegated child worktree and tolerates a 0700 agent dir inside it', () => {
+    it('sweeps the whole tenant worktrees root for a delegated child worktree and tolerates a 0700 agent dir inside it', async () => {
         class WorktreeSweepService extends TenantBackendAclTestService {
             sweptRoots: string[] = [];
             protected override runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
@@ -555,8 +582,8 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
                 }
                 return { ok: true };
             }
-            prepare(cwd: string): void {
-                this.ensureTenantBackendAgentWorkspaceAccess(cwd);
+            prepare(cwd: string): Promise<void> {
+                return this.prepareTenantIsolationAsync(cwd);
             }
         }
         const segment = `alice-sweep-${process.pid}`;
@@ -568,11 +595,11 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
         try {
             const service = new WorktreeSweepService();
-            expect(() => service.prepare(child)).not.to.throw();
+            await service.prepare(child);
             expect(service.sweptRoots.every(root => root === tenantWorktrees)).to.equal(true);
             expect(warnings.join('\n')).to.include('.agent-private');
             const after = service.commands.length;
-            service.prepare(child);
+            await service.prepare(child);
             expect(service.commands.length).to.equal(after);
         } finally {
             console.warn = savedWarn;
@@ -605,6 +632,169 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         const result = new RawRunService().run(process.execPath, ['-e', 'process.stderr.write("setfacl: boom\\n"); process.exit(3)']);
         expect(result.ok).to.equal(false);
         expect(result.reason).to.include('exit status 3').and.to.include('setfacl: boom');
+    });
+
+    it('runs an access command in a child process with the same result shape as the synchronous one', async () => {
+        class RawAsyncRunService extends QaapTenantSpawnService {
+            run(file: string, args: readonly string[]): Promise<QaapTenantAccessCommandResult> {
+                return this.runTenantAccessCommandAsync(file, args);
+            }
+        }
+        const service = new RawAsyncRunService();
+        const failed = await service.run(process.execPath, ['-e', 'process.stderr.write("find: \'/x\': Permission denied\\n"); process.exit(1)']);
+        expect(failed).to.deep.equal({
+            ok: false,
+            reason: `${process.execPath} exit status 1: find: '/x': Permission denied`,
+            stderr: ['find: \'/x\': Permission denied'],
+        });
+        expect(await service.run(process.execPath, ['-e', 'process.exit(0)'])).to.deep.equal({ ok: true });
+        const missing = await service.run(path.join(os.tmpdir(), `qaap-no-such-binary-${process.pid}`), []);
+        expect(missing.ok).to.equal(false);
+        expect(missing.reason).to.include('ENOENT');
+        expect(missing.stderr).to.equal(undefined);
+    });
+
+    describe('recursive sweep off the event loop', () => {
+        /** Every recursive sweep stays pending until the test settles it. */
+        class DeferredSweepService extends TenantBackendAclTestService {
+            readonly pendingSweeps: Array<(result: QaapTenantAccessCommandResult) => void> = [];
+            protected override runTenantAccessCommandAsync(file: string, args: readonly string[]): Promise<QaapTenantAccessCommandResult> {
+                this.commands.push({ file, args });
+                return new Promise(resolve => this.pendingSweeps.push(resolve));
+            }
+            finds(): Array<{ file: string; args: readonly string[] }> {
+                return this.commands.filter(command => command.file === 'find');
+            }
+            isPrepared(root: string): boolean {
+                return this.preparedTenantBackendAgentRoots.has(root);
+            }
+            addStorageSweep(sweep: Promise<void>): void {
+                this.tenantAgentStorageSweeps.set('test-storage', sweep);
+            }
+            prewarm(): void {
+                this.prewarmTenantBackendAgentAccess();
+            }
+        }
+
+        let reposRoot: string;
+        let tenantRoot: string;
+        let cwd: string;
+
+        beforeEach(() => {
+            reposRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-sweep-async-')));
+            tenantRoot = path.join(reposRoot, 'users', 'alice');
+            cwd = path.join(tenantRoot, 'octocat', 'hello');
+            fs.mkdirSync(cwd, { recursive: true });
+            process.env.QAAP_REPOS_ROOT = reposRoot;
+        });
+
+        afterEach(() => {
+            delete process.env.QAAP_TENANT_LOGIN;
+            fs.rmSync(reposRoot, { recursive: true, force: true });
+        });
+
+        const flush = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
+
+        it('lets a synchronous caller proceed after the direct root grant while the sweep runs, without a second walk', () => {
+            const service = new DeferredSweepService();
+            service.prepareTenantIsolation(cwd);
+            service.prepareTenantIsolation(cwd);
+            expect(service.commands[0]).to.deep.equal({ file: 'setfacl', args: ['-m', 'u:1001:rwx,d:u:1001:rwx', tenantRoot] });
+            expect(service.finds()).to.have.length(1);
+            expect(service.commands).to.have.length(2);
+            expect(service.isPrepared(tenantRoot)).to.equal(false);
+        });
+
+        it('holds the asynchronous spawn gate until the sweep completed, sharing one walk between callers', async () => {
+            const service = new DeferredSweepService();
+            let settled = 0;
+            const first = service.prepareTenantIsolationAsync(cwd).then(() => { settled++; });
+            const second = service.prepareTenantIsolationAsync(path.join(tenantRoot, 'octocat')).then(() => { settled++; });
+            service.prepareTenantIsolation(cwd);
+            await flush();
+            expect(settled).to.equal(0);
+            expect(service.finds()).to.have.length(1);
+            service.pendingSweeps[0]({ ok: true });
+            await Promise.all([first, second]);
+            expect(settled).to.equal(2);
+            expect(service.isPrepared(tenantRoot)).to.equal(true);
+            expect(fs.readdirSync(aclSweepStampRoot!)).to.have.length(1);
+        });
+
+        it('fails the waiting agent spawn with the fatal sweep error and replays it to later synchronous callers', async () => {
+            const service = new DeferredSweepService();
+            const gate = service.prepareTenantIsolationAsync(cwd);
+            service.prepareTenantIsolation(cwd);
+            await flush();
+            service.pendingSweeps[0]({ ok: false, reason: 'find exit status 1: setfacl: /x: Operation not permitted', stderr: ['setfacl: /x: Operation not permitted'] });
+            expect((await rejectionOf(gate)).message).to.include('Could not prepare tenant workspace directories for agent uid 1001');
+            expect(() => service.prepareTenantIsolation(cwd)).to.throw('Could not prepare tenant workspace directories');
+            expect(fs.readdirSync(aclSweepStampRoot!)).to.have.length(0);
+            expect(service.finds()).to.have.length(1);
+        });
+
+        it('fails right away, and remembers it, when the direct root grant fails', async () => {
+            class RefusingRootGrantService extends DeferredSweepService {
+                protected override runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
+                    this.commands.push({ file, args });
+                    return { ok: false, reason: 'setfacl: Operation not supported' };
+                }
+            }
+            const service = new RefusingRootGrantService();
+            expect(() => service.prepareTenantIsolation(cwd)).to.throw('Could not grant the non-root agent access to its tenant workspace');
+            expect((await rejectionOf(service.prepareTenantIsolationAsync(cwd))).message).to.include('install the acl package');
+            expect(service.finds()).to.have.length(0);
+            expect(service.commands).to.have.length(1);
+        });
+
+        it('also waits for the harness-state sweeps of the agent storage before an agent spawn', async () => {
+            const service = new DeferredSweepService();
+            let releaseStorage!: () => void;
+            service.addStorageSweep(new Promise<void>(resolve => { releaseStorage = resolve; }));
+            let settled = false;
+            const gate = service.whenTenantAgentAccessReady(cwd).then(() => { settled = true; });
+            await flush();
+            service.pendingSweeps[0]({ ok: true });
+            await flush();
+            expect(settled).to.equal(false);
+            releaseStorage();
+            await gate;
+            expect(settled).to.equal(true);
+        });
+
+        it('starts the tenant workspace sweep as soon as a root tenant backend constructs the service', async () => {
+            process.env.QAAP_TENANT_LOGIN = 'alice';
+            const service = new DeferredSweepService();
+            service.prewarm();
+            expect(service.commands[0]).to.deep.equal({ file: 'setfacl', args: ['-m', 'u:1001:rwx,d:u:1001:rwx', tenantRoot] });
+            // The repos root first; the tenant worktrees root too when it exists on this machine.
+            expect(service.finds()[0].args[0]).to.equal(tenantRoot);
+            const walks = service.finds().length;
+            service.pendingSweeps.forEach(settle => settle({ ok: true }));
+            await flush();
+            expect(service.isPrepared(tenantRoot)).to.equal(true);
+            // The first agent spawn then finds the root prepared and walks nothing.
+            await service.prepareTenantIsolationAsync(cwd);
+            expect(service.finds()).to.have.length(walks);
+        });
+
+        it('sweeps in group mode under gVisor through the same asynchronous walk', async () => {
+            process.env.QAAP_TENANT_AGENT_ACCESS = 'group';
+            try {
+                const service = new DeferredSweepService();
+                const gate = service.prepareTenantIsolationAsync(cwd);
+                await flush();
+                expect(service.commands[0]).to.deep.equal({ file: 'chgrp', args: ['-h', '1001', tenantRoot] });
+                expect(service.commands[1]).to.deep.equal({ file: 'chmod', args: ['g+rwxs', tenantRoot] });
+                const find = service.finds()[0];
+                expect(find.args).to.include.members(['chgrp', 'g+rwxs', 'g+rwX']);
+                expect(find.args).not.to.include('setfacl');
+                service.pendingSweeps[0]({ ok: true });
+                await gate;
+            } finally {
+                delete process.env.QAAP_TENANT_AGENT_ACCESS;
+            }
+        });
     });
 
     it('refuses tenant agent execution when the image has no non-root uid configured', () => {

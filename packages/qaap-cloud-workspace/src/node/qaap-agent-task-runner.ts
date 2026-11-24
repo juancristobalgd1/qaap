@@ -992,6 +992,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
             return undefined;
         }
+        // The CLI runs as the dropped uid over its harness state: wait for the tenant access sweeps first (optional call: partial test doubles).
+        await this.tenantSpawn.whenTenantAgentAccessReady?.(tenantCwd);
         const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
         const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
             ...process.env,
@@ -1228,6 +1230,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             throw new Error(`No tenant workspace for ${safeUserIdSegment(owner)} yet; the auth probe cannot run without its tenant cwd.`);
         }
         try {
+            // A probe before the harness-state sweep ends could read a root-owned sign-in as signed out (optional call: partial test doubles).
+            await this.tenantSpawn.whenTenantAgentAccessReady?.(tenantCwd);
             // The deadline is enforced as the agent uid: the backend cannot signal that uid (no CAP_KILL).
             const deadline = withSelfEnforcedDeadline(probe.file, probe.args, resolveAgentConnectionProbeTimeoutMs(agentId));
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, deadline.file, deadline.args);

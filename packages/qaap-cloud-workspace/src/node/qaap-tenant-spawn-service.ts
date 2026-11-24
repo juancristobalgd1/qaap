@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, optional } from '@theia/core/shared/inversify';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -17,6 +17,8 @@ import {
     resolveQaapWorktreesRoot,
     resolveTenantHome,
     resolveTenantIsolationRoot,
+    resolveUserReposRoot,
+    safeUserIdSegment,
     QAAP_USER_REPOS_SEGMENT,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
@@ -55,6 +57,10 @@ export interface QaapTenantAccessCommandResult {
 export const TENANT_BACKEND_ACL_FAILURE_TTL_MS = 60_000;
 /** `find` diagnostics for a directory the backend cannot read: only these are tolerated. */
 const FIND_PERMISSION_DENIED_LINE = /^find: '(.+)': Permission denied$/;
+/** Deadline of one privileged access command (setfacl, chgrp, chmod, a whole `find` sweep). */
+const TENANT_ACCESS_COMMAND_TIMEOUT_MS = 120_000;
+/** Stderr kept from an asynchronous access command; a longer one is a failure (its diagnostics are unknown). */
+const TENANT_ACCESS_COMMAND_STDERR_LIMIT = 1024 * 1024;
 
 export { QAAP_TENANT_BACKEND_HOME };
 
@@ -148,6 +154,47 @@ export class QaapTenantSpawnService {
     protected readonly preparedTenantBackendAgentRoots = new Set<string>();
     /** Roots whose sweep failed for real, with the error to replay until {@link TENANT_BACKEND_ACL_FAILURE_TTL_MS}. */
     protected readonly failedTenantBackendAgentRoots = new Map<string, { error: Error; at: number }>();
+    /** Recursive workspace sweeps still running, keyed by {@link aclSweepKey} (root, uid, access mode); one per key. */
+    protected readonly tenantBackendAgentRootSweeps = new Map<string, Promise<void>>();
+    /** Best-effort harness-state sweeps of the agent storage (never reject), keyed by {@link aclSweepKey}. */
+    protected readonly tenantAgentStorageSweeps = new Map<string, Promise<void>>();
+
+    /**
+     * On a root tenant backend, start the agent access preparation of this tenant's mounted trees as soon as the
+     * service exists, so the recursive sweeps (seconds on a 1-CPU tenant) usually finish before the first client
+     * connects. They run as child processes; nothing here blocks the event loop beyond the direct root grants.
+     */
+    @postConstruct()
+    protected initTenantBackendAgentAccess(): void {
+        this.prewarmTenantBackendAgentAccess();
+    }
+
+    protected prewarmTenantBackendAgentAccess(): void {
+        if (!this.isTenantBackendMode() || this.isContainerIsolationEnabled()) {
+            return;
+        }
+        const login = process.env.QAAP_TENANT_LOGIN?.trim();
+        try {
+            this.tenantAgentStorageEnv();
+            if (!login || !this.isBackendRoot()) {
+                return;
+            }
+            const roots = [
+                resolveUserReposRoot(resolveQaapReposRoot(), login),
+                path.join(resolveQaapWorktreesRoot(), safeUserIdSegment(login)),
+            ];
+            for (const root of roots) {
+                if (fs.existsSync(root)) {
+                    this.prepareTenantBackendAgentAccessAsync(root).catch(error => {
+                        console.warn(`[qaap-security] early agent access preparation of ${root} failed; the first agent spawn `
+                            + `reports it: ${error instanceof Error ? error.message : String(error)}`);
+                    });
+                }
+            }
+        } catch (error) {
+            console.warn(`[qaap-security] could not start the early agent access preparation: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
 
     /** Resolve the tenant segment (sanitized login) from a workspace or repo working directory. */
     resolveTenantSegment(cwd: string): string | undefined {
@@ -527,60 +574,129 @@ export class QaapTenantSpawnService {
      * uid 0 in that namespace, so give only the configured agent uid an ACL on this tenant's root
      * (including default ACLs for later files) before dropping to it. The backend container mounts
      * exactly one login's tree; this never grants access to a sibling tenant.
+     *
+     * Synchronous callers (connection probes, model listings, bounded git/search reads, terminals, the synchronous
+     * spawn helpers) never wait for the recursive sweep: they get the direct grant on the root and, while the sweep is
+     * still running, proceed. Every grant only adds access for the agent uid (an ACL entry, or the shared group under
+     * gVisor), so a process that starts before the sweep ends has less access, never more: isolation and fail-closed
+     * checks are unchanged. Agent turns and every other asynchronous spawn go through
+     * {@link prepareTenantIsolationAsync}, which awaits the sweep and fails with the same fatal error as before; a
+     * recorded failure is replayed to synchronous callers too, for {@link TENANT_BACKEND_ACL_FAILURE_TTL_MS}.
      */
     protected ensureTenantBackendAgentWorkspaceAccess(cwd: string): void {
+        const root = this.tenantBackendAgentRoot(cwd);
+        if (root) {
+            // Rejections are recorded in failedTenantBackendAgentRoots and replayed; synchronous callers do not await.
+            this.tenantBackendAgentRootAccess(root, cwd).catch(() => undefined);
+        }
+    }
+
+    /** {@link ensureTenantBackendAgentWorkspaceAccess} that waits until the workspace and agent storage sweeps finished. */
+    protected async prepareTenantBackendAgentAccessAsync(cwd: string): Promise<void> {
+        const root = this.tenantBackendAgentRoot(cwd);
+        if (root) {
+            await this.tenantBackendAgentRootAccess(root, cwd);
+        }
+        // Agent turns read their own harness state (opencode.log, .codex, ...) under the storage root right away.
+        this.tenantAgentStorageEnv();
+        await Promise.all([...this.tenantAgentStorageSweeps.values()]);
+    }
+
+    /**
+     * Waits until a tenant backend agent may run as the dropped uid over `cwd` (workspace and harness-state sweeps
+     * done); rejects with the workspace sweep error. A no-op outside a tenant backend. For asynchronous callers that
+     * spawn through the synchronous wrappers (connection probes, harness CLI invocations).
+     */
+    async whenTenantAgentAccessReady(cwd: string): Promise<void> {
+        if (this.isTenantBackendMode() && !this.isContainerIsolationEnabled()) {
+            await this.prepareTenantBackendAgentAccessAsync(this.canonicalizeCwd(cwd));
+        }
+    }
+
+    /** The tenant root `cwd` lives in on a root tenant backend, `undefined` when no agent grant applies. */
+    protected tenantBackendAgentRoot(cwd: string): string | undefined {
         if (!this.isBackendRoot()) {
-            return;
+            return undefined;
         }
         const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
         if (!target || !fs.existsSync(target.root)) {
             throw new Error(`Refusing to spawn a tenant agent outside its mounted workspace: "${cwd}".`);
         }
-        const root = path.resolve(target.root);
+        return path.resolve(target.root);
+    }
+
+    /**
+     * Grants the agent uid its root (synchronously, it is one cheap `setfacl`) and returns the shared recursive sweep
+     * of what the backend owns under it; the root is marked prepared when the sweep succeeds. Throws synchronously
+     * for a failure it can tell right away (no agent uid, the root grant, a recorded failure still replayed).
+     */
+    protected tenantBackendAgentRootAccess(root: string, cwd: string): Promise<void> {
         if (this.preparedTenantBackendAgentRoots.has(root)) {
-            return;
+            return Promise.resolve();
         }
         // A real failure is remembered for a minute: every spawn and connection probe would otherwise repeat the
-        // synchronous sweep (seconds of event-loop time) and fail the same way.
+        // sweep and fail the same way.
         const failure = this.failedTenantBackendAgentRoots.get(root);
         if (failure && this.now() - failure.at < TENANT_BACKEND_ACL_FAILURE_TTL_MS) {
             throw failure.error;
         }
+        let uid: number;
+        let key: string;
         try {
-            this.prepareTenantBackendAgentRoot(root, cwd);
+            const resolved = this.resolveSpawnIdentity(cwd).uid;
+            if (resolved === undefined) {
+                throw new Error('Refusing to prepare tenant workspace access without a non-root agent uid.');
+            }
+            uid = resolved;
+            key = this.aclSweepKey(uid, root);
+            const inFlight = this.tenantBackendAgentRootSweeps.get(key);
+            if (inFlight) {
+                return inFlight;
+            }
+            const rootAcl = this.grantAgentAccess(uid, 'directory', [root]);
+            if (!rootAcl.ok) {
+                throw new Error(`Could not grant the non-root agent access to its tenant workspace ${root} (${rootAcl.reason}); install the acl package.`);
+            }
         } catch (error) {
-            const cause = error instanceof Error ? error : new Error(String(error));
-            this.failedTenantBackendAgentRoots.set(root, { error: cause, at: this.now() });
-            throw cause;
+            throw this.recordTenantBackendAgentRootFailure(root, error);
         }
-        this.failedTenantBackendAgentRoots.delete(root);
+        const sweep = this.sweepTenantBackendAgentRoot(root, uid).then(
+            () => {
+                this.preparedTenantBackendAgentRoots.add(root);
+                this.failedTenantBackendAgentRoots.delete(root);
+            },
+            error => {
+                throw this.recordTenantBackendAgentRootFailure(root, error);
+            },
+        );
+        const tracked: Promise<void> = sweep.finally(() => {
+            if (this.tenantBackendAgentRootSweeps.get(key) === tracked) {
+                this.tenantBackendAgentRootSweeps.delete(key);
+            }
+        });
+        this.tenantBackendAgentRootSweeps.set(key, tracked);
+        return tracked;
     }
 
-    /** Grants the agent uid its root and sweeps what the backend owns under it; marks the root prepared on success. */
-    protected prepareTenantBackendAgentRoot(root: string, cwd: string): void {
-        const uid = this.resolveSpawnIdentity(cwd).uid;
-        if (uid === undefined) {
-            throw new Error('Refusing to prepare tenant workspace access without a non-root agent uid.');
+    protected recordTenantBackendAgentRootFailure(root: string, error: unknown): Error {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        this.failedTenantBackendAgentRoots.set(root, { error: cause, at: this.now() });
+        return cause;
+    }
+
+    /** Sweeps what the backend owns under the tenant root in a child process; rejects with the fatal cause. */
+    protected async sweepTenantBackendAgentRoot(root: string, uid: number): Promise<void> {
+        const result = await this.sweepAgentAccessSinceLastSweep(uid, root);
+        if (!result.ok) {
+            throw new Error(`Could not prepare tenant workspace directories for agent uid ${uid} (${result.reason}); install find and acl.`);
         }
-        const rootAcl = this.grantAgentAccess(uid, 'directory', [root]);
-        if (!rootAcl.ok) {
-            throw new Error(`Could not grant the non-root agent access to its tenant workspace ${root} (${rootAcl.reason}); install the acl package.`);
-        }
-        const { dirs, files } = this.sweepAgentAccessSinceLastSweep(uid, root);
-        if (!dirs.ok) {
-            throw new Error(`Could not prepare tenant workspace directories for agent uid ${uid} (${dirs.reason}); install find and acl.`);
-        }
-        if (!files.ok) {
-            throw new Error(`Could not prepare tenant workspace files for agent uid ${uid} (${files.reason}); install find and acl.`);
-        }
-        const skipped = [...new Set([...(dirs.skipped ?? []), ...(files.skipped ?? [])])];
+        const skipped = [...new Set(result.skipped ?? [])];
         if (skipped.length > 0) {
             // Private subtrees the agent created (0700, owned by its uid) cannot be read by the backend (no
             // CAP_DAC_READ_SEARCH). The agent reaches them itself, so they are skipped rather than blocking every agent.
             console.warn(`[qaap-security] tenant workspace sweep under ${root} skipped ${skipped.length} unreadable agent-owned path(s) `
                 + `(e.g. ${skipped.slice(0, 3).join(', ')}); the readable tree is granted.`);
         }
-        this.preparedTenantBackendAgentRoots.add(root);
     }
 
     /** Clock for the failure cache of the tenant workspace sweep; overridable in tests. */
@@ -629,23 +745,30 @@ export class QaapTenantSpawnService {
     }
 
     /**
-     * Sweeps directories then files under `dir`, but only the entries whose status changed since the last complete
+     * Sweeps directories and files under `dir`, but only the entries whose status changed since the last complete
      * sweep of `dir` for this uid and access mode. Every sweep re-ran `find -exec setfacl` over the whole tree:
      * ~63,000 entries (8-11 s of synchronous event-loop time) on each tenant cold start on staging (24 Nov 2026).
      * An entry the backend created, renamed or re-moded since then has a newer ctime (user space cannot set it);
      * the entries left out already received their grant. The stamp takes the time the sweep ended (`setfacl` bumps
-     * the ctime of what it touched); an entry created during the sweep inherits the parent's default ACL.
+     * the ctime of what it touched) and is written only after a complete successful sweep; an entry created during
+     * the sweep inherits the parent's default ACL. The walk runs in a child process (`find`), never on the event loop.
      */
-    protected sweepAgentAccessSinceLastSweep(uid: number, dir: string): { readonly dirs: QaapTenantAccessCommandResult; readonly files: QaapTenantAccessCommandResult } {
+    protected async sweepAgentAccessSinceLastSweep(uid: number, dir: string): Promise<QaapTenantAccessCommandResult> {
         const stamp = this.aclSweepStampPath(uid, dir);
         const changedSince = stamp && fs.existsSync(stamp) ? stamp : undefined;
         // One walk grants directories and files: the walk itself is the cost once few entries changed (~63,000
         // stats per cold start on staging, twice), so two passes doubled it.
-        const result = this.sweepAgentAccessBothTypes(uid, dir, changedSince);
+        const result = await this.sweepAgentAccessBothTypes(uid, dir, changedSince);
         if (stamp && result.ok) {
             this.writeAclSweepStamp(stamp);
         }
-        return { dirs: result, files: result };
+        return result;
+    }
+
+    /** Identity of a sweep: the same root, uid and access mode share one sweep and one stamp. */
+    protected aclSweepKey(uid: number, dir: string): string {
+        const mode = this.usesAgentGroupAccess() ? `group-${this.agentAccessGroup(uid)}` : 'acl';
+        return `${path.resolve(dir)}\0${uid}\0${mode}`;
     }
 
     /** Stamp of the last complete sweep of `dir` for `uid` in the current access mode, or `undefined` when stamps are off. */
@@ -654,8 +777,7 @@ export class QaapTenantSpawnService {
         if (!directory) {
             return undefined;
         }
-        const mode = this.usesAgentGroupAccess() ? `group-${this.agentAccessGroup(uid)}` : 'acl';
-        const id = createHash('sha256').update(`${path.resolve(dir)}\0${uid}\0${mode}`).digest('hex').slice(0, 32);
+        const id = createHash('sha256').update(this.aclSweepKey(uid, dir)).digest('hex').slice(0, 32);
         return path.join(directory, `${id}.stamp`);
     }
 
@@ -685,19 +807,19 @@ export class QaapTenantSpawnService {
         }
     }
 
-    /** {@link sweepAgentAccess} for directories and files in a single `find` walk. */
-    protected sweepAgentAccessBothTypes(uid: number, dir: string, changedSince?: string): QaapTenantAccessCommandResult {
+    /** {@link sweepAgentAccess} for directories and files in a single `find` walk, run asynchronously. */
+    protected async sweepAgentAccessBothTypes(uid: number, dir: string, changedSince?: string): Promise<QaapTenantAccessCommandResult> {
         const select = [dir, '-xdev', '-uid', '0', ...(changedSince ? ['-cnewer', changedSince] : [])];
         const branch = (type: 'd' | 'f', actions: readonly string[]): string[] => ['(', '-type', type, ...actions, ')'];
         if (this.usesAgentGroupAccess()) {
             const group = this.agentAccessGroup(uid);
-            return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select,
+            return this.tolerateUnreadableSubtrees(await this.runTenantAccessCommandAsync('find', [...select,
                 ...branch('d', ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwxs', '{}', '+']),
                 '-o',
                 ...branch('f', ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwX', '{}', '+']),
             ]));
         }
-        return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select,
+        return this.tolerateUnreadableSubtrees(await this.runTenantAccessCommandAsync('find', [...select,
             ...branch('d', ['-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']),
             '-o',
             ...branch('f', ['-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']),
@@ -725,16 +847,77 @@ export class QaapTenantSpawnService {
     }
 
     protected runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
-        const result = spawnSync(file, [...args], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 120_000 });
-        if (!result.error && result.status === 0) {
+        const result = spawnSync(file, [...args], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: TENANT_ACCESS_COMMAND_TIMEOUT_MS });
+        return this.tenantAccessCommandResult(file, result.error, result.status ?? undefined, result.signal ?? undefined, result.stderr ?? '');
+    }
+
+    /**
+     * {@link runTenantAccessCommand} in a child process the event loop does not wait for: for the recursive sweeps,
+     * which take seconds on a large tree. Same deadline and the same result shape; a stderr longer than
+     * {@link TENANT_ACCESS_COMMAND_STDERR_LIMIT} is reported without its lines, so it can never pass as tolerated.
+     */
+    protected runTenantAccessCommandAsync(file: string, args: readonly string[]): Promise<QaapTenantAccessCommandResult> {
+        return new Promise(resolve => {
+            let stderr = '';
+            let truncated = false;
+            let settled = false;
+            let timer: NodeJS.Timeout | undefined;
+            const finish = (result: QaapTenantAccessCommandResult): void => {
+                if (!settled) {
+                    settled = true;
+                    if (timer) {
+                        clearTimeout(timer);
+                    }
+                    resolve(result);
+                }
+            };
+            let child: ChildProcess;
+            try {
+                child = spawn(file, [...args], { stdio: ['ignore', 'ignore', 'pipe'] });
+            } catch (error) {
+                finish(this.tenantAccessCommandResult(file, error instanceof Error ? error : new Error(String(error)), undefined, undefined, ''));
+                return;
+            }
+            child.stderr?.setEncoding('utf8');
+            child.stderr?.on('data', (chunk: string) => {
+                if (stderr.length + chunk.length > TENANT_ACCESS_COMMAND_STDERR_LIMIT) {
+                    truncated = true;
+                    return;
+                }
+                stderr += chunk;
+            });
+            timer = setTimeout(() => {
+                child.kill('SIGKILL');
+                const timeout: NodeJS.ErrnoException = new Error('timed out');
+                timeout.code = 'ETIMEDOUT';
+                finish(this.tenantAccessCommandResult(file, timeout, undefined, undefined, stderr));
+            }, TENANT_ACCESS_COMMAND_TIMEOUT_MS);
+            timer.unref?.();
+            child.on('error', error => finish(this.tenantAccessCommandResult(file, error, undefined, undefined, stderr)));
+            child.on('close', (status, signal) => {
+                const result = this.tenantAccessCommandResult(file, undefined, status ?? undefined, signal ?? undefined, stderr);
+                const reason = `${result.reason} (stderr over ${TENANT_ACCESS_COMMAND_STDERR_LIMIT} bytes)`;
+                finish(truncated && !result.ok ? { ok: false, reason } : result);
+            });
+        });
+    }
+
+    protected tenantAccessCommandResult(
+        file: string,
+        error: Error | undefined,
+        status: number | undefined,
+        signal: NodeJS.Signals | undefined,
+        stderr: string,
+    ): QaapTenantAccessCommandResult {
+        if (!error && status === 0) {
             return { ok: true };
         }
-        const cause = result.error
-            ? (result.error as NodeJS.ErrnoException).code ?? result.error.message
-            : `exit status ${result.status ?? result.signal ?? 'unknown'}`;
-        const stderrLines = (result.stderr ?? '').split('\n').map(line => line.trim()).filter(Boolean);
+        const cause = error
+            ? (error as NodeJS.ErrnoException).code ?? error.message
+            : `exit status ${status ?? signal ?? 'unknown'}`;
+        const stderrLines = stderr.split('\n').map(line => line.trim()).filter(Boolean);
         const firstStderrLine = stderrLines[0];
-        const exited = !result.error && typeof result.status === 'number';
+        const exited = !error && typeof status === 'number';
         return {
             ok: false,
             reason: `${file} ${cause}${firstStderrLine ? `: ${firstStderrLine}` : ''}`,
@@ -751,6 +934,11 @@ export class QaapTenantSpawnService {
         cwd = this.canonicalizeCwd(cwd);
         this.assertTenantCwdInProduction(cwd);
         if (!this.isContainerIsolationEnabled()) {
+            if (this.isTenantBackendMode()) {
+                // The agent spawn waits for the recursive sweep here instead of walking the tree on the event loop.
+                await this.prepareTenantBackendAgentAccessAsync(cwd);
+                return;
+            }
             this.prepareTenantIsolation(cwd);
             return;
         }
@@ -1222,12 +1410,25 @@ export class QaapTenantSpawnService {
         // (.codex, .claude, .gemini, ...) that the sign-in links point to, which an older root
         // run left at 0700 with `mask::---`. A failure is logged per directory and never skips the
         // remaining ones, so a stale cache cannot block the home repair; the storage stays usable.
+        // The sweeps run in child processes; agent turns await them (prepareTenantIsolationAsync).
+        const key = this.aclSweepKey(uid, root);
+        if (!this.tenantAgentStorageSweeps.has(key)) {
+            this.tenantAgentStorageSweeps.set(key, this.sweepTenantAgentStorage(root, uid));
+        }
+    }
+
+    /** The harness-state sweeps of {@link grantTenantAgentStorageAccess}, one directory after the other; never rejects. */
+    protected async sweepTenantAgentStorage(root: string, uid: number): Promise<void> {
         for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
-            const { files } = this.sweepAgentAccessSinceLastSweep(uid, dir);
-            if (!files.ok) {
+            let result: QaapTenantAccessCommandResult;
+            try {
+                result = await this.sweepAgentAccessSinceLastSweep(uid, dir);
+            } catch (error) {
+                result = { ok: false, reason: error instanceof Error ? error.message : String(error) };
+            }
+            if (!result.ok) {
                 console.warn(`[qaap-security] agent uid ${uid} may not reach existing harness state under ${dir} `
-                    + `(${files.reason ?? 'unknown reason'}); the sign-in links are still prepared.`);
-                continue;
+                    + `(${result.reason ?? 'unknown reason'}); the sign-in links are still prepared.`);
             }
         }
     }
