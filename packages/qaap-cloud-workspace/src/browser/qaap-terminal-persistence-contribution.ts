@@ -12,6 +12,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { fetchQaapTerminalSessions, upsertQaapTerminalSessions } from './qaap-cloud-workspace-client';
 import { QaapDeferredStartup, QaapVisibleInterval } from './qaap-deferred-startup';
+import { persistableQaapTerminals } from './qaap-terminal-persistence-filter';
 
 const PERSIST_INTERVAL_MS = 15_000;
 
@@ -53,23 +54,30 @@ export class QaapTerminalPersistenceContribution implements FrontendApplicationC
         return uri ? `ws:${uri}` : 'default';
     }
 
+    /** What the last successful persist wrote, so an unchanged list is not sent again. */
+    protected lastPersisted: string | undefined;
+
     protected async persist(): Promise<void> {
-        const widgets = this.terminals.all;
-        if (widgets.length === 0) {
+        // Work Hub terminals (chat panels, the hidden sign-in terminal of the Connect dialog) are transient: they keep
+        // their own state, and listing them here made the IDE announce "Previous terminal session restored (π)" for
+        // a Pi sign-in that had long finished (staging, 24 Nov 2026).
+        const terminals = persistableQaapTerminals(this.terminals.all);
+        const workspaceKey = this.workspaceKey();
+        const snapshot = JSON.stringify({ workspaceKey, terminals });
+        // An empty list is written too (once), so a closed terminal stops being announced after the next start.
+        if (snapshot === this.lastPersisted || (terminals.length === 0 && this.lastPersisted === undefined && !this.hadSavedTerminals)) {
             return;
         }
-        await upsertQaapTerminalSessions({
-            workspaceKey: this.workspaceKey(),
-            terminals: widgets.map(w => ({
-                id: w.id,
-                title: w.title.label,
-                cwd: w.terminalId ? undefined : undefined,
-            })),
-        });
+        await upsertQaapTerminalSessions({ workspaceKey, terminals });
+        this.lastPersisted = snapshot;
     }
+
+    /** Whether the server had terminals saved for this workspace when the app started (an empty list must clear them). */
+    protected hadSavedTerminals = false;
 
     protected async restoreHint(): Promise<void> {
         const saved = await fetchQaapTerminalSessions(this.workspaceKey());
+        this.hadSavedTerminals = saved.terminals.length > 0;
         if (saved.terminals.length === 0) {
             return;
         }
