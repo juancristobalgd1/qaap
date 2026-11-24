@@ -188,6 +188,7 @@ let qaapAuthConfigCache: Promise<QaapAuthConfigResponse> | undefined;
 /** Drop the cached `/auth/config` response so the next {@link fetchQaapAuthConfig} refetches. */
 export function invalidateQaapAuthConfigCache(): void {
     qaapAuthConfigCache = undefined;
+    invalidateQaapAuthSessionCache();
 }
 
 async function requestQaapAuthConfig(): Promise<{ config: QaapAuthConfigResponse, cacheable: boolean }> {
@@ -228,7 +229,42 @@ export function fetchQaapAuthConfig(options?: FetchQaapAuthConfigOptions): Promi
     return pending;
 }
 
+/**
+ * Answers of `/auth/session` are shared for this long: one boot asked it 8 times within a second (project sync, PR
+ * inbox, GitHub chips, login contribution...), each a round trip to a possibly cold tenant. Any session change
+ * (`qaap-auth-session-changed`), sign-out or auth-config invalidation drops the shared answer.
+ */
+const QAAP_AUTH_SESSION_SHARE_MS = 1_500;
+let qaapAuthSessionShared: { readonly at: number; readonly answer: Promise<QaapAuthSessionResponse> } | undefined;
+let qaapAuthSessionListenerInstalled = false;
+
+/** Forgets the shared `/auth/session` answer, so the next call asks the server. */
+export function invalidateQaapAuthSessionCache(): void {
+    qaapAuthSessionShared = undefined;
+}
+
 export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {
+    if (!qaapAuthSessionListenerInstalled && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        qaapAuthSessionListenerInstalled = true;
+        window.addEventListener('qaap-auth-session-changed', invalidateQaapAuthSessionCache);
+    }
+    const shared = qaapAuthSessionShared;
+    if (shared && Date.now() - shared.at < QAAP_AUTH_SESSION_SHARE_MS) {
+        return shared.answer;
+    }
+    const answer = requestQaapAuthSession();
+    const entry = { at: Date.now(), answer };
+    qaapAuthSessionShared = entry;
+    // A failed request is never shared: the next caller asks again.
+    answer.catch(() => {
+        if (qaapAuthSessionShared === entry) {
+            qaapAuthSessionShared = undefined;
+        }
+    });
+    return answer;
+}
+
+async function requestQaapAuthSession(): Promise<QaapAuthSessionResponse> {
     const response = await fetchQaapWithTimeout(
         `${QAAP_AUTH_API_PATH}/session`,
         qaapAuthenticatedFetchInit(),
