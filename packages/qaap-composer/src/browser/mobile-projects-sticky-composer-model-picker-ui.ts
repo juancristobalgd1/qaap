@@ -28,6 +28,9 @@ import { placePickerAbove } from './qaap-composer-picker-placement';
 /** How long a model picked before its harness sign-in waits for that sign-in to be confirmed. */
 const SELECT_AFTER_SIGN_IN_WINDOW_MS = 15 * 60_000;
 
+/** UI state of an open picker sheet, kept across its re-renders; dropped with the sheet. */
+const openPickerUiState = new WeakMap<HTMLElement, { readonly railSelection: 'favorites' | string; readonly query: string }>();
+
 /** Same model ids in the same order: an answer that brings nothing new must not rebuild the open list. */
 function sameModelIds(left: readonly QaapQaiqModelOption[] | undefined, right: readonly QaapQaiqModelOption[]): boolean {
     if (!left || left.length !== right.length) {
@@ -141,6 +144,10 @@ export async function renderStickyComposerModelPicker(
     if (searchRow) {
         searchRow.style.display = 'none';
     }
+    // The same open picker is rendered again when the background agent refresh answers: keep where the user
+    // was (rail, search, scroll) instead of jumping back to the pinned harness at the top of the list.
+    const preserved = openPickerUiState.get(chrome.sheet);
+    const previousScrollTop = chrome.list.querySelector<HTMLElement>('[role="listbox"]')?.scrollTop ?? 0;
     const host = document.createElement('div');
     host.className = 'qaap-composer-model-picker-host';
     chrome.list.replaceChildren(host);
@@ -177,8 +184,13 @@ export async function renderStickyComposerModelPicker(
     };
     rebuildModels();
 
-    let query = '';
-    let railSelection: 'favorites' | string = pinned;
+    let query = preserved?.query ?? '';
+    let railSelection: 'favorites' | string = preserved && (preserved.railSelection === 'favorites'
+        || harnesses.some(harness => harness.id === preserved.railSelection)) ? preserved.railSelection : pinned;
+    const rememberUiState = (): void => {
+        openPickerUiState.set(chrome.sheet, { railSelection, query });
+    };
+    rememberUiState();
     let favorites = QaapComposerModelPickerModel.readFavorites(window.localStorage);
     let approvalCurrent: QaapAgentApprovalPolicyId = options.approval;
     const close = (): void => { chrome.onClose(); };
@@ -188,6 +200,7 @@ export async function renderStickyComposerModelPicker(
             return;
         }
         observer.disconnect();
+        openPickerUiState.delete(chrome.sheet);
         disposeQaapComposerModelPicker(host);
         window.removeEventListener('resize', onResize);
         chrome.list.replaceChildren();
@@ -274,10 +287,12 @@ export async function renderStickyComposerModelPicker(
             },
             onQuery: value => {
                 query = value;
+                rememberUiState();
                 repaint();
             },
             onRail: selection => {
                 railSelection = selection;
+                rememberUiState();
                 repaint();
             },
             onClose: close,
@@ -296,6 +311,12 @@ export async function renderStickyComposerModelPicker(
         placePickerAbove(chrome.sheet, options.anchor);
     };
     repaint();
+    if (preserved && previousScrollTop > 0) {
+        const list = host.querySelector<HTMLElement>('[role="listbox"]');
+        if (list) {
+            list.scrollTop = previousScrollTop;
+        }
+    }
     // Background refresh of every harness, so the list never waits for the slowest one. An answer repaints only
     // when it changes what is on screen: eight harnesses answering one by one each rebuilt the whole list
     // (scroll and hover reset), even when the list was the cached one or belonged to another rail entry.
