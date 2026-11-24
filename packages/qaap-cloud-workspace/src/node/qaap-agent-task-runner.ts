@@ -64,7 +64,7 @@ type QaapAgentDelegationTaskFields = Pick<QaapAgentTask, 'id' | 'ownerLogin' | '
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
-import { antigravityBinFor, clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
+import { antigravityBinFor, clearNativeAgentModelCache, expireNativeAgentModels, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -677,7 +677,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             this.agentConnectionStates.delete(cacheKey);
             this.agentConnectionProbes.delete(cacheKey);
             this.rejectedAgentSessions.delete(cacheKey);
-            invalidateNativeAgentModels(onlyAgent, ownerLogin);
+            // After a sign-in: list again, but keep the last good catalog if that listing fails.
+            expireNativeAgentModels(onlyAgent, ownerLogin);
             return;
         }
         this.agentConnectionStates.clear();
@@ -900,7 +901,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         this.rejectedAgentSessions.delete(this.agentConnectionCacheKey(normalized, ownerLogin));
         // Same as a probe that turns connected: the catalog discovered while signed out is stale.
-        invalidateNativeAgentModels(normalized, ownerLogin);
+        expireNativeAgentModels(normalized, ownerLogin);
         return true;
     }
 
@@ -1104,11 +1105,15 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     this.agentConnectionProbes.delete(cacheKey);
                     const previous = this.agentConnectionStates.get(cacheKey)?.state;
                     this.agentConnectionStates.set(cacheKey, { state, at: Date.now(), probeFailed });
-                    if (state === 'connected' && previous !== 'connected') {
+                    if (state === 'connected' && previous !== undefined && previous !== 'connected') {
                         // A fresh sign-in unlocks the account's models (Pi `/login`, Cursor): the
                         // catalog discovered while signed out is stale. Rediscover right away so the
-                        // picker the user comes back to already lists the signed-in providers.
-                        invalidateNativeAgentModels(normalized, ownerLogin);
+                        // picker the user comes back to already lists the signed-in providers. Only a
+                        // transition seen by this process counts: the first probe after a restart has
+                        // no previous state, and treating it as a sign-in wiped the persisted catalog,
+                        // so the picker served the curated list until a cold listing finished (staging,
+                        // 24 Nov 2026). Expired rather than forgotten: a failed listing keeps the last list.
+                        expireNativeAgentModels(normalized, ownerLogin);
                         void this.discoverNativeModelsAfterSignIn(normalized, ownerLogin);
                     }
                 }
