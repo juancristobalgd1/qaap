@@ -329,6 +329,12 @@ export class MobileOpenRepositoryDialog {
         }
         this.visible = false;
         this.root.classList.remove('theia-mod-visible');
+        // Hiding a subtree that still holds focus (its Close button) is blocked by the browser and leaves assistive
+        // technology on a hidden control: release the focus first.
+        const focused = this.root.ownerDocument.activeElement;
+        if (focused instanceof HTMLElement && this.root.contains(focused)) {
+            focused.blur();
+        }
         this.root.setAttribute('aria-hidden', 'true');
         document.removeEventListener('keydown', this.onKeyDown, true);
         window.setTimeout(() => {
