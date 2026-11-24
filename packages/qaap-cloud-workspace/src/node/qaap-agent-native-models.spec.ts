@@ -42,6 +42,19 @@ describe('qaap-agent-native-models', () => {
         fs.rmSync(sandbox, { recursive: true, force: true });
     });
 
+    it('keeps the persisted live catalogs when the whole in-memory cache is cleared (catalog refresh on page load)', async () => {
+        const bin = path.join(sandbox, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, 'pi'), '#!/bin/sh\necho "provider  model  context"\necho "nvidia  meta/llama-3.2-90b-vision-instruct  128K"\n', { mode: 0o755 });
+        process.env.PATH = `${bin}:${originalPath}`;
+        const spawner = (file: string, args: readonly string[]) => ({ file, args, env: process.env });
+        const discovered = await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+        expect(discovered.length).to.be.greaterThan(0);
+        clearNativeAgentModelCache();
+        forgetNativeModelMemoryForTests();
+        expect(listNativeAgentModels('pi', 'alice').map(model => model.modelId)).to.deep.equal(discovered.map(model => model.modelId));
+    });
+
     it('answers a cold catalog without waiting for a slow CLI, then caches the discovered list', async function (): Promise<void> {
         if (process.platform === 'win32') {
             this.skip();

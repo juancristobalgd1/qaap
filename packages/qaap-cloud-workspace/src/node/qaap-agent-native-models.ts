@@ -426,11 +426,16 @@ export function prepareNativeAgentModels(
     return discovery;
 }
 
-/** Forget every cached and in-flight native catalog. Called when the agent catalog is refreshed. */
+/**
+ * Forget every cached and in-flight native catalog in memory. Called when the agent catalog is refreshed, which the
+ * composer asks for on every page load (`agent-tasks/all?refresh=1`): the persisted live lists are kept, since they
+ * come back as stale entries (served at once, rediscovered in the background). Wiping them here made every reload
+ * after a backend restart fall back to the curated list (seen on staging). Per-harness invalidation (a sign-in or a
+ * fresh request) still drops that harness's persisted list.
+ */
 export function clearNativeAgentModelCache(): void {
     cache.clear();
     discoveries.clear();
-    forgetPersistedNativeModelCatalogs(() => true);
 }
 
 /**
@@ -491,6 +496,9 @@ function openCodeListingEnv(agentHome?: string): { readonly env: NodeJS.ProcessE
     }
 }
 
+/** Pi's switches for a non-interactive run that must not wait on the network for anything but the providers. */
+const PI_QUIET_ENV: NodeJS.ProcessEnv = { PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0' };
+
 async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelDiscoverySpawner): Promise<QaapQaiqModelOption[]> {
     switch (agentId) {
         case 'opencode': {
@@ -507,7 +515,8 @@ async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelD
         case 'pi':
             // `pi --list-models` prints a `provider model context ...` table of every model the
             // CLI can reach with its configured providers.
-            return discoverFromCommand('pi', ['--list-models'], agentId, spawner);
+            // No npm version check or telemetry on the way: they are network round trips (0.5-4 s on a tenant).
+            return discoverFromCommand('pi', ['--list-models'], agentId, spawner, PI_QUIET_ENV);
         case 'codex': {
             // The CLI's own cache of the account's models (same JSON as `codex debug models`), read as the
             // agent identity; with a spawner the live listing runs in the owner's HOME when the cache is empty.

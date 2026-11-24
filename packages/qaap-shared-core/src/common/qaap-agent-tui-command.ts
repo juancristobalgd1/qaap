@@ -69,7 +69,8 @@ export const QAAP_PI_TUI_LOGIN_COMMAND = 'pi --tui-mode regular --no-session --n
  * 80-column TUI wraps mid-URL. `PI_HYPERLINKS=1` makes Pi emit the whole sign-in URL as an OSC-8
  * target, which the dialog collects whatever the wrapping.
  */
-export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPERLINKS: '1' };
+// The sign-in terminal also skips Pi's npm version check and telemetry: network round trips before the TUI is ready.
+export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPERLINKS: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0' };
 /**
  * The TUI is drawn and owns stdin: its startup header (version, `/ commands` hint, onboarding line),
  * the editor's horizontal rules (a quiet `quietStartup` header still draws them) or the no-models

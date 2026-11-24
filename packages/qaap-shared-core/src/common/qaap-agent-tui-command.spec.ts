@@ -91,7 +91,7 @@ describe('resolveAgentConnectionFlow for Pi', () => {
             input: resolvePiTuiLoginInput('openrouter'),
             fallbackCommand: 'pi',
             followUp: '/login',
-            env: { PI_HYPERLINKS: '1' },
+            env: { PI_HYPERLINKS: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0' },
         });
         expect(QAAP_PI_TUI_LOGIN_COMMAND).to.equal('pi --tui-mode regular --no-session --no-approve');
     });
