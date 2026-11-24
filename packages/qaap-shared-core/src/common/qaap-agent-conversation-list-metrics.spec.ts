@@ -568,3 +568,47 @@ describe('conversationTurnProgressRatio', () => {
         expect(conversationTurnProgressRatio(8, 6)).to.equal(1);
     });
 });
+
+describe('buildConversationListMetrics memoization', () => {
+    const agentReply = (content: string, createdAt: number): { role: 'agent'; content: string; createdAt: number } => ({
+        role: 'agent',
+        content,
+        createdAt,
+    });
+    const userTurn = (createdAt: number): { role: 'user'; content: string; createdAt: number } => ({
+        role: 'user',
+        content: 'please change it',
+        createdAt,
+    });
+
+    it('returns the same metrics object for the same messages array without recomputing', () => {
+        const messages = [userTurn(1), agentReply('2 files changed, 10 insertions(+), 4 deletions(-)', 2)];
+        const first = buildConversationListMetrics({ status: 'idle', messages });
+        const second = buildConversationListMetrics({ status: 'idle', messages });
+        expect(second).to.equal(first);
+        expect(first.linesAdded).to.equal(10);
+        expect(first.linesRemoved).to.equal(4);
+    });
+
+    it('recomputes when a message is appended to the same array', () => {
+        const messages: Array<{ role: 'user' | 'agent'; content: string; createdAt: number }> = [
+            userTurn(1),
+            agentReply('1 file changed, 1 insertion(+)', 2),
+        ];
+        const before = buildConversationListMetrics({ status: 'idle', messages });
+        messages.push(agentReply('3 files changed, 7 insertions(+), 2 deletions(-)', 3));
+        const after = buildConversationListMetrics({ status: 'idle', messages });
+        expect(after).to.not.equal(before);
+        expect(after.linesAdded).to.equal(7);
+        expect(after.linesRemoved).to.equal(2);
+    });
+
+    it('recomputes when the status changes for the same messages', () => {
+        const messages = [userTurn(1), agentReply('ok', 2)];
+        const idle = buildConversationListMetrics({ status: 'idle', messages });
+        const streaming = buildConversationListMetrics({ status: 'streaming', messages });
+        expect(streaming).to.not.equal(idle);
+        expect(streaming.turnStartedAt).to.equal(1);
+        expect(idle.turnStartedAt).to.be.undefined;
+    });
+});

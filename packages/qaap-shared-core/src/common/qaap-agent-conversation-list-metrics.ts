@@ -149,7 +149,45 @@ export function resolveLastSidebarGitActionKind(
     return undefined;
 }
 
+interface CachedConversationListMetrics {
+    readonly fingerprint: string;
+    readonly metrics: QaapAgentConversationListMetrics;
+}
+
+/** Metrics per conversation messages array; the list re-reads every conversation on each update. */
+const conversationListMetricsCache = new WeakMap<object, CachedConversationListMetrics>();
+
+/**
+ * Cheap fingerprint of the inputs the metrics read: status, message count and, per message, role, time, content
+ * length and the trace/segment counts. Parsing the diff stats from the text is what costs; this is a linear scan
+ * of small fields only.
+ */
+function conversationListMetricsFingerprint(input: QaapAgentConversationListMetricsInput): string {
+    let fingerprint = `${input.status}|${input.messages.length}`;
+    for (const message of input.messages) {
+        fingerprint += `|${message.role}${message.createdAt}:${message.content.length}:${message.traceEvents?.length ?? 0}:${message.segments?.length ?? 0}`;
+    }
+    return fingerprint;
+}
+
+/**
+ * Conversation list metrics, memoized per messages array. The same array with an unchanged fingerprint returns the
+ * same object; a new or changed message recomputes. Callers must treat the result as read-only.
+ */
 export function buildConversationListMetrics(
+    input: QaapAgentConversationListMetricsInput,
+): QaapAgentConversationListMetrics {
+    const fingerprint = conversationListMetricsFingerprint(input);
+    const cached = conversationListMetricsCache.get(input.messages);
+    if (cached?.fingerprint === fingerprint) {
+        return cached.metrics;
+    }
+    const metrics = computeConversationListMetrics(input);
+    conversationListMetricsCache.set(input.messages, { fingerprint, metrics });
+    return metrics;
+}
+
+function computeConversationListMetrics(
     input: QaapAgentConversationListMetricsInput,
 ): QaapAgentConversationListMetrics {
     const turnMessages = sliceLastTurnMessages(input.messages);
