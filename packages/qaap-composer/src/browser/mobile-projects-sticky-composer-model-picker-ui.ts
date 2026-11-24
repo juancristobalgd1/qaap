@@ -11,6 +11,7 @@ import {
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { resolvePiLoginProvider } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import {
@@ -110,7 +111,19 @@ function toPickerModel(agentId: string, model: QaapQaiqModelOption): QaapPickerM
         unavailableReason: unavailable ? unavailableText(model.unavailableReason) : undefined,
         tier: model.tier,
         signInRequired: unavailable && model.unavailableReason === 'not-connected',
+        vendor: model.vendor,
+        providerLabel: agentId === 'pi' ? piProviderLabel(model.vendor) : undefined,
     };
+}
+
+/** Display name of a Pi provider (`groq` → `Groq`), falling back to the raw vendor id for an unknown one. */
+function piProviderLabel(vendor: string | undefined): string | undefined {
+    const id = vendor?.trim();
+    if (!id) {
+        return undefined;
+    }
+    const provider = resolvePiLoginProvider(id);
+    return provider?.shortName ?? provider?.name ?? id;
 }
 
 function unavailableText(reason: QaapQaiqModelOption['unavailableReason']): string {

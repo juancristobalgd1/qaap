@@ -196,6 +196,56 @@ describe('qaap-composer-model-picker', () => {
         expect(selected).to.deep.equal([]);
     });
 
+    describe('Pi provider labels', () => {
+        const piModels = (): QaapPickerState['models'] => [
+            { agentId: 'pi', modelId: 'groq/llama-3.1-8b-instant', label: 'llama-3.1-8b-instant', available: true, vendor: 'groq', providerLabel: 'Groq' },
+            { agentId: 'pi', modelId: 'nvidia/llama-3.1-70b', label: 'llama-3.1-70b', available: true, vendor: 'nvidia', providerLabel: 'NVIDIA' },
+        ];
+        const piState = (overrides: Partial<QaapPickerState> = {}): QaapPickerState => state({
+            harnesses: [{ id: 'pi', label: 'Pi' }],
+            models: piModels(),
+            railSelection: 'pi',
+            currentAgentId: 'pi',
+            currentModelId: undefined,
+            ...overrides,
+        });
+        const providerTexts = (): string[] => Array.from(host.querySelectorAll('.qaap-model-picker-row-provider'))
+            .map(element => element.textContent ?? '');
+
+        it('names the provider on each Pi row when the Pi models come from more than one provider', () => {
+            renderQaapComposerModelPicker(host, props({ state: piState() }));
+            expect(rows(host).map(row => row.querySelector('.qaap-model-picker-row-label')?.textContent)).to.deep.equal([
+                'llama-3.1-8b-instant',
+                'llama-3.1-70b',
+            ]);
+            expect(providerTexts()).to.deep.equal(['Groq', 'NVIDIA']);
+        });
+
+        it('names no provider when every Pi model comes from one provider', () => {
+            const oneProvider = piModels().slice(0, 1);
+            renderQaapComposerModelPicker(host, props({ state: piState({ models: oneProvider }) }));
+            expect(providerTexts()).to.deep.equal([]);
+        });
+
+        it('never names a provider on the rows of another harness', () => {
+            renderQaapComposerModelPicker(host, props({
+                state: state({
+                    models: [
+                        ...piModels(),
+                        { agentId: 'claude', modelId: 'opus-4-6', label: 'Opus 4.6', available: true, providerLabel: 'Groq' },
+                    ],
+                    railSelection: 'claude',
+                }),
+            }));
+            expect(providerTexts()).to.deep.equal([]);
+        });
+
+        it('keeps search working on the provider name: "groq" matches the Groq rows', () => {
+            renderQaapComposerModelPicker(host, props({ state: piState({ query: 'groq' }) }));
+            expect(rows(host).map(row => row.dataset.modelId)).to.deep.equal(['groq/llama-3.1-8b-instant']);
+        });
+    });
+
     it('shows the favorites rail with only starred models', () => {
         const favorites = [QaapComposerModelPickerModel.favoriteKey('claude', 'sonnet-4-6')];
         renderQaapComposerModelPicker(host, props({ state: state({ railSelection: 'favorites', favorites }) }));

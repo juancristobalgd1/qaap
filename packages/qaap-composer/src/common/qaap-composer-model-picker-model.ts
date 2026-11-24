@@ -20,6 +20,10 @@ export interface QaapPickerModel {
     /** The model is locked only until the harness is signed in: the row offers the sign-in action. */
     readonly signInRequired?: boolean;
     readonly paid?: boolean;
+    /** Catalog vendor id (Pi: the provider id, e.g. `groq`); used to tell whether a list mixes providers. */
+    readonly vendor?: string;
+    /** Display name of the provider a row comes from (Pi only); shown on the row when the list mixes providers. */
+    readonly providerLabel?: string;
 }
 
 export interface QaapPickerState {
@@ -70,7 +74,8 @@ export namespace QaapComposerModelPickerModel {
         const matches = state.models.filter(model => model.label.toLowerCase().includes(query)
             || model.modelId.toLowerCase().includes(query)
             || model.agentId.toLowerCase().includes(query)
-            || Boolean(harnessLabels.get(model.agentId)?.includes(query)));
+            || Boolean(harnessLabels.get(model.agentId)?.includes(query))
+            || Boolean(model.providerLabel?.toLowerCase().includes(query)));
         return matches.sort((a, b) => {
             const aIsCurrent = state.railSelection === 'favorites'
                 ? favorites.has(favoriteKey(a.agentId, a.modelId))

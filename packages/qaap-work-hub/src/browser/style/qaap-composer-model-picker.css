@@ -368,6 +368,16 @@
     white-space: nowrap;
 }
 
+.qaap-model-picker-row-provider {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.85em;
+    color: var(--theia-descriptionForeground);
+}
+
 .qaap-model-picker-row-paid,
 .qaap-model-picker-shortcut,
 .qaap-model-picker-star,

@@ -64,6 +64,34 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         expect(chrome.sheet.classList.contains('theia-mod-model-picker')).to.equal(true);
     });
 
+    it('names each Pi row by its provider (catalog name, raw vendor id when the catalog does not know it)', async () => {
+        const ctx = {
+            resolveModelsForAgentPickerSafe: async (agentId: string) => ({
+                models: agentId === 'pi'
+                    ? [
+                        { provider: 'openai' as const, vendor: 'groq', modelId: 'groq/llama-3.1-8b-instant', label: 'llama-3.1-8b-instant' },
+                        { provider: 'openai' as const, vendor: 'nvidia', modelId: 'nvidia/llama-3.1-70b', label: 'llama-3.1-70b' },
+                        { provider: 'openai' as const, vendor: 'acme-unknown', modelId: 'acme-unknown/x', label: 'x' },
+                    ]
+                    : [{ provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'opus-4-6', label: 'Opus 4.6' }],
+                loadFailed: false,
+            }),
+        };
+        await renderStickyComposerModelPicker(ctx, chrome, {
+            cwd: undefined,
+            agents: [{ id: 'pi', label: 'Pi', available: true }, { id: 'claude', label: 'Claude Code', available: true }],
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me',
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        });
+        const providers = Array.from(chrome.list.querySelectorAll('.qaap-model-picker-row-provider')).map(element => element.textContent);
+        expect(providers).to.deep.equal(['Groq', 'NVIDIA', 'acme-unknown']);
+    });
+
     describe('connect another provider (Pi rail)', () => {
         const piAgents = [{ id: 'pi', label: 'Pi', available: true }];
         const piOptions = {
