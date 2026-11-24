@@ -145,6 +145,21 @@ describe('qaap-composer-model-picker', () => {
         expect(signedIn).to.deep.equal(['claude:opus-pro', 'claude:opus-pro']);
     });
 
+    it('shows the connect-another action only when given one, and runs it on click', () => {
+        let connected = 0;
+        renderQaapComposerModelPicker(host, props({ state: state({ railSelection: 'pi' }) }));
+        expect(host.querySelector('.qaap-model-picker-connect-another')).to.equal(null);
+
+        renderQaapComposerModelPicker(host, props({
+            state: state({ railSelection: 'pi' }),
+            connectAnother: { label: 'Connect another provider', onAction: () => connected++ },
+        }));
+        const action = host.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-another');
+        expect(action?.textContent).to.equal('Connect another provider');
+        action?.click();
+        expect(connected).to.equal(1);
+    });
+
     it('Enter in the search field acts on the first row, opening the sign-in when that model needs it', () => {
         const selected: string[] = [];
         const signedIn: string[] = [];

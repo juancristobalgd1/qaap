@@ -84,6 +84,8 @@ export interface StickyComposerModelPickerOptions {
     readonly onRefresh: () => void;
     /** Same handlers the previous agent sheet used for its sign-in and AI settings rows. */
     readonly onProactiveLogin?: (agentId: string) => void;
+    /** Whether a harness reads as signed in; on the Pi rail a connected Pi offers adding another provider. */
+    readonly isAgentConnected?: (agentId: string) => boolean;
     readonly onOpenAiFeaturesSettings?: () => void;
     /** Keeps catalog labels so the model pill shows «GPT-5.6 Sol», not the slug, after a reload. */
     readonly rememberModelLabels?: (models: readonly QaapQaiqModelOption[]) => void;
@@ -192,6 +194,23 @@ export async function renderStickyComposerModelPicker(
     const onResize = (): void => placePickerAbove(chrome.sheet, options.anchor);
     window.addEventListener('resize', onResize);
 
+    /**
+     * The "Connect another provider" action of the Pi rail once Pi is connected. Pi's Connect dialog adds a provider
+     * to the existing sign-in (`/login` in the same terminal), so the action reuses the sign-in path as it is.
+     */
+    const connectAnotherProviderAction = (selection: 'favorites' | string): { label: string; onAction: () => void } | undefined => {
+        if (selection !== 'pi' || !options.onProactiveLogin || !options.isAgentConnected?.('pi')) {
+            return undefined;
+        }
+        return {
+            label: nls.localize('qaap/composer/modelPicker/connectAnotherPiProvider', 'Connect another provider'),
+            onAction: () => {
+                close();
+                options.onProactiveLogin?.('pi');
+            },
+        };
+    };
+
     const repaint = (): void => {
         // A repaint rebuilds the list: keep where the user had scrolled to.
         const scrolled = host.querySelector<HTMLElement>('[role="listbox"]');
@@ -225,6 +244,7 @@ export async function renderStickyComposerModelPicker(
                 current: resolveComposerEffortLevel(options.cwd, effortAgentId, effortModelId),
             },
             approval: { current: approvalCurrent },
+            connectAnother: connectAnotherProviderAction(railSelection),
             isMobile: options.isMobile,
             onSelectModel: (agentId, modelId) => {
                 const model = catalog.get(QaapComposerModelPickerModel.favoriteKey(agentId, modelId));

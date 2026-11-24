@@ -45,6 +45,8 @@ export interface QaapComposerModelPickerProps {
     readonly onClose: () => void;
     /** Connection strip above the list when the selected harness needs a sign-in or an API key. */
     readonly connect?: { readonly message: string; readonly actionLabel: string; readonly onAction: () => void };
+    /** Secondary action under the list: adds another provider to a harness that is already connected. */
+    readonly connectAnother?: { readonly label: string; readonly onAction: () => void };
 }
 
 interface PickerHostState {
@@ -469,6 +471,17 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         rows.append(empty);
     }
     section.append(search, rows);
+    if (props.connectAnother) {
+        const another = document.createElement('button');
+        another.type = 'button';
+        another.className = 'qaap-model-picker-connect-another';
+        another.textContent = props.connectAnother.label;
+        another.addEventListener('click', ev => {
+            ev.preventDefault();
+            props.connectAnother?.onAction();
+        });
+        section.append(another);
+    }
     return section;
 }
 
