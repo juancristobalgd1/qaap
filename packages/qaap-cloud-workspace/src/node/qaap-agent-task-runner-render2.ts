@@ -306,16 +306,36 @@ export function detectQaiqAgentExtracted(ctx: QaapAgentTaskRunnerContext): void 
         });
 }
 
-export function detectCodexAgentExtracted(ctx: QaapAgentTaskRunnerContext): void {
+/**
+ * Registers Codex at once and never runs codex on the event loop. Until the help probe of the current binary
+ * has answered, Codex uses the defaults of an unknown CLI (the modern `codex exec` form without
+ * `--approve-for-me`), the same as when the probe fails; the answer then refines the entry. Returns the
+ * pending refinement, if any, so callers and specs can wait for it.
+ */
+export function detectCodexAgentExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void> | undefined {
         if (!ctx.isOnPath('codex')) {
-            return;
+            return undefined;
         }
-        const help = ctx.readCodexHelp();
-        // An empty help (the probe timed out or failed) must not assume a flag the CLI may lack: prod
-        // codex 0.144.5 has no `--approve-for-me`, so an unknown flag would break every Codex task. The
-        // template still defaults to the modern `codex exec` form (resolveQaapCodexTemplate).
-        const probeFailed = help.trim() === '';
-        if (probeFailed) {
+        const cached = ctx.cachedCodexHelp();
+        if (cached !== undefined) {
+            registerCodexAgent(ctx, cached, true);
+            return undefined;
+        }
+        registerCodexAgent(ctx, '', false);
+        return ctx.probeCodexHelp().then(help => {
+            // A later detection may have found codex gone; never bring it back from a stale probe.
+            if (ctx.detectedAgents.has('codex')) {
+                registerCodexAgent(ctx, help, true);
+            }
+        }, () => undefined);
+}
+
+function registerCodexAgent(ctx: QaapAgentTaskRunnerContext, help: string, probeSettled: boolean): void {
+        // An empty help (the probe timed out, failed or has not answered yet) must not assume a flag the CLI may
+        // lack: prod codex 0.144.5 has no `--approve-for-me`, so an unknown flag would break every Codex task.
+        // The template still defaults to the modern `codex exec` form (resolveQaapCodexTemplate).
+        const helpUnknown = help.trim() === '';
+        if (helpUnknown && probeSettled) {
             console.warn('[qaap-agent-tasks] codex --help probe returned no output; assuming no --approve-for-me');
         }
         ctx.detectedAgents.set('codex', {
@@ -323,7 +343,7 @@ export function detectCodexAgentExtracted(ctx: QaapAgentTaskRunnerContext): void
             label: 'Codex',
             bin: 'codex',
             template: resolveQaapCodexTemplate(help),
-            codexSupportsApproveForMe: !probeFailed && /\B--approve-for-me\b/.test(help),
+            codexSupportsApproveForMe: !helpUnknown && /\B--approve-for-me\b/.test(help),
         });
 }
 

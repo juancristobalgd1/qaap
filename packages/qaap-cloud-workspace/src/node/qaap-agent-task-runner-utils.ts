@@ -6,7 +6,7 @@
 // Pure utility helpers extracted from QaapAgentTaskRunner.
 // These functions operate only on their parameters and do not access instance state.
 
-import { spawnSync } from 'child_process';
+import { execFile, spawnSync } from 'child_process';
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -45,38 +45,90 @@ export interface QaapAgentStdinPrompt {
 /** Boot-time `codex --help` probes; each call is capped here (two may run in sequence). */
 const CODEX_HELP_PROBE_TIMEOUT_MS = 5_000;
 
-/**
- * Top-level and `exec` help text of the trusted codex, or `''` when the probe fails. Callers treat `''`
- * as "unknown" and fall back to the modern codex defaults (see resolveQaapCodexTemplate).
- */
-export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
-    // Only a codex the backend uid trusts may run here (never a tenant-installed one as root).
-    const codex = resolveTrustedExecutable('codex', env);
-    if (!codex) {
-        return '';
-    }
+/** Runs one help command and resolves its stdout and stderr; never rejects (a failed run resolves what it printed). */
+export type QaapCodexHelpCommandRunner = (file: string, args: readonly string[], env: NodeJS.ProcessEnv) => Promise<string>;
+
+const runCodexHelpCommand: QaapCodexHelpCommandRunner = (file, args, env) => new Promise<string>(resolve => {
     try {
-        const topLevel = spawnSync(codex, ['--help'], {
+        execFile(file, [...args], {
             encoding: 'utf8',
             timeout: CODEX_HELP_PROBE_TIMEOUT_MS,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),
-        });
-        const topLevelHelp = `${topLevel.stdout || ''}\n${topLevel.stderr || ''}`;
+        }, (_error, stdout, stderr) => resolve(`${stdout || ''}\n${stderr || ''}`));
+    } catch {
+        resolve('');
+    }
+});
+
+/**
+ * Top-level and `exec` help text of the trusted codex, read without blocking the event loop and kept per
+ * codex binary (path, size and mtime), so re-detecting agents does not run codex again until it changes.
+ *
+ * The probe used `spawnSync` twice (up to 5 s each): on a 1-CPU tenant `codex --help` took 5.4 s of
+ * event-loop time at boot and re-ran on every agent catalog refresh, inside the 11.7 s cold-start stall
+ * QA saw on staging (24 Nov 2026). `''` means "unknown"; callers fall back to the modern codex defaults
+ * (see resolveQaapCodexTemplate), as they already did when the synchronous probe timed out.
+ */
+export class QaapCodexHelpProbe {
+
+    protected readonly results = new Map<string, string>();
+    protected readonly inFlight = new Map<string, Promise<string>>();
+
+    constructor(protected readonly runCommand: QaapCodexHelpCommandRunner = runCodexHelpCommand) { }
+
+    /** Help text of the current codex when it was already probed, `''` without a trusted codex, else `undefined`. */
+    cached(env: NodeJS.ProcessEnv = process.env): string | undefined {
+        const binary = this.resolveBinary(env);
+        return binary ? this.results.get(binary.key) : '';
+    }
+
+    /** Probes the current codex once per binary; concurrent calls share the same run. */
+    probe(env: NodeJS.ProcessEnv = process.env): Promise<string> {
+        const binary = this.resolveBinary(env);
+        if (!binary) {
+            return Promise.resolve('');
+        }
+        const done = this.results.get(binary.key);
+        if (done !== undefined) {
+            return Promise.resolve(done);
+        }
+        const running = this.inFlight.get(binary.key);
+        if (running) {
+            return running;
+        }
+        const run = this.readHelp(binary.path, env)
+            .catch(() => '')
+            .then(help => {
+                this.results.set(binary.key, help);
+                this.inFlight.delete(binary.key);
+                return help;
+            });
+        this.inFlight.set(binary.key, run);
+        return run;
+    }
+
+    protected async readHelp(codex: string, env: NodeJS.ProcessEnv): Promise<string> {
+        const topLevelHelp = await this.runCommand(codex, ['--help'], env);
         if (!/\bcodex\s+exec\b|^\s+exec\b/m.test(topLevelHelp)) {
             return topLevelHelp;
         }
-        const execCommand = spawnSync(codex, ['exec', '--help'], {
-            encoding: 'utf8',
-            timeout: CODEX_HELP_PROBE_TIMEOUT_MS,
-            killSignal: 'SIGTERM',
-            windowsHide: true,
-            env: childProcessEnv(env),
-        });
-        return `${topLevelHelp}\n${execCommand.stdout || ''}\n${execCommand.stderr || ''}`;
-    } catch {
-        return '';
+        return `${topLevelHelp}\n${await this.runCommand(codex, ['exec', '--help'], env)}`;
+    }
+
+    /** Only a codex the backend uid trusts may run here (never a tenant-installed one as root). */
+    protected resolveBinary(env: NodeJS.ProcessEnv): { readonly path: string; readonly key: string } | undefined {
+        const codex = resolveTrustedExecutable('codex', env);
+        if (!codex) {
+            return undefined;
+        }
+        try {
+            const stat = fs.statSync(codex);
+            return { path: codex, key: `${codex}\0${stat.size}\0${stat.mtimeMs}` };
+        } catch {
+            return { path: codex, key: codex };
+        }
     }
 }
 

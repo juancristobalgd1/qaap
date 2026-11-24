@@ -81,7 +81,7 @@ import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
 import {
-    readCodexHelp as readCodexHelpHelper,
+    QaapCodexHelpProbe,
     isQaiqRunner as isQaiqRunnerHelper,
     isOnPath as isOnPathHelper,
     applyTemplateVars as applyTemplateVarsHelper,
@@ -514,9 +514,17 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         detectCodexAgentExtracted(this);
     }
 
+    /** Help text of the trusted codex, probed off the event loop and kept per binary (see QaapCodexHelpProbe). */
+    protected readonly codexHelpProbe = new QaapCodexHelpProbe();
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public readCodexHelp(): string {
-        return readCodexHelpHelper(this.agentDetectionEnv());
+    public cachedCodexHelp(): string | undefined {
+        return this.codexHelpProbe.cached(this.agentDetectionEnv());
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public probeCodexHelp(): Promise<string> {
+        return this.codexHelpProbe.probe(this.agentDetectionEnv());
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

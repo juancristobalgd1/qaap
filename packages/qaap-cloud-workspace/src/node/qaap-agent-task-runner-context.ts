@@ -168,7 +168,10 @@ export interface QaapAgentTaskRunnerContext {
     resolveQaiqBin(): string | undefined;
     detectQaiqAgent(): void;
     detectCodexAgent(): void;
-    readCodexHelp(): string;
+    /** Codex help text already probed for the current binary (`''` without a trusted codex), else `undefined`. */
+    cachedCodexHelp(): string | undefined;
+    /** Probes the codex help text without blocking; resolves `''` when the probe fails. */
+    probeCodexHelp(): Promise<string>;
     isQaiqRunner(agentId: string | undefined, command: string): boolean;
     resolveTaskAgentId(task: QaapAgentTask): string;
     readCustomAgents(): AgentCandidate[];

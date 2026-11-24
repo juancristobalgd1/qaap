@@ -10,6 +10,7 @@ import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-contex
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
 import { detectAntigravityAgentExtracted, detectCodexAgentExtracted, resolveAntigravityBinExtracted } from './qaap-agent-task-runner-render2';
 import { probeAgentBinOnce } from './qaap-agent-task-runner-utils3';
+import { QaapCodexHelpProbe } from './qaap-agent-task-runner-utils';
 
 /** Minimal runner context: only the members the detectors read. */
 function fakeContext(overrides: Partial<Record<string, unknown>>): { ctx: QaapAgentTaskRunnerContext; detected: Map<string, AgentCandidate> } {
@@ -17,7 +18,8 @@ function fakeContext(overrides: Partial<Record<string, unknown>>): { ctx: QaapAg
     const ctx = {
         detectedAgents: detected,
         isOnPath: (): boolean => false,
-        readCodexHelp: (): string => '',
+        cachedCodexHelp: (): string | undefined => '',
+        probeCodexHelp: (): Promise<string> => Promise.resolve(''),
         ...overrides,
     } as unknown as QaapAgentTaskRunnerContext;
     return { ctx, detected };
@@ -70,7 +72,7 @@ describe('Antigravity CLI resolution on the task runner', () => {
 
 describe('Codex startup detection fallback', () => {
     it('uses the modern exec template but no approve-for-me flag when the help probe returns nothing', async () => {
-        const { ctx, detected } = fakeContext({ isOnPath: (bin: string) => bin === 'codex', readCodexHelp: () => '' });
+        const { ctx, detected } = fakeContext({ isOnPath: (bin: string) => bin === 'codex', cachedCodexHelp: () => '' });
         const warnings = await captureWarnings(() => detectCodexAgentExtracted(ctx));
         const codex = detected.get('codex');
         expect(codex?.template).to.contain('codex exec --json');
@@ -82,11 +84,96 @@ describe('Codex startup detection fallback', () => {
 
     it('still reads a legacy CLI from help text that clearly shows the legacy flags', async () => {
         const help = 'Usage: codex [options]\n  -q, --quiet   quiet mode\n';
-        const { ctx, detected } = fakeContext({ isOnPath: (bin: string) => bin === 'codex', readCodexHelp: () => help });
+        const { ctx, detected } = fakeContext({ isOnPath: (bin: string) => bin === 'codex', cachedCodexHelp: () => help });
         const warnings = await captureWarnings(() => detectCodexAgentExtracted(ctx));
         expect(detected.get('codex')?.template).to.contain('codex -q --json');
         expect(detected.get('codex')?.codexSupportsApproveForMe).to.equal(false);
         expect(warnings).to.deep.equal([]);
+    });
+});
+
+describe('Codex help probe off the event loop', () => {
+    const modernHelp = 'Usage: codex [OPTIONS]\nCommands:\n  exec  Run Codex non-interactively\n';
+
+    it('registers Codex at once with the unknown-CLI defaults, then refines it from the probe without a warning', async () => {
+        let answer: (help: string) => void = () => undefined;
+        const { ctx, detected } = fakeContext({
+            isOnPath: (bin: string) => bin === 'codex',
+            cachedCodexHelp: () => undefined,
+            probeCodexHelp: () => new Promise<string>(resolve => { answer = resolve; }),
+        });
+        let pending: Promise<void> | undefined;
+        const warnings = await captureWarnings(async () => {
+            pending = detectCodexAgentExtracted(ctx);
+            expect(detected.get('codex')?.template).to.contain('codex exec --json');
+            expect(detected.get('codex')?.codexSupportsApproveForMe).to.equal(false);
+            answer(`${modernHelp}  --approve-for-me  approve\n`);
+            await pending;
+        });
+        expect(pending).to.not.equal(undefined);
+        expect(detected.get('codex')?.codexSupportsApproveForMe).to.equal(true);
+        expect(warnings).to.deep.equal([]);
+    });
+
+    it('warns once the probe settles empty, and never brings back a codex a later detection removed', async () => {
+        let answer: (help: string) => void = () => undefined;
+        const { ctx } = fakeContext({
+            isOnPath: (bin: string) => bin === 'codex',
+            cachedCodexHelp: () => undefined,
+            probeCodexHelp: () => new Promise<string>(resolve => { answer = resolve; }),
+        });
+        const warnings = await captureWarnings(async () => {
+            const pending = detectCodexAgentExtracted(ctx);
+            answer('');
+            await pending;
+        });
+        expect(warnings).to.have.length(1);
+        expect(warnings[0]).to.contain('codex --help probe returned no output');
+
+        const removed = fakeContext({
+            isOnPath: (bin: string) => bin === 'codex',
+            cachedCodexHelp: () => undefined,
+            probeCodexHelp: () => new Promise<string>(resolve => { answer = resolve; }),
+        });
+        const pending = detectCodexAgentExtracted(removed.ctx);
+        removed.detected.delete('codex');
+        answer(modernHelp);
+        await pending;
+        expect(removed.detected.has('codex')).to.equal(false);
+    });
+
+    it('runs codex once per binary: concurrent probes share one run and later reads hit the cache', async () => {
+        const runs: string[][] = [];
+        class FixedBinaryProbe extends QaapCodexHelpProbe {
+            protected override resolveBinary(): { readonly path: string; readonly key: string } {
+                return { path: '/usr/local/bin/codex', key: 'codex-v1' };
+            }
+        }
+        const probe = new FixedBinaryProbe(async (_file, args) => {
+            runs.push([...args]);
+            return args[0] === 'exec' ? 'exec help --approve-for-me' : modernHelp;
+        });
+        expect(probe.cached()).to.equal(undefined);
+        const [first, second] = await Promise.all([probe.probe(), probe.probe()]);
+        expect(first).to.equal(second);
+        expect(first).to.contain('exec help --approve-for-me');
+        expect(runs).to.deep.equal([['--help'], ['exec', '--help']]);
+        expect(probe.cached()).to.equal(first);
+        await probe.probe();
+        expect(runs).to.have.length(2);
+    });
+
+    it('answers empty without running anything when no trusted codex resolves', async () => {
+        let ran = false;
+        class NoBinaryProbe extends QaapCodexHelpProbe {
+            protected override resolveBinary(): undefined {
+                return undefined;
+            }
+        }
+        const probe = new NoBinaryProbe(async () => { ran = true; return 'x'; });
+        expect(probe.cached()).to.equal('');
+        expect(await probe.probe()).to.equal('');
+        expect(ran).to.equal(false);
     });
 });
 
