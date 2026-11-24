@@ -32,7 +32,7 @@ import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
-import { antigravityBinFor, hasNativeAgentModelsEntry, listNativeAgentModels, invalidateNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, expireNativeAgentModels, hasNativeAgentModelsEntry, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
 import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
@@ -526,8 +526,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             : this.runner.nativeModelDiscoverySpawner(login);
         const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
         if (fresh) {
-            // Right after a sign-in or a newly connected provider: a still-fresh cached list predates it.
-            invalidateNativeAgentModels(catalogAgent, login, antigravityBin);
+            // Right after a sign-in or a newly connected provider: a still-fresh cached list predates it. Expired, not
+            // forgotten, so a listing that fails or overruns keeps serving the last good catalog.
+            expireNativeAgentModels(catalogAgent, login, antigravityBin);
         }
         // On a cold cache (first request after a restart) the answer waits the fresh budget too, or the picker caches
         // the curated fallback for a minute while `pi --list-models` is still running. A harness whose listing

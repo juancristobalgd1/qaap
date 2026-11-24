@@ -214,10 +214,10 @@ import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-
 import { qaapGitReadEnv } from './qaap-child-process-env';
 
 /**
- * Upper bound for a CLI model listing run as the agent uid (`opencode models`, `agy models`, the Claude
- * catalog probe): a little above their own 15 s budget, enforced by `timeout` as that uid.
+ * Upper bound for a CLI model listing run as the agent uid (`opencode models`, `agy models`, `pi --list-models`):
+ * a little above NATIVE_MODEL_LISTING_TIMEOUT_MS (40 s), enforced by `timeout` as that uid.
  */
-const NATIVE_MODEL_DISCOVERY_DEADLINE_MS = 20_000;
+const NATIVE_MODEL_DISCOVERY_DEADLINE_MS = 45_000;
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;

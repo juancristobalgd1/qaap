@@ -442,6 +442,21 @@ export function clearNativeAgentModelCache(): void {
 }
 
 /**
+ * Marks one owner's catalog of an agent stale and drops a listing already running (it predates the change), so the
+ * next request lists again, but keeps the entry: a new provider was just connected, yet if that listing fails or
+ * runs past its deadline (Pi on a cold 1-CPU tenant) the picker keeps the last good catalog rather than falling back
+ * to the curated list. Was: `fresh=1` invalidated it outright and lost NVIDIA's 22 models on staging (24 Nov 2026).
+ */
+export function expireNativeAgentModels(agentId: string, ownerLogin?: string, antigravityBin?: QaapAntigravityCliBin): void {
+    const key = nativeModelCacheKey(agentId.trim().toLowerCase(), ownerLogin, antigravityBin);
+    discoveries.delete(key);
+    const entry = cachedNativeModelEntry(key);
+    if (entry) {
+        cache.set(key, { ...entry, refreshAt: 0 });
+    }
+}
+
+/**
  * Forget one agent's catalog, e.g. after it signed in: its CLI can now list the account's models.
  * Without an owner every owner's entry for that agent goes.
  */
@@ -863,6 +878,13 @@ function firstLine(text: string | undefined): string {
     return (text ?? '').split('\n').map(line => line.trim()).find(line => line.length > 0) ?? '';
 }
 
+/**
+ * Deadline of a CLI model listing. A guard against a hung CLI rather than a latency target: the picker keeps the
+ * last good catalog meanwhile. `pi --list-models` takes 2-4 s once warm but ran past the old 15 s on a cold 1-CPU
+ * tenant (staging, 24 Nov 2026). The runner's own `timeout` wrapper sits a little above it.
+ */
+export const NATIVE_MODEL_LISTING_TIMEOUT_MS = 40_000;
+
 function discoverFromCommand(
     bin: string,
     args: string[],
@@ -886,7 +908,7 @@ function discoverFromCommand(
             const executable = windowsShim ? `${bin}.cmd` : spawn?.file ?? bin;
             // The deadline kills the listing's whole process tree (`agy models` outlived its wrapper).
             execFileKillingGroup(executable, spawn ? [...spawn.args] : args, {
-                timeoutMs: 15_000,
+                timeoutMs: NATIVE_MODEL_LISTING_TIMEOUT_MS,
                 shell: windowsShim,
                 ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
                 // Never inherit the backend env by omission; a spawner env is stripped too.

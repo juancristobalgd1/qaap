@@ -14,6 +14,7 @@ import {
     discoverCodexAccountModels,
     forgetNativeModelMemoryForTests,
     hasLiveNativeAgentModels,
+    expireNativeAgentModels,
     invalidateNativeAgentModels,
     listNativeAgentModels,
     NATIVE_MODEL_CACHE_TTL_MS,
@@ -360,6 +361,27 @@ describe('qaap-agent-native-models', () => {
 
             invalidateNativeAgentModels('pi');
             expect(listNativeAgentModels('pi', 'bob')).to.deep.equal(listStaticNativeAgentModels('pi'));
+        });
+
+        it('lists again after a provider is connected, and keeps the last good catalog when that listing fails', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const bin = path.join(sandbox, 'pi-fresh');
+            fs.writeFileSync(bin, piTable('nvidia', 'nemotron'), { mode: 0o755 });
+            const spawner = () => ({ file: bin, args: [] as string[] });
+            await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+
+            // Groq connected: the next request lists again and sees it.
+            fs.writeFileSync(bin, piTable('groq', 'llama-4'), { mode: 0o755 });
+            expireNativeAgentModels('pi', 'alice');
+            expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+
+            // Was: invalidated outright, so a listing that overran (cold tenant) fell back to the curated list.
+            fs.writeFileSync(bin, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+            expireNativeAgentModels('pi', 'alice');
+            expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+            expect(listNativeAgentModels('pi', 'alice')[0].modelId).to.equal('groq/llama-4');
         });
     });
 
