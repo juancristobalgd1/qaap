@@ -532,10 +532,30 @@ function openSealedSettings(settings: Record<string, unknown>, ownerLogin: strin
         try {
             opened[key] = cipher.decrypt(value, userSettingAad(ownerLogin, key));
         } catch (error) {
-            console.warn(`[qaap-agent-tasks] could not open sealed setting ${key}:`, error instanceof Error ? error.message : String(error));
+            warnUnreadableSealedSettingOnce(ownerLogin, key, error instanceof Error ? error.message : String(error));
         }
     }
     return opened;
+}
+
+/** `owner\0key\0reason` of each unreadable sealed setting already logged. */
+const loggedUnreadableSealedSettings = new Set<string>();
+
+/**
+ * Settings are read on every agent spawn and catalog refresh: one value sealed with another server's key
+ * logged five lines per read, 1,760 lines in 15 minutes on staging (24 Nov 2026). Logged once per owner,
+ * key and reason; the settings UI still reports it through {@link listUnreadableSealedUserSettings}.
+ */
+function warnUnreadableSealedSettingOnce(ownerLogin: string | undefined, key: string, reason: string): void {
+    const id = `${(ownerLogin ?? '').trim().toLowerCase()}\0${key}\0${reason}`;
+    if (loggedUnreadableSealedSettings.has(id)) {
+        return;
+    }
+    if (loggedUnreadableSealedSettings.size >= 512) {
+        loggedUnreadableSealedSettings.clear();
+    }
+    loggedUnreadableSealedSettings.add(id);
+    console.warn(`[qaap-agent-tasks] could not open sealed setting ${key}:`, reason);
 }
 
 /** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. Credentials are sealed at rest. */
