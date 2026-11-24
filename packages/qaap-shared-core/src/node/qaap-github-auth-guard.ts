@@ -442,7 +442,10 @@ export class QaapGithubAuthGuard {
         if (ctx.kind === 'skip') {
             return true;
         }
-        if (!this.pathBelongsToUser(ctx.userLogin, targetPath)) {
+        // The caller's own "New Worktree" checkouts count as theirs, as in ownsWorkspacePath: without it a worktree
+        // conversation could not reserve a preview port ("Qaap could not reserve an isolated preview port"), upload a
+        // file or open its review (three ownership_denied on staging, 24 Nov 2026). Symlink-safe like the repos check.
+        if (!this.pathBelongsToUser(ctx.userLogin, targetPath) && !this.pathIsUserWorktree(ctx.userLogin, targetPath)) {
             this.logSecurityEvent('ownership_denied', {
                 action,
                 userLogin: ctx.userLogin,
