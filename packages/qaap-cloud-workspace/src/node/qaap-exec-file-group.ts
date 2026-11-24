@@ -17,6 +17,11 @@ export interface QaapExecFileGroupOptions {
     /** Windows `.cmd` shims need a shell. */
     readonly shell?: boolean;
     readonly windowsHide?: boolean;
+    /**
+     * Background work (auth probes, `--version` checks, model listings): run under `nice` so the CPU the tenant's
+     * 1-CPU quota leaves goes to the backend's event loop first (see {@link withLowCpuPriority}).
+     */
+    readonly lowPriority?: boolean;
 }
 
 /** Why {@link execFileKillingGroup} reports a failure: a non-zero exit, a signal, or a spawn error. */
@@ -62,7 +67,9 @@ export function execFileKillingGroup(
         clearTimeout(timer);
         callback(error, stdout, stderr);
     };
-    const child = spawn(file, [...args], {
+    const command = options.lowPriority && !options.shell ? withLowCpuPriority(file, args) : { file, args: [...args] };
+    const wrappedByNice = command.file !== file;
+    const child = spawn(command.file, command.args, {
         cwd: options.cwd,
         env: options.env,
         shell: options.shell,
@@ -82,6 +89,13 @@ export function execFileKillingGroup(
     child.on('close', (code, signal) => {
         if (code === 0 && !signal && !killedByDeadline) {
             finish(null);
+            return;
+        }
+        if (wrappedByNice && !signal && !killedByDeadline && (code === NICE_COMMAND_NOT_FOUND || code === NICE_COMMAND_NOT_EXECUTABLE)) {
+            // `nice` could not start the command: report it as the spawn error it was without the wrapper, so a missing
+            // CLI stays "could not run" (an auth probe reads `unknown`), never an exit status the command answered.
+            const errno = code === NICE_COMMAND_NOT_FOUND ? 'ENOENT' : 'EACCES';
+            finish(Object.assign(new Error(`spawn ${file} ${errno}`), { code: errno, killed: false }));
             return;
         }
         const reason = signal ? `signal ${signal}` : `exit code ${code}`;
@@ -114,6 +128,33 @@ export function killProcessGroup(child: ChildProcess, posix = process.platform !
     } catch {
         // Already gone.
     }
+}
+
+/** coreutils `nice`, when this host has it (every Qaap image does). */
+const COREUTILS_NICE_PATHS = ['/usr/bin/nice', '/bin/nice'];
+
+/** `nice` exit statuses for a command it could not find (127) or not run (126), as POSIX specifies. */
+export const NICE_COMMAND_NOT_FOUND = 127;
+export const NICE_COMMAND_NOT_EXECUTABLE = 126;
+
+/** Niceness of Qaap's own background child processes. */
+export const QAAP_BACKGROUND_CHILD_NICENESS = 10;
+
+/**
+ * Prefixes a background command with `nice -n 10`. A tenant backend has one CPU, and the CLIs it spawns for itself
+ * (auth probes, `--version` checks, model listings, `npm` checks) took that quota from its event loop: on staging
+ * (24 Nov 2026) the container was throttled in 62 % of its CPU periods and the backend stalled up to 9.3 s while its
+ * children ran. The scheduler weighs the processes inside the container by niceness, so the backend now gets the CPU
+ * first. Raising niceness needs no privilege (the tenant has no CAP_SYS_NICE); `nice` sets it before it execs the
+ * command, so every wrapper (`timeout`, `setpriv`) and the CLI below it inherit it, also after a uid drop.
+ * Never used for agent turns or the plugin host (user-facing work). Unchanged on Windows or without `nice`.
+ */
+export function withLowCpuPriority(file: string, args: readonly string[]): { file: string; args: string[] } {
+    const niceBin = process.platform === 'win32' ? undefined : COREUTILS_NICE_PATHS.find(candidate => fs.existsSync(candidate));
+    if (!niceBin) {
+        return { file, args: [...args] };
+    }
+    return { file: niceBin, args: ['-n', String(QAAP_BACKGROUND_CHILD_NICENESS), file, ...args] };
 }
 
 /** GNU coreutils `timeout`, when this host has it (every Qaap image does; a dev Mac may not). */

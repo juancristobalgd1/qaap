@@ -24,6 +24,7 @@ import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { diffSensitiveFiles, hashSensitiveFiles } from './qaap-sensitive-files';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable } from './qaap-trusted-executable';
 import { childProcessEnv } from './qaap-child-process-env';
+import { NICE_COMMAND_NOT_EXECUTABLE, NICE_COMMAND_NOT_FOUND, withLowCpuPriority } from './qaap-exec-file-group';
 import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 
 // ─── Constants (re-exported for the helpers) ─────────────────────────────────
@@ -50,13 +51,20 @@ export type QaapCodexHelpCommandRunner = (file: string, args: readonly string[],
 
 const runCodexHelpCommand: QaapCodexHelpCommandRunner = (file, args, env) => new Promise<string>(resolve => {
     try {
-        execFile(file, [...args], {
+        // Background work: below the backend's event loop for the tenant's single CPU (see withLowCpuPriority).
+        const command = withLowCpuPriority(file, args);
+        execFile(command.file, command.args, {
             encoding: 'utf8',
             timeout: CODEX_HELP_PROBE_TIMEOUT_MS,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),
-        }, (_error, stdout, stderr) => resolve(`${stdout || ''}\n${stderr || ''}`));
+        }, (error, stdout, stderr) => {
+            // `nice` could not start codex: no help text, as when the spawn itself failed.
+            const status = (error as { code?: unknown } | null)?.code;
+            const notStarted = command.file !== file && (status === NICE_COMMAND_NOT_FOUND || status === NICE_COMMAND_NOT_EXECUTABLE);
+            resolve(notStarted ? '' : `${stdout || ''}\n${stderr || ''}`);
+        });
     } catch {
         resolve('');
     }

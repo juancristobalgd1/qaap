@@ -188,7 +188,7 @@ export function probeAgentBinOnce(
     // 2-3.5 s) no longer blocks the backend event loop for every request behind it.
     probedAgentBins.add(agentId);
     try {
-        execFileKillingGroup(bin, ['--version'], { timeoutMs: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS }, error => {
+        execFileKillingGroup(bin, ['--version'], { timeoutMs: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS, lowPriority: true }, error => {
             if (error) {
                 console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${error.message}`);
             }
@@ -516,6 +516,7 @@ export function probeAgentConnectionState(
                 env: childProcessEnv(options?.env),
                 timeoutMs,
                 windowsHide: true,
+                lowPriority: true,
             }, (error, stdout, stderr) => {
                 const output = `${stdout ?? ''}\n${stderr ?? ''}`;
                 // A non-zero exit is still a readable answer ("Not logged in" exits 1); only a

@@ -761,6 +761,7 @@ function listClaudeBundleModels(spawner: NativeModelDiscoverySpawner | undefined
     return new Promise<QaapQaiqModelOption[]>(resolve => {
         execFileKillingGroup(command.file, [...command.args], {
             timeoutMs,
+            lowPriority: true,
             maxBuffer: 16 * 1024 * 1024,
             ...(command.cwd ? { cwd: command.cwd } : {}),
             env: childProcessEnv({ ...(command.env ?? process.env) }),
@@ -921,6 +922,7 @@ function discoverFromCommand(
             // The deadline kills the listing's whole process tree (`agy models` outlived its wrapper).
             execFileKillingGroup(executable, spawn ? [...spawn.args] : args, {
                 timeoutMs: NATIVE_MODEL_LISTING_TIMEOUT_MS,
+                lowPriority: true,
                 shell: windowsShim,
                 ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
                 // Never inherit the backend env by omission; a spawner env is stripped too.

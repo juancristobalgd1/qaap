@@ -163,6 +163,15 @@ describe('Codex help probe off the event loop', () => {
         expect(runs).to.have.length(2);
     });
 
+    it('answers empty, not the error text of the nice wrapper, when the codex binary cannot be started', async () => {
+        class MissingBinaryProbe extends QaapCodexHelpProbe {
+            protected override resolveBinary(): { readonly path: string; readonly key: string } {
+                return { path: '/nonexistent/qaap-missing-codex', key: 'missing' };
+            }
+        }
+        expect(await new MissingBinaryProbe().probe()).to.equal('');
+    });
+
     it('answers empty without running anything when no trusted codex resolves', async () => {
         let ran = false;
         class NoBinaryProbe extends QaapCodexHelpProbe {
