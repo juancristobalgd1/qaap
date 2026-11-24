@@ -15,6 +15,7 @@ import {
     forgetNativeModelMemoryForTests,
     hasLiveNativeAgentModels,
     expireNativeAgentModels,
+    PI_NATIVE_MODEL_CACHE_TTL_MS,
     invalidateNativeAgentModels,
     listNativeAgentModels,
     NATIVE_MODEL_CACHE_TTL_MS,
@@ -361,6 +362,30 @@ describe('qaap-agent-native-models', () => {
 
             invalidateNativeAgentModels('pi');
             expect(listNativeAgentModels('pi', 'bob')).to.deep.equal(listStaticNativeAgentModels('pi'));
+        });
+
+        it('relists Pi after 10 minutes, so a provider removed outside the Connect dialog leaves the picker', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const realNow = Date.now;
+            let now = realNow();
+            Date.now = () => now;
+            try {
+                const bin = path.join(sandbox, 'pi-ttl');
+                fs.writeFileSync(bin, piTable('groq', 'llama-4'), { mode: 0o755 });
+                const spawner = () => ({ file: bin, args: [] as string[] });
+                expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+
+                // Groq's key is removed in a terminal: Pi now lists NVIDIA only.
+                fs.writeFileSync(bin, piTable('nvidia', 'nemotron'), { mode: 0o755 });
+                now += PI_NATIVE_MODEL_CACHE_TTL_MS - 1;
+                expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+                now += 1;
+                expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('nvidia/nemotron');
+            } finally {
+                Date.now = realNow;
+            }
         });
 
         it('lists again after a provider is connected, and keeps the last good catalog when that listing fails', async function (): Promise<void> {

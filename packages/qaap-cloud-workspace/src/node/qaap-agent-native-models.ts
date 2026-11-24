@@ -39,6 +39,18 @@ interface NativeModelCacheEntry {
 const cache = new Map<string, NativeModelCacheEntry>();
 /** A live CLI catalog is served for this long before a background refresh runs. */
 export const NATIVE_MODEL_CACHE_TTL_MS = 6 * 60 * 60_000;
+/**
+ * Pi's catalog follows the providers connected inside Pi (its own auth.json), which can change outside Qaap's
+ * Connect dialog: a key removed in a terminal, `/logout`. The live list is still served at once; it is just relisted
+ * behind the request this often instead of every 6 hours, so a removed provider leaves the picker within minutes.
+ */
+export const PI_NATIVE_MODEL_CACHE_TTL_MS = 10 * 60_000;
+
+/** How long a freshly listed catalog of `agentId` is served before a background refresh. */
+function nativeModelCacheTtlMs(agentId: string): number {
+    return agentId === 'pi' ? PI_NATIVE_MODEL_CACHE_TTL_MS : NATIVE_MODEL_CACHE_TTL_MS;
+}
+
 /** A curated fallback (CLI missing, signed out, listing failed) is retried after this long. */
 export const NATIVE_MODEL_FALLBACK_RETRY_MS = 60_000;
 
@@ -411,7 +423,7 @@ export function prepareNativeAgentModels(
             }
             discoveries.delete(key);
             if (discovered.length > 0) {
-                cache.set(key, { models: discovered, live: true, refreshAt: Date.now() + NATIVE_MODEL_CACHE_TTL_MS });
+                cache.set(key, { models: discovered, live: true, refreshAt: Date.now() + nativeModelCacheTtlMs(normalized) });
                 persistNativeModelCatalog(key, discovered);
                 return discovered;
             }
