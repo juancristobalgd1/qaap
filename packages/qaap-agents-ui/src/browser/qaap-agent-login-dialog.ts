@@ -113,6 +113,15 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
     }
     switch (state.reason) {
         case 'timeout':
+            if (state.afterSecret) {
+                // The key was sent, but the CLI never said it was saved: "no sign-in link" would describe another step.
+                return nls.localize(
+                    'qaap/agentLogin/secretNotConfirmed',
+                    '{0} did not confirm the key within {1} seconds. Its last output is below; retry, or check the key.',
+                    agentLabel,
+                    String(Math.round((state.timeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS) / 1000)),
+                );
+            }
             if (state.terminalEchoOnly) {
                 // The terminal printed something (the typed command, the prompt) but the CLI itself did not.
                 const silent = nls.localize(

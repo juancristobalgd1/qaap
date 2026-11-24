@@ -63,6 +63,18 @@ describe('QaapAgentLoginFlow secret prompt (Pi API keys)', () => {
         expect(tail).to.contain('••••');
     });
 
+    it('marks a timeout after the key was sent, so the dialog does not speak of a missing sign-in link', () => {
+        const { flow } = createPiFlow();
+        flow.appendOutput(PI_KEY_PROMPT, 1);
+        flow.secretSubmitted(KEY, 2);
+        flow.appendOutput('\nWorking …\n', 3);
+        flow.tick(2 + QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS);
+        const state = flow.state;
+        expect(state.phase === 'failed' && state.reason).to.equal('timeout');
+        expect(state.phase === 'failed' && state.afterSecret).to.equal(true);
+        expect(state.phase === 'failed' && state.timeoutMs).to.equal(QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS);
+    });
+
     it('ignores the prompt for a harness without a secret pattern', () => {
         const states: QaapAgentLoginFlowState[] = [];
         const flow = new QaapAgentLoginFlow({ agentId: 'codex', onDidChange: state => states.push(state) });

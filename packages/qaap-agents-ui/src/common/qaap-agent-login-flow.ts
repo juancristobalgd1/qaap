@@ -135,6 +135,8 @@ export type QaapAgentLoginFlowState =
         readonly prompt?: string;
         /** The link deadline that elapsed (`timeout`), when it is not the default one. */
         readonly timeoutMs?: number;
+        /** The deadline that ran out was the one after a pasted key was sent (the CLI never confirmed it). */
+        readonly afterSecret?: boolean;
         /** What the host saw from the sign-in terminal before a `timeout` (set via `setDiagnostics`). */
         readonly diagnostics?: string;
         /** `exited` with a native crash: the first meaningful line of the crash report (frames are dropped from `tail`). */
@@ -457,6 +459,7 @@ export class QaapAgentLoginFlow {
                 tail: tail.length ? tail : terminalTail,
                 ...(!tail.length && terminalTail.length ? { terminalEchoOnly: true } : {}),
                 ...(state.phase === 'waiting' && this.options.challengeTimeoutMs !== undefined ? { timeoutMs: challengeTimeoutMs } : {}),
+                ...(state.phase === 'secret-submitted' ? { afterSecret: true, timeoutMs: QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS } : {}),
                 ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}),
             });
         }
