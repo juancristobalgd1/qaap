@@ -95,6 +95,7 @@ function createHarness(initial: QaapAgentConversation = makeConversation()): Tes
         conversations,
         fire: (event: QaapAgentConversationEvent) => onDidChange.fire(event),
         persist: async () => undefined,
+        schedulePersist: () => undefined,
         publishFinalizedAgentMessage: () => undefined,
     } as unknown as QaapAgentConversationStoreContext;
 
