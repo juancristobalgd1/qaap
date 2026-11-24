@@ -27,6 +27,16 @@ export function sameDesktopIdeCwd(a: string | undefined, b: string | undefined):
 }
 
 /**
+ * Whether the hub project already is the page's open workspace, so the IDE can stay where it is.
+ * A project only counts when a workspace is really open: the "current" match also comes from the
+ * workspace URI remembered in local storage, which is still reported before the workspace resolves
+ * and on a page at `/` with no folder. Trusting it skipped the open and left the IDE without a folder.
+ */
+export function isDesktopIdeProjectAlreadyOpen(workspaceOpened: boolean, matchesCurrentWorkspace: boolean): boolean {
+    return workspaceOpened && matchesCurrentWorkspace;
+}
+
+/**
  * Index of `target` in `projects`. The same repository can carry different ids in two lists: the
  * Work Hub paints from cached project sessions (`github:owner/repo`) while a fresh load lists the
  * recent workspace (`recent:file:///…`) first, so fall back to the cwd and the GitHub identity.
