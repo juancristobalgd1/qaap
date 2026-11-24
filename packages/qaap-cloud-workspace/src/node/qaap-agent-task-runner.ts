@@ -969,7 +969,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             launch = await resolveQaapHarnessLaunchEnvironment(
                 normalizedKey,
-                key => this.preferenceReaderForOwner(owner)(key),
+                this.preferenceReaderForOwner(owner),
                 this.harnessEnvSecrets,
             );
         } catch (error) {
@@ -1144,7 +1144,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             launch = await resolveQaapHarnessLaunchEnvironment(
                 harnessKey,
-                key => this.preferenceReaderForOwner(ownerLogin)(key),
+                this.preferenceReaderForOwner(ownerLogin),
                 this.harnessEnvSecrets,
             );
         } catch (error) {
@@ -1191,7 +1191,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             try {
                 launch = await resolveQaapHarnessLaunchEnvironment(
                     harnessKey,
-                    key => this.preferenceReaderForOwner(ownerLogin)(key),
+                    this.preferenceReaderForOwner(ownerLogin),
                     this.harnessEnvSecrets,
                 );
             } catch (error) {
@@ -1339,7 +1339,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 // QAIQ is ready only when the provider its turns route to has a key for this owner (an
                 // OpenAI key does not run an OpenRouter model): the same check that gates its spawn.
                 ? !checkQaiqProviderCredentialForOwnerExtracted(this, ownerLogin)
-                : hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
+                : hasAgentSettingsCredentialsHelper(normalized, this.preferenceReaderForOwner(ownerLogin)),
             probeBin: resolveAgentConnectionProbeHelper(normalized, bin) ? bin : undefined,
         };
     }

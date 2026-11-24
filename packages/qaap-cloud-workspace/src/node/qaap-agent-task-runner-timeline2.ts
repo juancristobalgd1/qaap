@@ -623,7 +623,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             // Applied before the Codex gate overlay, which copies the sign-in from CODEX_HOME.
             const launchPlan = resolveQaapHarnessLaunchPlan(
                 task.harnessInstanceId ?? ctx.resolveTaskAgentId(task),
-                key => ctx.preferenceReaderForOwner(task.ownerLogin)(key),
+                ctx.preferenceReaderForOwner(task.ownerLogin),
             );
             if (launchPlan.envNames?.length && ctx.harnessEnvSecrets) {
                 // Values stay in the spawn env only: never in the command line, a log or the task record.

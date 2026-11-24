@@ -638,7 +638,7 @@ function openOrUndefined(value: unknown, aad: string, cipher: QaapSecretCipher):
  * file already holds a different value (or an unreadable sealed one) the Theia copy stays where it is.
  * Only `ai-features.*` credential keys are moved, because the per-user file stores nothing else.
  */
-export function migrateTenantSharedCredentialSettings(ownerLogin: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): void {
+function runTenantSharedCredentialMigration(ownerLogin: string, homeDir: string, env: NodeJS.ProcessEnv): void {
     const cipher = QaapSecretCipher.fromEnvironment(env);
     if (!cipher.isEnabled()) {
         return;
@@ -691,6 +691,43 @@ export function migrateTenantSharedCredentialSettings(ownerLogin: string, homeDi
     fs.writeFileSync(tmpPath, edited, { mode: 0o600 });
     fs.renameSync(tmpPath, sharedPath);
     try { fs.chmodSync(sharedPath, 0o600); } catch { /* best-effort */ }
+}
+
+/**
+ * Last shared-settings fingerprint ({@link sharedSettingsFingerprint}) that a successful migration ran against,
+ * keyed by home directory and owner. Lets every settings read skip the migration until the shared file changes.
+ */
+const tenantCredentialMigrationRuns = new Map<string, string>();
+
+/** Test seam: forget which shared settings files were already migrated in this process. */
+export function resetTenantCredentialMigrationMemoForTests(): void {
+    tenantCredentialMigrationRuns.clear();
+}
+
+/** Identity of the shared `~/.theia/settings.json` (mtime and size); `missing` when the file does not exist. */
+function sharedSettingsFingerprint(sharedPath: string): string {
+    try {
+        const stat = fs.statSync(sharedPath);
+        return `${stat.mtimeMs}:${stat.size}`;
+    } catch {
+        return 'missing';
+    }
+}
+
+/**
+ * Runs {@link runTenantSharedCredentialMigration} at most once per process per (owner, home directory) until the
+ * shared settings file changes. A failed run is not remembered, so the next read retries it.
+ */
+export function migrateTenantSharedCredentialSettings(ownerLogin: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): void {
+    const memoKey = `${homeDir}\u0000${ownerLogin}`;
+    // Fingerprint before the run: a run that rewrites the shared file leaves a changed fingerprint, so the
+    // next read runs once more (a no-op) and then settles.
+    const fingerprint = sharedSettingsFingerprint(path.join(homeDir, '.theia', 'settings.json'));
+    if (tenantCredentialMigrationRuns.get(memoKey) === fingerprint) {
+        return;
+    }
+    runTenantSharedCredentialMigration(ownerLogin, homeDir, env);
+    tenantCredentialMigrationRuns.set(memoKey, fingerprint);
 }
 
 /** Minimal preference seam: the runner passes the backend `PreferenceService`; tests may pass a stub. */

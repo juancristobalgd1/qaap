@@ -228,7 +228,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         const createdAt = Date.now();
         const harnessInstanceId = prompt && resolvedAgentId !== SHELL_AGENT_ID
-            ? resolveQaapHarnessInstanceRoute(request.agent, key => ctx.preferenceReaderForOwner(ownerLogin)(key))?.instanceId
+            ? resolveQaapHarnessInstanceRoute(request.agent, ctx.preferenceReaderForOwner(ownerLogin))?.instanceId
             : undefined;
         const task: QaapAgentTask = {
             id,
@@ -623,7 +623,7 @@ export function resolveAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, prompt:
         }
         // A harness instance from Settings → Harness ("Add harness", e.g. `codex#2`) runs as its base
         // harness; its own switch decides, the base harness may be switched off.
-        const instanceRoute = resolveQaapHarnessInstanceRoute(agentId, key => ctx.preferenceReaderForOwner(ownerLogin)(key));
+        const instanceRoute = resolveQaapHarnessInstanceRoute(agentId, ctx.preferenceReaderForOwner(ownerLogin));
         if (instanceRoute) {
             assertAgentAllowedOnHostedRuntime(instanceRoute.baseId);
             if (!instanceRoute.configured || !ctx.detectedAgents.has(instanceRoute.baseId)) {
