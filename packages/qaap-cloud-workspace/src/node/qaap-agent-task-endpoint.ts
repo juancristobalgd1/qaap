@@ -32,7 +32,14 @@ import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
-import { antigravityBinFor, expireNativeAgentModels, hasNativeAgentModelsEntry, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import {
+    antigravityBinFor,
+    expireNativeAgentModels,
+    hasNativeAgentModelsEntry,
+    listNativeAgentModels,
+    onDidChangeNativeAgentModels,
+    prepareNativeAgentModels,
+} from './qaap-agent-native-models';
 import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
@@ -148,6 +155,27 @@ export function describeImprovePromptFailure(error: unknown, agentId: string): Q
         error: reason.label,
         kind: reason.kind,
     };
+}
+
+/**
+ * Owner-scoping gate for pushing a `models-changed` event over an agent-tasks WebSocket.
+ * An owner-scoped discovery only reaches sockets authenticated as that exact owner (case-insensitive);
+ * an owner-less discovery only reaches single-user `skip` sockets and never leaks across authenticated users.
+ */
+export function nativeModelChangeMatchesSocketOwner(
+    eventOwnerLogin: string | undefined,
+    socketCtx: QaapGithubAuthContext,
+    socketOwnerLogin: string | undefined,
+): boolean {
+    if (socketCtx.kind === 'unauthorized') {
+        return false;
+    }
+    const eventOwner = eventOwnerLogin?.trim().toLowerCase() || undefined;
+    const socketOwner = socketOwnerLogin?.trim().toLowerCase() || undefined;
+    if (eventOwner !== undefined) {
+        return socketOwner !== undefined && socketOwner === eventOwner;
+    }
+    return socketCtx.kind === 'skip';
 }
 
 @injectable()
@@ -429,13 +457,14 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 client.close(4401, 'Not signed in');
                 return;
             }
+            const socketOwnerLogin = this.auth.resolveUserLogin(ctx);
             const snapshot = {
                 type: 'snapshot',
                 groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()).map(trimTaskGroupCommandsForWire),
                 agentConfigured: this.runner.isAgentConfigured(),
                 qaiqInstalled: this.runner.isQaiqInstalled(),
-                agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
-                defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
+                agents: this.runner.listAgents(socketOwnerLogin),
+                defaultAgent: this.runner.defaultAgent(socketOwnerLogin),
             };
             client.send(JSON.stringify(snapshot));
 
@@ -450,6 +479,16 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                     ? { type: event.type, task: event.task, chunk: event.chunk }
                     : { type: event.type, task: event.task };
                 client.send(JSON.stringify(msg));
+            });
+
+            const modelsSubscription = onDidChangeNativeAgentModels(event => {
+                if (client.readyState !== WsClient.OPEN) {
+                    return;
+                }
+                if (!nativeModelChangeMatchesSocketOwner(event.ownerLogin, ctx, socketOwnerLogin)) {
+                    return;
+                }
+                client.send(JSON.stringify({ type: 'models-changed', agentId: event.agentId }));
             });
 
             const ping = setInterval(() => {
@@ -471,6 +510,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 clearInterval(ping);
                 clearInterval(heartbeat);
                 subscription.dispose();
+                modelsSubscription.dispose();
             };
             client.on('close', cleanup);
             client.on('error', cleanup);

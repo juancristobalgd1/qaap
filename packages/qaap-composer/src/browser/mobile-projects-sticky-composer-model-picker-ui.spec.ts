@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { listQaapComposerPickerAgents } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 
@@ -325,5 +326,59 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         document.body.append(chrome.sheet);
         await renderStickyComposerModelPicker(ctx, chrome, options);
         expect(chrome.list.querySelector('.qaap-model-picker')).to.not.equal(null);
+    });
+
+    it('repaints an open picker when qaap-agent-models-changed pushes a new catalog, and ignores no-op or post-close events', async () => {
+        const nvidia = { provider: 'openai' as const, vendor: 'nvidia', modelId: 'nvidia/llama-3.1-70b', label: 'llama-3.1-70b' };
+        const groq = { provider: 'openai' as const, vendor: 'groq', modelId: 'groq/llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile' };
+        let currentModels = [nvidia];
+        let fetchCount = 0;
+        const ctx = {
+            resolveModelsForAgentPickerSafe: async (agentId: string) => {
+                if (agentId === 'pi') {
+                    fetchCount++;
+                    return { models: currentModels, loadFailed: false };
+                }
+                return { models: [], loadFailed: false };
+            },
+        };
+        await renderStickyComposerModelPicker(ctx, chrome, {
+            cwd: undefined,
+            agents: [{ id: 'pi', label: 'Pi', available: true }, { id: 'claude', label: 'Claude Code', available: true }],
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me',
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(1);
+        expect(chrome.list.querySelectorAll('.qaap-model-picker-row')).to.have.length(1);
+        const firstPickerRoot = chrome.list.querySelector('.qaap-model-picker');
+
+        // Pushing when the catalog has not changed refetches once but skips rebuilding the open DOM.
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId: 'pi' } }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(2);
+        expect(chrome.list.querySelector('.qaap-model-picker')).to.equal(firstPickerRoot);
+
+        // Once Groq arrives in the live catalog, pushing repaints the open picker with both providers.
+        currentModels = [nvidia, groq];
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId: 'pi' } }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(3);
+        const rows = Array.from(chrome.list.querySelectorAll<HTMLElement>('.qaap-model-picker-row')).map(row => row.dataset.modelId);
+        expect(rows).to.deep.equal(['nvidia/llama-3.1-70b', 'groq/llama-3.3-70b-versatile']);
+        const providers = Array.from(chrome.list.querySelectorAll('.qaap-model-picker-row-provider')).map(el => el.textContent);
+        expect(providers).to.deep.equal(['NVIDIA', 'Groq']);
+
+        // Closing the picker removes the listener so later events do not trigger fetches.
+        chrome.sheet.remove();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId: 'pi' } }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(3);
     });
 });

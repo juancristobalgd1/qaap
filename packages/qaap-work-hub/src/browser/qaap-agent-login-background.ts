@@ -44,6 +44,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapAgentLoginFlow, stripAgentLoginTerminalControlSequences } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-flow';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT, type QaapAgentModelsChangedDetail } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from './qaap-agent-signed-in-event';
 import { presentAgyLoginFailure, QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agy-login-presentation';
 import { QaapAgentLoginInputDriver } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-input-driver';
@@ -59,25 +60,58 @@ const CONNECTED_CLOSE_DELAY_MS = 1800;
 const AGENT_MODELS_AFTER_CONNECT_FOLLOW_UPS_MS: readonly number[] = [8_000, 20_000, 45_000];
 
 /**
- * Asks for the agent's catalog again a few times after a connect: the fresh request can answer with the previous
- * catalog when the CLI listing outlasts it, and the browser then kept that answer for a minute (Groq connected,
- * picker on NVIDIA only until a reload). When the model ids change, the composers are told through the signed-in
- * event, which makes them reload the catalog. Stops after the first change.
+ * Fallback after a connect: asks for the agent's catalog again a few times in case the realtime
+ * WebSocket is disconnected when the CLI listing finishes. Stops immediately once either a push
+ * ({@link QAAP_AGENT_MODELS_CHANGED_EVENT}) arrives for this agent or the model ids change.
  */
 function followAgentModelsAfterConnect(agentId: string, listed: readonly { readonly modelId: string }[] | undefined): void {
+    const expected = agentId.trim().toLowerCase();
     let known = (listed ?? []).map(model => model.modelId).sort().join('\n');
     let index = 0;
-    const next = (): void => {
-        const delay = AGENT_MODELS_AFTER_CONNECT_FOLLOW_UPS_MS[index++];
-        if (delay === undefined) {
+    let timer: number | undefined;
+    let stopped = false;
+    const stop = (): void => {
+        if (stopped) {
             return;
         }
-        window.setTimeout(() => {
+        stopped = true;
+        if (timer !== undefined) {
+            window.clearTimeout(timer);
+            timer = undefined;
+        }
+        window.removeEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onPushed);
+    };
+    const onPushed = (event: Event): void => {
+        const pushed = (event as CustomEvent<QaapAgentModelsChangedDetail | undefined>).detail?.agentId?.trim().toLowerCase();
+        if (pushed === expected) {
+            stop();
+        }
+    };
+    window.addEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onPushed);
+    const next = (): void => {
+        if (stopped) {
+            return;
+        }
+        const delay = AGENT_MODELS_AFTER_CONNECT_FOLLOW_UPS_MS[index++];
+        if (delay === undefined) {
+            stop();
+            return;
+        }
+        timer = window.setTimeout(() => {
+            timer = undefined;
+            if (stopped) {
+                return;
+            }
             invalidateAgentModelsCache(agentId);
             void fetchAgentModelsForAgent(agentId).then(models => {
+                if (stopped) {
+                    return;
+                }
                 const ids = models.map(model => model.modelId).sort().join('\n');
                 if (models.length > 0 && ids !== known) {
                     known = ids;
+                    stop();
+                    window.dispatchEvent(new window.CustomEvent<QaapAgentModelsChangedDetail>(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId } }));
                     window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
                     return;
                 }

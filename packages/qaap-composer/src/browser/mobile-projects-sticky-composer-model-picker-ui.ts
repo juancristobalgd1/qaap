@@ -13,7 +13,12 @@ import {
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { resolvePiLoginProvider } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
-import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import {
+    QAAP_AGENT_MODELS_CHANGED_EVENT,
+    QAAP_AGENT_SIGNED_IN_EVENT,
+    type QaapAgentModelsChangedDetail,
+    type QaapAgentSignedInDetail,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import {
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
@@ -37,7 +42,10 @@ function sameModelIds(left: readonly QaapQaiqModelOption[] | undefined, right: r
     if (!left || left.length !== right.length) {
         return false;
     }
-    return left.every((model, index) => model.modelId === right[index].modelId && model.label === right[index].label);
+    return left.every((model, index) => model.modelId === right[index].modelId
+        && model.label === right[index].label
+        && model.vendor === right[index].vendor
+        && model.available === right[index].available);
 }
 
 /** The one pending «select this model once signed in»; a newer pick replaces it. */
@@ -218,6 +226,7 @@ export async function renderStickyComposerModelPicker(
         openPickerUiState.delete(chrome.sheet);
         disposeQaapComposerModelPicker(host);
         window.removeEventListener('resize', onResize);
+        window.removeEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onModelsChanged);
         chrome.list.replaceChildren();
         options.onRefresh();
     });
@@ -407,6 +416,27 @@ export async function renderStickyComposerModelPicker(
     } else {
         void requestAgentModelsInOrder(harnessIdsFor(railSelection));
     }
+    /** Backend pushed a live catalog update for one harness: clear its in-open cache and refetch if visible or loaded. */
+    const onModelsChanged = (event: Event): void => {
+        if (!chrome.sheet.isConnected) {
+            return;
+        }
+        const changedId = (event as CustomEvent<QaapAgentModelsChangedDetail | undefined>).detail?.agentId?.trim().toLowerCase();
+        if (!changedId) {
+            return;
+        }
+        const matched = agents.find(agent => agent.id.trim().toLowerCase() === changedId);
+        if (!matched) {
+            return;
+        }
+        chrome.modelsByAgent.delete(matched.id);
+        requestedAgentIds.delete(matched.id);
+        const visible = railSelection === matched.id || railSelection === 'favorites' || query.trim().length > 0;
+        if (visible || modelsByAgent.has(matched.id)) {
+            void requestAgentModels(matched.id);
+        }
+    };
+    window.addEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onModelsChanged);
     repaint();
     if (preserved && previousScrollTop > 0) {
         const list = host.querySelector<HTMLElement>('[role="listbox"]');

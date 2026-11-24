@@ -4,9 +4,21 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as http from 'http';
+import * as os from 'os';
+import * as nodePath from 'path';
+import type { AddressInfo } from 'net';
+import { WebSocket as WsClient } from '@theia/core/shared/ws';
 import type { Application, Request, Response } from '@theia/core/shared/express';
 import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task';
-import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import { nativeModelChangeMatchesSocketOwner, QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import {
+    clearNativeAgentModelCache,
+    expireNativeAgentModels,
+    prepareNativeAgentModels,
+    setNativeModelCatalogStoreDirForTests,
+} from './qaap-agent-native-models';
 import { ComposerPromptImproveTimeoutError } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 
 type Handler = (req: Request, res: Response) => void;
@@ -140,6 +152,107 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
             expect(JSON.stringify(logEntries)).not.to.contain('private prompt text');
         } finally {
             console.error = previousError;
+        }
+    });
+});
+
+describe('QaapAgentTaskEndpoint WebSocket models-changed owner scoping', () => {
+    it('delivers owner-scoped events only to matching sockets and never across authenticated owners', () => {
+        const aliceCtx = { kind: 'authenticated', userLogin: 'alice', sessionId: 's1', session: { accessToken: '', user: { login: 'alice' } } } as never;
+        const bobCtx = { kind: 'authenticated', userLogin: 'bob', sessionId: 's2', session: { accessToken: '', user: { login: 'bob' } } } as never;
+        const skipCtx = { kind: 'skip', userLogin: '_dev' } as never;
+        const unauthCtx = { kind: 'unauthorized' } as never;
+
+        expect(nativeModelChangeMatchesSocketOwner('alice', aliceCtx, 'alice')).to.equal(true);
+        expect(nativeModelChangeMatchesSocketOwner('Alice', aliceCtx, 'ALICE')).to.equal(true);
+        expect(nativeModelChangeMatchesSocketOwner('alice', bobCtx, 'bob')).to.equal(false);
+        expect(nativeModelChangeMatchesSocketOwner('alice', unauthCtx, undefined)).to.equal(false);
+        expect(nativeModelChangeMatchesSocketOwner(undefined, aliceCtx, 'alice')).to.equal(false);
+        expect(nativeModelChangeMatchesSocketOwner(undefined, skipCtx, '_dev')).to.equal(true);
+    });
+
+    it('pushes models-changed over /ws only to the owner whose native catalog changed', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const sandbox = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'qaap-ws-models-owner-'));
+        const piBin = nodePath.join(sandbox, 'pi');
+        fs.writeFileSync(
+            piBin,
+            '#!/bin/sh\necho "provider  model  context"\necho "groq  llama-3.3-70b-versatile  128K"\n',
+            { mode: 0o755 },
+        );
+        setNativeModelCatalogStoreDirForTests(nodePath.join(sandbox, 'store'));
+        clearNativeAgentModelCache();
+
+        const server = http.createServer();
+        const endpoint = Object.create(QaapAgentTaskEndpoint.prototype) as QaapAgentTaskEndpoint;
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: (req: { headers?: Record<string, string | string[] | undefined> }) => {
+                    const user = String(req.headers?.['x-test-user'] ?? '').trim();
+                    return user
+                        ? { kind: 'authenticated', userLogin: user, sessionId: `s-${user}`, session: { accessToken: '', user: { login: user } } }
+                        : { kind: 'unauthorized' };
+                },
+                resolveUserLogin: (ctx: { kind: string; userLogin?: string }) => (ctx.kind === 'authenticated' ? ctx.userLogin : undefined),
+                ownsWorkspacePath: () => true,
+            },
+            runner: {
+                bindHelperApiUrl: () => undefined,
+                listAllGroupedByCwd: () => [],
+                isAgentConfigured: () => true,
+                isQaiqInstalled: () => false,
+                listAgents: () => [],
+                defaultAgent: () => 'pi',
+                onDidChangeTask: () => ({ dispose: () => undefined }),
+            },
+        });
+        endpoint.onStart(server);
+        await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+        const { port } = server.address() as AddressInfo;
+
+        const connect = (user: string): Promise<{ ws: WsClient; messages: Array<Record<string, unknown>> }> => new Promise((resolve, reject) => {
+            const messages: Array<Record<string, unknown>> = [];
+            const ws = new WsClient(`ws://127.0.0.1:${port}${QAAP_AGENT_TASK_API_PATH}/ws`, {
+                headers: { 'x-test-user': user },
+            });
+            ws.on('message', data => {
+                const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+                messages.push(parsed);
+                if (parsed.type === 'snapshot') {
+                    resolve({ ws, messages });
+                }
+            });
+            ws.once('error', reject);
+        });
+
+        let alice: { ws: WsClient; messages: Array<Record<string, unknown>> } | undefined;
+        let bob: { ws: WsClient; messages: Array<Record<string, unknown>> } | undefined;
+        try {
+            alice = await connect('alice');
+            bob = await connect('bob');
+
+            const spawner = (file: string, args: readonly string[]) => ({
+                file: file === 'pi' ? piBin : file,
+                args: [...args],
+                env: process.env,
+            });
+            expireNativeAgentModels('pi', 'alice');
+            await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+            await new Promise(resolve => setTimeout(resolve, 60));
+
+            const aliceEvents = alice.messages.filter(msg => msg.type === 'models-changed');
+            const bobEvents = bob.messages.filter(msg => msg.type === 'models-changed');
+            expect(aliceEvents).to.deep.equal([{ type: 'models-changed', agentId: 'pi' }]);
+            expect(bobEvents).to.deep.equal([]);
+        } finally {
+            alice?.ws.close();
+            bob?.ws.close();
+            await new Promise<void>(resolve => server.close(() => resolve()));
+            clearNativeAgentModelCache();
+            setNativeModelCatalogStoreDirForTests(undefined);
+            fs.rmSync(sandbox, { recursive: true, force: true });
         }
     });
 });

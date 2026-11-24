@@ -11,6 +11,8 @@ import {
     type QaapChatViewStreamUpdateClocks,
 } from '../common/qaap-chat-view-stream-update-scheduler';
 import { truncateTitleAtWordBoundary } from '../common/qaap-title-truncate';
+import { invalidateAgentModelsCache } from '../common/qaap-agent-task-client';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT, type QaapAgentModelsChangedDetail } from '../common/qaap-harness-sign-out';
 import {
     appendWorkingDetailTaskLogChunk,
     seedWorkingDetailTaskLog,
@@ -104,6 +106,7 @@ interface SnapshotPayload {
 type WsServerMessage =
     | ({ readonly type: 'snapshot' } & SnapshotPayload)
     | { readonly type: 'heartbeat' }
+    | { readonly type: 'models-changed'; readonly agentId: string }
     | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered' | 'updated'; readonly task: TaskEventPayload }
     | { readonly type: 'output'; readonly task: TaskEventPayload; readonly chunk: string };
 
@@ -320,6 +323,8 @@ export class MobileProjectsActiveTasks {
                         this.setTransportState('connected');
                     } else if (msg.type === 'snapshot') {
                         this.applySnapshot(msg);
+                    } else if (msg.type === 'models-changed') {
+                        this.applyModelsChanged(msg.agentId);
                     } else if (msg.type === 'output') {
                         this.applyOutput(msg.task, msg.chunk);
                     } else {
@@ -344,6 +349,21 @@ export class MobileProjectsActiveTasks {
             socket.addEventListener('error', () => socket.close());
         } catch {
             this.scheduleReconnect();
+        }
+    }
+
+    /** @internal Exported path for tests — invalidate cached models and notify open pickers/composers. */
+    applyModelsChanged(agentId: string): void {
+        const normalized = typeof agentId === 'string' ? agentId.trim() : '';
+        if (!normalized) {
+            return;
+        }
+        invalidateAgentModelsCache(normalized);
+        if (typeof window !== 'undefined' && typeof window.CustomEvent === 'function') {
+            window.dispatchEvent(new window.CustomEvent<QaapAgentModelsChangedDetail>(
+                QAAP_AGENT_MODELS_CHANGED_EVENT,
+                { detail: { agentId: normalized } },
+            ));
         }
     }
 

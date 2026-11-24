@@ -29,6 +29,17 @@ export interface QaapAgentSignedOutDetail {
 }
 
 /**
+ * Fired on `window` when the backend pushes a live native model catalog update for a harness
+ * (for example, `pi --list-models` finishing after connecting a new provider). Open model pickers
+ * and composers listen to it and refetch only that harness without waiting for polling or reload.
+ */
+export const QAAP_AGENT_MODELS_CHANGED_EVENT = 'qaap-agent-models-changed';
+
+export interface QaapAgentModelsChangedDetail {
+    readonly agentId: string;
+}
+
+/**
  * Environment variables each harness CLI treats as a ready credential, independently of its own sign-in.
  * Sign out cannot remove an inherited variable, so a harness that still reports a session after signing out
  * names the variable instead of claiming it signed out.

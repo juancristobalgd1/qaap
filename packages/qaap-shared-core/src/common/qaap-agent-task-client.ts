@@ -763,6 +763,11 @@ const agentModelsInFlight = new Map<string, Promise<QaapQaiqModelOption[]>>();
 /** Bumped by every invalidation so a request started before it never repopulates the cache. */
 let agentModelsGeneration = 0;
 
+/** Current invalidation generation of the agent model catalog cache, for downstream caches to stay coherent. */
+export function getAgentModelsCacheGeneration(): number {
+    return agentModelsGeneration;
+}
+
 /**
  * Drop the cached model catalog for one agent, or for every agent when no id is given.
  * Call after credentials, providers or harness settings change.

@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { getAgentModelsCacheGeneration } from '../common/qaap-agent-task-client';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT, type QaapAgentModelsChangedDetail } from '../common/qaap-harness-sign-out';
 import {
     cwdMatchesProject,
     MobileProjectsActiveTasks,
@@ -372,6 +374,44 @@ describe('MobileProjectsActiveTasks model fallback chain', () => {
 
     it('does not label a task that is not a fallback retry', () => {
         expect(toTaskView({ id: 't1', cwd, state: 'completed', agentModel: { modelId: 'x' } }).fallbackModelLabel).to.equal(undefined);
+    });
+});
+
+describe('MobileProjectsActiveTasks models-changed push', () => {
+    it('invalidates the model catalog cache and broadcasts qaap-agent-models-changed', () => {
+        const activeTasks = new TestActiveTasks();
+        const previousWindow = (globalThis as { window?: unknown }).window;
+        const dispatched: Array<{ type: string; detail?: QaapAgentModelsChangedDetail }> = [];
+        class FakeCustomEvent<T> {
+            readonly type: string;
+            readonly detail: T | undefined;
+            constructor(type: string, init?: { detail?: T }) {
+                this.type = type;
+                this.detail = init?.detail;
+            }
+        }
+        (globalThis as { window?: unknown }).window = {
+            CustomEvent: FakeCustomEvent,
+            dispatchEvent: (event: { type: string; detail?: QaapAgentModelsChangedDetail }) => {
+                dispatched.push(event);
+                return true;
+            },
+        };
+        try {
+            const before = getAgentModelsCacheGeneration();
+            activeTasks.applyModelsChanged('pi');
+            expect(getAgentModelsCacheGeneration()).to.be.greaterThan(before);
+            expect(dispatched).to.deep.equal([
+                { type: QAAP_AGENT_MODELS_CHANGED_EVENT, detail: { agentId: 'pi' } },
+            ]);
+
+            const afterFirst = getAgentModelsCacheGeneration();
+            activeTasks.applyModelsChanged('   ');
+            expect(getAgentModelsCacheGeneration()).to.equal(afterFirst);
+            expect(dispatched).to.have.length(1);
+        } finally {
+            (globalThis as { window?: unknown }).window = previousWindow;
+        }
     });
 });
 

@@ -19,7 +19,9 @@ import {
     invalidateNativeAgentModels,
     listNativeAgentModels,
     NATIVE_MODEL_CACHE_TTL_MS,
+    type NativeAgentModelsChangedEvent,
     type NativeModelDiscoverySpawner,
+    onDidChangeNativeAgentModels,
     parseCodexModelsCache,
     prepareNativeAgentModels,
     resolveCodexAgentHome,
@@ -564,6 +566,59 @@ describe('qaap-agent-native-models', () => {
             const errorAnswer = JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: 'qaap-model-list', error: 'unsupported' } });
             fs.writeFileSync(claudeBin, `#!/bin/sh\nread -r request\necho '${errorAnswer}'\nexit 0\n`, { mode: 0o755 });
             expect(await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) })).to.deep.equal(listStaticNativeAgentModels('claude'));
+        });
+    });
+
+    describe('onDidChangeNativeAgentModels notifications', () => {
+        it('emits only when a live catalog is newly stored or changes for (agent, owner)', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const bin = path.join(sandbox, 'bin');
+            fs.mkdirSync(bin);
+            const piBin = path.join(bin, 'pi');
+            const writePi = (lines: string[]): void => {
+                fs.writeFileSync(
+                    piBin,
+                    `#!/bin/sh\necho "provider  model  context"\n${lines.map(line => `echo "${line}"`).join('\n')}\n`,
+                    { mode: 0o755 },
+                );
+            };
+            const spawner: NativeModelDiscoverySpawner = (file, args) => ({
+                file: file === 'pi' ? piBin : file,
+                args: [...args],
+                env: process.env,
+            });
+            const events: NativeAgentModelsChangedEvent[] = [];
+            const subscription = onDidChangeNativeAgentModels(event => events.push(event));
+            try {
+                // First live discovery emits with normalized owner login.
+                writePi(['nvidia  meta/llama-3.2-90b  128K']);
+                await prepareNativeAgentModels('pi', { ownerLogin: 'Alice', spawner });
+                expect(events).to.deep.equal([{ agentId: 'pi', ownerLogin: 'alice' }]);
+
+                // Rediscovering the exact same catalog does not emit again.
+                expireNativeAgentModels('pi', 'alice');
+                await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+                expect(events).to.have.length(1);
+
+                // Adding a new provider (Groq) emits a change event.
+                writePi(['nvidia  meta/llama-3.2-90b  128K', 'groq  llama-3.3-70b-versatile  128K']);
+                expireNativeAgentModels('pi', 'alice');
+                await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+                expect(events).to.deep.equal([
+                    { agentId: 'pi', ownerLogin: 'alice' },
+                    { agentId: 'pi', ownerLogin: 'alice' },
+                ]);
+
+                // A failed or empty listing never emits.
+                fs.writeFileSync(piBin, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+                expireNativeAgentModels('pi', 'alice');
+                await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+                expect(events).to.have.length(2);
+            } finally {
+                subscription.dispose();
+            }
         });
     });
 });

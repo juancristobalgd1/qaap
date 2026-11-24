@@ -19,6 +19,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     fetchAgentModelsForAgent,
+    getAgentModelsCacheGeneration,
     hashString,
     isSameAgentModel,
     migrateLegacyBackendAgentId,
@@ -63,13 +64,24 @@ const SEND_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
 interface SendCatalogCacheEntry {
     readonly models: readonly QaapQaiqModelOption[];
     readonly at: number;
+    readonly generation: number;
 }
 const sendCatalogCache = new Map<string, SendCatalogCacheEntry>();
 
+/** Drops the cached send catalog for one agent (or all agents) so the next send sees newly discovered models. */
+export function invalidateSendCatalogCache(agentId?: string): void {
+    if (agentId === undefined) {
+        sendCatalogCache.clear();
+        return;
+    }
+    sendCatalogCache.delete(agentId.trim().toLowerCase());
+}
+
 /** Session cache of the last catalog seen per agent, so a send does not re-fetch the catalog every time. */
 function cachedSendCatalog(agentId: string): readonly QaapQaiqModelOption[] | undefined {
-    const entry = sendCatalogCache.get(agentId.trim().toLowerCase());
-    if (!entry || Date.now() - entry.at > SEND_CATALOG_CACHE_TTL_MS) {
+    const key = agentId.trim().toLowerCase();
+    const entry = sendCatalogCache.get(key);
+    if (!entry || entry.generation !== getAgentModelsCacheGeneration() || Date.now() - entry.at > SEND_CATALOG_CACHE_TTL_MS) {
         return undefined;
     }
     return entry.models;
@@ -81,8 +93,11 @@ function cachedSendCatalog(agentId: string): readonly QaapQaiqModelOption[] | un
  */
 async function fetchSendCatalog(agentId: string): Promise<readonly QaapQaiqModelOption[] | undefined> {
     const key = agentId.trim().toLowerCase();
+    const generation = getAgentModelsCacheGeneration();
     const request = fetchAgentModelsForAgent(agentId).then(models => {
-        sendCatalogCache.set(key, { models, at: Date.now() });
+        if (generation === getAgentModelsCacheGeneration()) {
+            sendCatalogCache.set(key, { models, at: Date.now(), generation });
+        }
         return models;
     }, () => undefined);
     let timer: ReturnType<typeof setTimeout> | undefined;

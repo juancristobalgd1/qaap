@@ -272,6 +272,9 @@ export class MobileProjectsStickyComposerAgentsUi {
                 catalog = [];
             }
         }
+        if (catalog.length > 0) {
+            this.rememberModelLabels(catalog);
+        }
         if (cwd) {
             return ensureStoredAgentModel(cwd, agentId, catalog);
         }

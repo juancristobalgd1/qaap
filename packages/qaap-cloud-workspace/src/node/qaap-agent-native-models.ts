@@ -235,6 +235,54 @@ function cachedNativeModelEntry(key: string): NativeModelCacheEntry | undefined 
 /** In-flight CLI discoveries; the event loop is shared with every other request, so never spawn synchronously. */
 const discoveries = new Map<string, Promise<QaapQaiqModelOption[]>>();
 
+/** Fired when a live CLI model listing stores a catalog that differs from the previous live one for (agent, owner). */
+export interface NativeAgentModelsChangedEvent {
+    readonly agentId: string;
+    /** Normalized owner login that owns this discovery, or `undefined` when discovery ran without an owner. */
+    readonly ownerLogin: string | undefined;
+}
+
+type NativeAgentModelsChangedListener = (event: NativeAgentModelsChangedEvent) => void;
+const nativeModelChangeListeners = new Set<NativeAgentModelsChangedListener>();
+
+/** Subscribe to live native model catalog changes. Returns a disposable teardown. */
+export function onDidChangeNativeAgentModels(listener: NativeAgentModelsChangedListener): { dispose(): void } {
+    nativeModelChangeListeners.add(listener);
+    return {
+        dispose: () => {
+            nativeModelChangeListeners.delete(listener);
+        },
+    };
+}
+
+function sameNativeModelCatalog(
+    left: readonly QaapQaiqModelOption[] | undefined,
+    right: readonly QaapQaiqModelOption[],
+): boolean {
+    if (!left || left.length !== right.length) {
+        return false;
+    }
+    return left.every((model, index) => {
+        const other = right[index];
+        return model.modelId === other.modelId
+            && model.vendor === other.vendor
+            && model.label === other.label
+            && model.provider === other.provider;
+    });
+}
+
+function emitNativeAgentModelsChanged(agentId: string, ownerLogin: string | undefined): void {
+    const normalizedOwner = ownerLogin?.trim().toLowerCase() || undefined;
+    const event: NativeAgentModelsChangedEvent = { agentId, ownerLogin: normalizedOwner };
+    for (const listener of [...nativeModelChangeListeners]) {
+        try {
+            listener(event);
+        } catch {
+            // One failing subscriber must never prevent other sockets from receiving the update.
+        }
+    }
+}
+
 /** How one CLI model listing runs: the argv, plus the cwd/env of the tenant that owns the sign-in. */
 export interface NativeModelDiscoverySpawn {
     readonly file: string;
@@ -422,12 +470,16 @@ export function prepareNativeAgentModels(
                 return discovered.length > 0 ? discovered : (cache.get(key)?.models ?? listStaticNativeAgentModels(normalized, bin));
             }
             discoveries.delete(key);
+            const previous = cache.get(key);
             if (discovered.length > 0) {
+                const changed = !previous?.live || !sameNativeModelCatalog(previous.models, discovered);
                 cache.set(key, { models: discovered, live: true, refreshAt: Date.now() + nativeModelCacheTtlMs(normalized) });
                 persistNativeModelCatalog(key, discovered);
+                if (changed) {
+                    emitNativeAgentModelsChanged(harnessKey, options.ownerLogin);
+                }
                 return discovered;
             }
-            const previous = cache.get(key);
             if (previous?.live) {
                 // Never replace a good list with an empty or failed result; retry soon.
                 cache.set(key, { ...previous, refreshAt: Date.now() + NATIVE_MODEL_FALLBACK_RETRY_MS });
