@@ -209,6 +209,21 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         expect(ui.isAgentConnected('missing')).to.equal(false);
     });
 
+    it('treats a harness whose probe has not answered after a restart as not signed out, but a signed-out one as signed out', () => {
+        const host = createHost();
+        host.stickyComposerBackendAgents = [
+            { id: 'pi', label: 'Pi', available: true, connectionState: 'unknown', session: 'unknown' },
+            { id: 'claude', label: 'Claude Code', available: true, connectionState: 'connected', session: 'signed-in' },
+            { id: 'opencode', label: 'OpenCode', available: false, connectionState: 'disconnected', session: 'signed-out' },
+        ];
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        expect(ui.isAgentConnected('pi')).to.equal(false);
+        expect(ui.isAgentNotSignedOut('pi')).to.equal(true);
+        expect(ui.isAgentNotSignedOut('claude')).to.equal(true);
+        expect(ui.isAgentNotSignedOut('opencode')).to.equal(false);
+    });
+
     it('does not report a harness whose auth probe has not answered yet as connected', () => {
         const host = createHost();
         // `/all?refresh=1` answers with `unknown` while `claude auth status` is still running.

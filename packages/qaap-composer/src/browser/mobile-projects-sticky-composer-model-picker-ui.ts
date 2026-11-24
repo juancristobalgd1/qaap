@@ -84,8 +84,11 @@ export interface StickyComposerModelPickerOptions {
     readonly onRefresh: () => void;
     /** Same handlers the previous agent sheet used for its sign-in and AI settings rows. */
     readonly onProactiveLogin?: (agentId: string) => void;
-    /** Whether a harness reads as signed in; on the Pi rail a connected Pi offers adding another provider. */
-    readonly isAgentConnected?: (agentId: string) => boolean;
+    /**
+     * Whether a harness is not reported as signed out; on the Pi rail a Pi that is not signed out offers adding another
+     * provider. A probe still pending after a restart must not hide the action.
+     */
+    readonly isAgentNotSignedOut?: (agentId: string) => boolean;
     readonly onOpenAiFeaturesSettings?: () => void;
     /** Keeps catalog labels so the model pill shows «GPT-5.6 Sol», not the slug, after a reload. */
     readonly rememberModelLabels?: (models: readonly QaapQaiqModelOption[]) => void;
@@ -199,7 +202,7 @@ export async function renderStickyComposerModelPicker(
      * to the existing sign-in (`/login` in the same terminal), so the action reuses the sign-in path as it is.
      */
     const connectAnotherProviderAction = (selection: 'favorites' | string): { label: string; onAction: () => void } | undefined => {
-        if (selection !== 'pi' || !options.onProactiveLogin || !options.isAgentConnected?.('pi')) {
+        if (selection !== 'pi' || !options.onProactiveLogin || !options.isAgentNotSignedOut?.('pi')) {
             return undefined;
         }
         return {

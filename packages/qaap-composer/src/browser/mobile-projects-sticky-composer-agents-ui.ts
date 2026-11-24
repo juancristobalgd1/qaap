@@ -480,6 +480,14 @@ export class MobileProjectsStickyComposerAgentsUi {
         return agent?.session === 'signed-out' && agent.available !== true;
     }
 
+    /**
+     * Whether a harness may still be signed in: everything except a catalog that reads it as signed out. Unlike
+     * {@link isAgentConnected}, a probe that is still `unknown` (a fresh backend restart) counts as not signed out.
+     */
+    isAgentNotSignedOut(agentId: string | undefined): boolean {
+        return !this.isAgentDisconnected(agentId);
+    }
+
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {
         renderAgentPickerSkeleton(chrome.list);
     }

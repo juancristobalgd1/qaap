@@ -466,6 +466,7 @@ export class MobileProjectsTranscriptComposerUi {
                             void this.host.openAgentSignInTerminal?.(agentId, project);
                         }
                         : undefined,
+                    isAgentNotSignedOut: agentId => this.host.stickyComposerAgentsUi.isAgentNotSignedOut(agentId),
                 }),
             });
         };

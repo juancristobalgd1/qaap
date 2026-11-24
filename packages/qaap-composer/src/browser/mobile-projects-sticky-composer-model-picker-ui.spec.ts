@@ -64,6 +64,56 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         expect(chrome.sheet.classList.contains('theia-mod-model-picker')).to.equal(true);
     });
 
+    describe('connect another provider (Pi rail)', () => {
+        const piAgents = [{ id: 'pi', label: 'Pi', available: true }];
+        const piOptions = {
+            cwd: undefined,
+            agents: piAgents,
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: true,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me' as const,
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        };
+        const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }) };
+
+        it('shows the action on the Pi rail when Pi is not reported signed out, and runs the Pi sign-in on click', async () => {
+            const logins: string[] = [];
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                onProactiveLogin: agentId => logins.push(agentId),
+                isAgentNotSignedOut: agentId => agentId === 'pi',
+            });
+            const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-another');
+            expect(action?.textContent).to.equal('Connect another provider');
+            action?.click();
+            expect(logins).to.deep.equal(['pi']);
+        });
+
+        it('hides the action when Pi reads signed out, when no sign-in is wired, or when the option is absent', async () => {
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                onProactiveLogin: () => undefined,
+                isAgentNotSignedOut: () => false,
+            });
+            expect(chrome.list.querySelector('.qaap-model-picker-connect-another')).to.equal(null);
+
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                isAgentNotSignedOut: () => true,
+            });
+            expect(chrome.list.querySelector('.qaap-model-picker-connect-another')).to.equal(null);
+
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                onProactiveLogin: () => undefined,
+            });
+            expect(chrome.list.querySelector('.qaap-model-picker-connect-another')).to.equal(null);
+        });
+    });
+
     it('has no Sign in button: picking a signed-out model opens the sign-in, then selects that model', async () => {
         const opus = { provider: 'anthropic' as const, vendor: 'claude', modelId: 'opus', label: 'Opus', available: false, unavailableReason: 'not-connected' as const, tier: 'pro' as const };
         const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [opus], loadFailed: false }) };
