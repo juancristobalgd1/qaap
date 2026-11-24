@@ -1189,11 +1189,23 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected filterTaskGroups(ctx: QaapGithubAuthContext, groups: QaapAgentTaskCwdGroup[]): QaapAgentTaskCwdGroup[] {
+        // Each ownership check resolves real paths synchronously, and the tasks of a group almost always share its
+        // cwd: 1.2-2 s of event loop per snapshot on a cold tenant (CPU profile, 24 Nov 2026). Each distinct cwd is
+        // checked once per call; nothing is remembered across requests, so a later symlink swap is still caught.
+        const owned = new Map<string, boolean>();
+        const owns = (cwd: string): boolean => {
+            let answer = owned.get(cwd);
+            if (answer === undefined) {
+                answer = this.auth.ownsWorkspacePath(ctx, cwd);
+                owned.set(cwd, answer);
+            }
+            return answer;
+        };
         return groups
-            .filter(group => this.auth.ownsWorkspacePath(ctx, group.cwd))
+            .filter(group => owns(group.cwd))
             .map(group => ({
                 ...group,
-                tasks: group.tasks.filter(task => this.auth.ownsWorkspacePath(ctx, task.cwd)),
+                tasks: group.tasks.filter(task => owns(task.cwd)),
             }))
             .filter(group => group.tasks.length > 0);
     }
