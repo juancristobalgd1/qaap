@@ -392,7 +392,10 @@ export function prepareNativeAgentModels(
         // spawner). Without one, the base binary must not answer for it: serve what it has, else the curated list.
         return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
-    if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && !options.spawner) {
+    // Without a spawner a listing runs as the backend itself, never where the owner's agent runs: an owner's catalog
+    // (any harness) is only discovered through the endpoint's tenant spawner. On a tenant backend the backend's own
+    // HOME is read-only (`mkdir /home/theia/.gemini: read-only file system`, seen on staging for agy).
+    if (!options.spawner && (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) || options.ownerLogin?.trim())) {
         return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
     const inFlight = discoveries.get(key);

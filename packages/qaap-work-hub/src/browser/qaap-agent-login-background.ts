@@ -56,7 +56,9 @@ import { agentLoginUtf8ByteLength, QaapAgentLoginBufferTap } from './qaap-agent-
 const HARNESS_STATUS_TIMEOUT_MS = 5000;
 const CONNECTED_CLOSE_DELAY_MS = 1800;
 /** A driven TUI login starts the CLI first, then types its way to the link. */
-const TUI_LOGIN_CHALLENGE_TIMEOUT_MS = 30_000;
+// A driven TUI login waits for the CLI to start before typing: Pi 1.5 takes 12-23 s to draw its TUI on a 1-CPU tenant
+// (measured on staging, 24 Nov 2026), and its API-key prompt came at ~30 s, right on the old 30 s deadline.
+const TUI_LOGIN_CHALLENGE_TIMEOUT_MS = 75_000;
 const INPUT_DRIVER_TICK_MS = 150;
 /** Output the live stream missed is read back from the terminal screen this often. */
 const BUFFER_TAP_POLL_MS = 400;

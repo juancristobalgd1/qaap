@@ -619,7 +619,10 @@ export function createQaapAgentLoginDialog(
                 setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogPreparing', 'Preparing secure sign-in…'));
                 break;
             case 'waiting':
-                setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
+                // Pi's TUI takes a while to start before the dialog can drive it: say so instead of a bare "Waiting".
+                setStatus('busy', options.loginProviders
+                    ? nls.localize('qaap/mobileProjects/agentLoginDialogStartingCli', 'Starting {0}… this can take up to a minute.', agentLabel)
+                    : nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
                 appendOpenTerminalFallback();
                 break;
             case 'installing':
