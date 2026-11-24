@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import * as childProcess from 'child_process';
 import { QaapCodexGateOverlayBuilder } from './qaap-codex-gate-overlay';
 import { QaapOpencodeGateProbe } from './qaap-tool-gate-opencode-probe';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -92,30 +91,17 @@ describe('Codex startup detection fallback', () => {
 });
 
 describe('boot-time --version probe', () => {
-    let originalSpawnSync: typeof childProcess.spawnSync;
-    let calls: Array<{ file: string; options: childProcess.SpawnSyncOptions }>;
 
-    beforeEach(() => {
-        originalSpawnSync = childProcess.spawnSync;
-        calls = [];
-        (childProcess as { spawnSync: unknown }).spawnSync = (file: string, _args: readonly string[], options: childProcess.SpawnSyncOptions) => {
-            calls.push({ file, options });
-            return { status: null, signal: 'SIGTERM', error: new Error('spawnSync qaap-cli ETIMEDOUT') };
-        };
-    });
-
-    afterEach(() => {
-        (childProcess as { spawnSync: unknown }).spawnSync = originalSpawnSync;
-    });
-
-    it('caps the probe at 5 s and logs one warn line when it fails, then keeps booting', async () => {
+    it('never blocks: answers at once, probes once in the background and logs one warn line on failure', async () => {
         const probed = new Set<string>();
-        const warnings = await captureWarnings(() => {
-            expect(probeAgentBinOnce('grok', () => '/opt/qaap/grok', probed)).to.equal(true);
-            expect(probeAgentBinOnce('grok', () => '/opt/qaap/grok', probed)).to.equal(true);
+        const started = Date.now();
+        const warnings = await captureWarnings(async () => {
+            expect(probeAgentBinOnce('grok', () => '/nonexistent/qaap-grok-bin', probed)).to.equal(true);
+            expect(probeAgentBinOnce('grok', () => '/nonexistent/qaap-grok-bin', probed)).to.equal(true);
+            expect(Date.now() - started).to.be.below(1000);
+            // The asynchronous probe fails (no such binary) and reports once.
+            await new Promise(resolve => setTimeout(resolve, 300));
         });
-        expect(calls).to.have.length(1);
-        expect(calls[0].options.timeout).to.be.at.most(5000);
         expect(warnings).to.have.length(1);
         expect(warnings[0]).to.contain('grok --version probe failed');
     });
@@ -123,7 +109,7 @@ describe('boot-time --version probe', () => {
     it('does not probe a harness whose binary cannot be resolved', () => {
         const probed = new Set<string>();
         expect(probeAgentBinOnce('grok', () => undefined, probed)).to.equal(false);
-        expect(calls).to.have.length(0);
+        expect(probed.has('grok')).to.equal(false);
     });
 });
 

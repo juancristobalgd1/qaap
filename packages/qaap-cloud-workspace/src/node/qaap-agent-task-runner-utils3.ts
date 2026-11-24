@@ -184,16 +184,19 @@ export function probeAgentBinOnce(
     if (!bin) {
         return false;
     }
+    // Diagnostic only (the answer is never used): asynchronous, so a slow CLI (`qaiq --version` boots a Node CLI in
+    // 2-3.5 s) no longer blocks the backend event loop for every request behind it.
+    probedAgentBins.add(agentId);
     try {
-        const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS });
-        if (result.error || result.status !== 0) {
-            console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${result.error?.message ?? `exit ${String(result.status)}`}`);
-        }
-        probedAgentBins.add(agentId);
-        return true;
+        execFileKillingGroup(bin, ['--version'], { timeoutMs: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS }, error => {
+            if (error) {
+                console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${error.message}`);
+            }
+        });
     } catch {
-        return false;
+        // A missing binary is reported by the regular detection; nothing to log here.
     }
+    return true;
 }
 
 /**

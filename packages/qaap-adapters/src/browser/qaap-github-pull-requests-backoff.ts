@@ -9,7 +9,8 @@
  */
 export const GITHUB_PULL_REQUESTS_SIGN_IN_BACKOFF_MS = 60_000;
 /** The first wait after a 5xx; each further 5xx in a row doubles it. */
-export const GITHUB_PULL_REQUESTS_SERVER_BACKOFF_START_MS = 5_000;
+// Each request already goes through the transient-GET retries (several attempts per call), so the pause starts long.
+export const GITHUB_PULL_REQUESTS_SERVER_BACKOFF_START_MS = 30_000;
 /** The longest wait after repeated 5xx answers. */
 export const GITHUB_PULL_REQUESTS_SERVER_BACKOFF_MAX_MS = 60_000;
 

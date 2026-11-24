@@ -42,7 +42,7 @@ describe('qaap-github-pull-requests-backoff', () => {
             expect(activeGithubPullRequestsBackoff(start + 60_000)).to.equal(undefined);
         });
 
-        it('doubles the server wait from 5 s and caps it at one minute', () => {
+        it('doubles the server wait from 30 s and caps it at one minute', () => {
             const waits: number[] = [];
             for (let failure = 0; failure < 5; failure++) {
                 const now = Date.now();
@@ -52,7 +52,7 @@ describe('qaap-github-pull-requests-backoff', () => {
                 // The request is allowed again at retryAt; the next 5xx then comes from that retry.
                 clock.tick(retryAt - now);
             }
-            expect(waits).to.deep.equal([5_000, 10_000, 20_000, 40_000, 60_000]);
+            expect(waits).to.deep.equal([30_000, 60_000, 60_000, 60_000, 60_000]);
         });
 
         it('logs one line per episode and a success starts a new one', () => {
@@ -99,7 +99,7 @@ describe('qaap-github-pull-requests-backoff', () => {
             expect((skipped as { code?: string }).code).to.equal('github_pull_requests_backoff');
             expect(fetchStub.callCount).to.equal(1);
 
-            clock.tick(5_000);
+            clock.tick(30_000);
             fetchStub.callsFake(async () => new Response(JSON.stringify({ pullRequests: [], signedIn: true }), { status: 200 }));
             expect((await fetchQaapGithubPullRequests(['acme/app'])).signedIn).to.equal(true);
             expect(fetchStub.callCount).to.equal(2);

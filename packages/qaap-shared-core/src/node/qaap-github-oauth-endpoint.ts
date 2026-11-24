@@ -923,6 +923,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 : [];
             res.json({ pullRequests, currentRepository: repository, signedIn: true });
         } catch (err) {
+            // A GitHub 401 means the stored token expired or was revoked: answer 401 like the repository list does,
+            // so the client backs off for a minute instead of retrying a "502" about every second.
+            if ((err as { status?: number }).status === 401) {
+                res.status(401).json({ error: 'GitHub session expired', signedIn: false, pullRequests: [] });
+                return;
+            }
             const message = err instanceof Error ? err.message : 'Failed to load pull requests';
             res.status(502).json({ error: message, signedIn: true, pullRequests: [] });
         }
