@@ -442,24 +442,24 @@ describe('Pi Connect dialog: `/login` driven in the hidden terminal', () => {
         expect(document.querySelectorAll('.theia-mobile-agent-login-dialog')).to.have.length(0);
     });
 
-    it('gives up with Pi\'s output after 30 seconds without a link, and closes the hidden terminal', async () => {
+    it('gives up with Pi\'s output after 75 seconds without a link, and closes the hidden terminal', async () => {
         // Pi starts but never draws anything: the readiness fallback still types `/login`, the
         // menus never appear, so the method-picker Enter is never sent.
         const terminal = createPiTerminal({ silent: true });
         connect(terminal);
         const startedAt = Date.now();
-        while (dialogSpinning() && Date.now() - startedAt <= 40_000) {
+        while (dialogSpinning() && Date.now() - startedAt <= 90_000) {
             await clock.tickAsync(500);
         }
         // Only the echoed command came back. Was: "No output was received" with an empty box; now the dialog says
         // the CLI printed nothing and shows what the terminal did print (the echo), plus the host's facts.
-        expect(dialogStatus()).to.contain('Pi printed nothing within 30 seconds.');
+        expect(dialogStatus()).to.contain('Pi printed nothing within 75 seconds.');
         expect(dialogStatus()).to.contain('Terminal started:');
         expect(document.querySelector('.theia-mobile-agent-login-dialog-output')?.textContent ?? '').to.contain('pi --tui-mode regular');
         expect(terminal.sent.filter(text => text === '\r').length, 'the method picker never showed, so its Enter was never typed')
             .to.be.below(3);
         expect(terminal.isDisposed).to.equal(true);
-        expect(Date.now() - startedAt).to.be.at.least(29_000);
+        expect(Date.now() - startedAt).to.be.at.least(74_000);
     });
 });
 
