@@ -412,7 +412,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
 
         const label = document.createElement('div');
         label.className = 'theia-mobile-sticky-composer-sheet-section-label';
-        label.textContent = nls.localize('qaap/composerWorkspace/projectSheetSection', 'Repository');
+        label.textContent = nls.localize('qaap/composerWorkspace/projectSheetRecent', 'Recent');
         list.append(label);
 
         for (const entry of this.host.projects) {
