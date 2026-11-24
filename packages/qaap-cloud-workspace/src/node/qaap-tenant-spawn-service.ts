@@ -5,6 +5,7 @@
 
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -565,11 +566,10 @@ export class QaapTenantSpawnService {
         if (!rootAcl.ok) {
             throw new Error(`Could not grant the non-root agent access to its tenant workspace ${root} (${rootAcl.reason}); install the acl package.`);
         }
-        const dirs = this.sweepAgentAccess(uid, 'd', root);
+        const { dirs, files } = this.sweepAgentAccessSinceLastSweep(uid, root);
         if (!dirs.ok) {
             throw new Error(`Could not prepare tenant workspace directories for agent uid ${uid} (${dirs.reason}); install find and acl.`);
         }
-        const files = this.sweepAgentAccess(uid, 'f', root);
         if (!files.ok) {
             throw new Error(`Could not prepare tenant workspace files for agent uid ${uid} (${files.reason}); install find and acl.`);
         }
@@ -617,8 +617,8 @@ export class QaapTenantSpawnService {
     }
 
     /** Grants the agent uid access to what the backend already created under `dir`: directories (`d`) or files (`f`). */
-    protected sweepAgentAccess(uid: number, type: 'd' | 'f', dir: string): QaapTenantAccessCommandResult {
-        const select = [dir, '-xdev', '-uid', '0', '-type', type];
+    protected sweepAgentAccess(uid: number, type: 'd' | 'f', dir: string, changedSince?: string): QaapTenantAccessCommandResult {
+        const select = [dir, '-xdev', '-uid', '0', '-type', type, ...(changedSince ? ['-cnewer', changedSince] : [])];
         if (this.usesAgentGroupAccess()) {
             return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select,
                 '-exec', 'chgrp', '-h', this.agentAccessGroup(uid), '{}', '+',
@@ -626,6 +626,62 @@ export class QaapTenantSpawnService {
             ]));
         }
         return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select, '-exec', 'setfacl', '-m', type === 'd' ? `u:${uid}:rwx,d:u:${uid}:rwx` : `u:${uid}:rwX`, '{}', '+']));
+    }
+
+    /**
+     * Sweeps directories then files under `dir`, but only the entries whose status changed since the last complete
+     * sweep of `dir` for this uid and access mode. Every sweep re-ran `find -exec setfacl` over the whole tree:
+     * ~63,000 entries (8-11 s of synchronous event-loop time) on each tenant cold start on staging (24 Nov 2026).
+     * An entry the backend created, renamed or re-moded since then has a newer ctime (user space cannot set it);
+     * the entries left out already received their grant. The stamp takes the time the sweep ended (`setfacl` bumps
+     * the ctime of what it touched); an entry created during the sweep inherits the parent's default ACL.
+     */
+    protected sweepAgentAccessSinceLastSweep(uid: number, dir: string): { readonly dirs: QaapTenantAccessCommandResult; readonly files: QaapTenantAccessCommandResult } {
+        const stamp = this.aclSweepStampPath(uid, dir);
+        const changedSince = stamp && fs.existsSync(stamp) ? stamp : undefined;
+        const dirs = this.sweepAgentAccess(uid, 'd', dir, changedSince);
+        const files = dirs.ok ? this.sweepAgentAccess(uid, 'f', dir, changedSince) : dirs;
+        if (stamp && dirs.ok && files.ok) {
+            this.writeAclSweepStamp(stamp);
+        }
+        return { dirs, files };
+    }
+
+    /** Stamp of the last complete sweep of `dir` for `uid` in the current access mode, or `undefined` when stamps are off. */
+    protected aclSweepStampPath(uid: number, dir: string): string | undefined {
+        const directory = this.aclSweepStampDirectory();
+        if (!directory) {
+            return undefined;
+        }
+        const mode = this.usesAgentGroupAccess() ? `group-${this.agentAccessGroup(uid)}` : 'acl';
+        const id = createHash('sha256').update(`${path.resolve(dir)}\0${uid}\0${mode}`).digest('hex').slice(0, 32);
+        return path.join(directory, `${id}.stamp`);
+    }
+
+    /**
+     * Where sweep stamps live: `QAAP_ACL_SWEEP_STAMP_DIR` (`off` disables them), else the backend's own persistent
+     * `~/.qaap` on a per-tenant backend, so a container restart does not sweep everything again. Off elsewhere.
+     */
+    protected aclSweepStampDirectory(): string | undefined {
+        const configured = process.env.QAAP_ACL_SWEEP_STAMP_DIR?.trim();
+        if (configured) {
+            return configured === 'off' ? undefined : configured;
+        }
+        return /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '')
+            ? path.join(os.homedir(), '.qaap', 'acl-sweep-stamps')
+            : undefined;
+    }
+
+    /** Best effort: without a stamp the next sweep is a full one, which is only slower. */
+    protected writeAclSweepStamp(stamp: string): void {
+        try {
+            fs.mkdirSync(path.dirname(stamp), { recursive: true, mode: 0o700 });
+            const now = new Date();
+            fs.writeFileSync(stamp, `${now.toISOString()}\n`, { mode: 0o600 });
+            fs.utimesSync(stamp, now, now);
+        } catch (error) {
+            console.warn(`[qaap-security] could not record the agent access sweep of ${stamp}: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     /**
@@ -1147,10 +1203,7 @@ export class QaapTenantSpawnService {
         // run left at 0700 with `mask::---`. A failure is logged per directory and never skips the
         // remaining ones, so a stale cache cannot block the home repair; the storage stays usable.
         for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
-            const dirs = this.sweepAgentAccess(uid, 'd', dir);
-            const files = dirs.ok
-                ? this.sweepAgentAccess(uid, 'f', dir)
-                : dirs;
+            const { files } = this.sweepAgentAccessSinceLastSweep(uid, dir);
             if (!files.ok) {
                 console.warn(`[qaap-security] agent uid ${uid} may not reach existing harness state under ${dir} `
                     + `(${files.reason ?? 'unknown reason'}); the sign-in links are still prepared.`);

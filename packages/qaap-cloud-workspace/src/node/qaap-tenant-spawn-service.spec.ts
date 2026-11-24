@@ -13,6 +13,26 @@ import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { QaapTenantSpawnService, type QaapTenantAccessCommandResult } from './qaap-tenant-spawn-service';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
+// Sweep stamps default to the backend's ~/.qaap on a tenant backend: keep every test run off the real home.
+let aclSweepStampRoot: string | undefined;
+let savedAclSweepStampDir: string | undefined;
+beforeEach(() => {
+    savedAclSweepStampDir = process.env.QAAP_ACL_SWEEP_STAMP_DIR;
+    aclSweepStampRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acl-stamps-'));
+    process.env.QAAP_ACL_SWEEP_STAMP_DIR = aclSweepStampRoot;
+});
+afterEach(() => {
+    if (savedAclSweepStampDir === undefined) {
+        delete process.env.QAAP_ACL_SWEEP_STAMP_DIR;
+    } else {
+        process.env.QAAP_ACL_SWEEP_STAMP_DIR = savedAclSweepStampDir;
+    }
+    if (aclSweepStampRoot) {
+        fs.rmSync(aclSweepStampRoot, { recursive: true, force: true });
+        aclSweepStampRoot = undefined;
+    }
+});
+
 interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv; shell?: boolean } }
 
 /**
@@ -449,6 +469,42 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             const after = service.commands.length;
             service.prepare(cwd);
             expect(service.commands.length).to.equal(after);
+        });
+
+        it('sweeps only what changed since the last complete sweep after a restart, and the whole tree before one', () => {
+            const first = new SweepFailureService();
+            first.prepare(cwd);
+            const firstFinds = first.commands.filter(command => command.file === 'find');
+            expect(firstFinds).to.have.length(2);
+            expect(firstFinds.every(command => !command.args.includes('-cnewer'))).to.equal(true);
+            // A new backend process (container restart) prepares the same root again.
+            const second = new SweepFailureService();
+            second.prepare(cwd);
+            const secondFinds = second.commands.filter(command => command.file === 'find');
+            expect(secondFinds).to.have.length(2);
+            for (const command of secondFinds) {
+                const stamp = command.args[command.args.indexOf('-cnewer') + 1];
+                expect(command.args).to.include('-cnewer');
+                expect(stamp.startsWith(aclSweepStampRoot!)).to.equal(true);
+                expect(fs.existsSync(stamp)).to.equal(true);
+            }
+        });
+
+        it('records no stamp after a failed sweep, so the next attempt sweeps the whole tree', () => {
+            const failing = new SweepFailureService();
+            failing.failures.f = { ok: false, reason: 'find exit status 2: boom', stderr: ['find: boom'] };
+            expect(() => failing.prepare(cwd)).to.throw('Could not prepare tenant workspace files');
+            const retry = new SweepFailureService();
+            retry.prepare(cwd);
+            expect(retry.commands.filter(command => command.file === 'find').some(command => command.args.includes('-cnewer'))).to.equal(false);
+        });
+
+        it('keeps stamps off when QAAP_ACL_SWEEP_STAMP_DIR is off', () => {
+            process.env.QAAP_ACL_SWEEP_STAMP_DIR = 'off';
+            new SweepFailureService().prepare(cwd);
+            const again = new SweepFailureService();
+            again.prepare(cwd);
+            expect(again.commands.filter(command => command.file === 'find').some(command => command.args.includes('-cnewer'))).to.equal(false);
         });
 
         it('keeps any other diagnostic in the sweep fatal, even next to permission-denied lines', () => {
