@@ -80,6 +80,7 @@ import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
+import { QaapAgentProbeQueue } from './qaap-agent-probe-queue';
 import {
     QaapCodexHelpProbe,
     isQaiqRunner as isQaiqRunnerHelper,
@@ -223,6 +224,11 @@ const NATIVE_MODEL_DISCOVERY_DEADLINE_MS = 45_000;
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
 /** How long the picker catalog waits for stale auth probes before answering with last known states. */
 export const QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS = 1_200;
+/**
+ * A full catalog refresh keeps the connection states answered within this window. Clearing every state made the
+ * next listing re-probe all harnesses at once (one fork each), an 8.3 s event-loop stall on staging (24 Nov 2026).
+ */
+export const QAAP_AGENT_CATALOG_REFRESH_KEEP_MS = 30_000;
 /**
  * How long an explicit catalog refresh (`/all?refresh=1`, polled by the Connect dialog) waits for
  * the auth probes. It must outlast a probe: answering `unknown` early made the dialog guess.
@@ -409,6 +415,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }>();
     /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
     protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
+    /** Starts auth probes one per event-loop turn, at most two at a time (see QaapAgentProbeQueue). */
+    protected agentProbeQueueInstance: QaapAgentProbeQueue | undefined;
+
+    protected get agentProbeQueue(): QaapAgentProbeQueue {
+        return this.agentProbeQueueInstance ??= new QaapAgentProbeQueue();
+    }
     /**
      * Sessions a turn proved unusable (the harness failed with an auth error), keyed like
      * {@link agentConnectionStates}. They read as `disconnected` whatever the probe says, because the
@@ -689,13 +701,22 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             expireNativeAgentModels(onlyAgent, ownerLogin);
             return;
         }
-        this.agentConnectionStates.clear();
+        // Keep what was answered within the last 30 s: those harnesses are not probed again (one fork each).
+        // In-flight probes are still superseded, so a sign-in finished meanwhile is not read from an older probe.
+        const keepAfter = Date.now() - QAAP_AGENT_CATALOG_REFRESH_KEEP_MS;
+        for (const [key, cached] of [...this.agentConnectionStates]) {
+            if (cached.at < keepAfter) {
+                this.agentConnectionStates.delete(key);
+            }
+        }
         this.agentConnectionProbes.clear();
         // Keys are `${agentId}:${owner}` (agentConnectionCacheKey); neither part contains a colon.
         const owner = ownerLogin?.trim().toLowerCase() ?? '';
         for (const key of [...this.rejectedAgentSessions]) {
             if (key.slice(key.indexOf(':') + 1) === owner) {
                 this.rejectedAgentSessions.delete(key);
+                // The `disconnected` a rejection recorded is not a probe answer: probe the lifted session again.
+                this.agentConnectionStates.delete(key);
             }
         }
         // Harness settings or the CLI may have changed: the next model request runs discovery again.
@@ -1101,7 +1122,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (inFlight) {
             return inFlight;
         }
-        const probe = this.probeAgentConnectionState(normalized, sources.probeBin, ownerLogin)
+        const probeBin = sources.probeBin;
+        const probe: Promise<QaapAgentDescriptor['connectionState']> = this.agentProbeQueue.run(() =>
+            // A probe a catalog refresh superseded while it waited would only be discarded: do not spawn it.
+            this.agentConnectionProbes.get(cacheKey) === probe
+                ? this.probeAgentConnectionState(normalized, probeBin, ownerLogin)
+                : Promise.resolve('unknown' as const))
             .then(
                 state => ({ state, probeFailed: false }),
                 // An error is not a pending answer: the chip keeps `unknown`, but default selection
