@@ -175,6 +175,20 @@ export function hasLiveNativeAgentModels(
 }
 
 /**
+ * Whether the cache holds any catalog for this harness (live or the curated fallback after a failed listing).
+ * The endpoint waits the long budget only on a cold cache: a harness whose listing keeps failing must not make
+ * every picker load wait for it again.
+ */
+export function hasNativeAgentModelsEntry(
+    agentId: string | undefined,
+    ownerLogin?: string,
+    antigravityBin?: QaapAntigravityCliBin,
+): boolean {
+    const harnessKey = agentId?.trim().toLowerCase();
+    return !!harnessKey && cache.has(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin));
+}
+
+/**
  * Resolve once the agent's native catalog is current (CLI discovery, else the curated list). A fresh
  * cache answers at once; a stale one is replaced by discovery, but a failed or empty discovery never
  * overwrites a live list it could not improve on. Concurrent calls share one CLI run.
