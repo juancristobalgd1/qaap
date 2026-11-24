@@ -140,7 +140,7 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         });
     });
 
-    it('forwards forceRefresh to the backend even inside the catalog throttle window', async () => {
+    it('asks the backend again on a forced ensure inside the throttle window, without forcing a re-probe of every harness', async () => {
         const requests: ({ readonly forceRefresh?: boolean } | undefined)[] = [];
         const host = createHost();
         host.stickyComposerRenderUi = {
@@ -164,7 +164,8 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
 
         expect(requests).to.have.length(2);
         expect(requests[0]?.forceRefresh).to.not.equal(true);
-        expect(requests[1]?.forceRefresh).to.equal(true);
+        // Was `true`: every picker open re-detected every CLI and re-probed all harnesses (an 8 s stall on staging).
+        expect(requests[1]?.forceRefresh).to.not.equal(true);
     });
 
     it('flags only signed-out harnesses as disconnected, not ones still being probed', () => {

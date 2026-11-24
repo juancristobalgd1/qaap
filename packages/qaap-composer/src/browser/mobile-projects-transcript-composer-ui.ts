@@ -194,7 +194,8 @@ export class MobileProjectsTranscriptComposerUi {
         options?: { force?: boolean },
     ): Promise<readonly QaapAgentTaskAgentOption[]> {
         if (options?.force || this.host.transcriptComposerBackendAgents.length === 0) {
-            const loaded = await this.refreshTranscriptComposerAgents(project, { forceRefresh: !!options?.force });
+            // Same rule as the sticky composer: opening the picker never forces `refresh=1` (a re-probe of every harness).
+            const loaded = await this.refreshTranscriptComposerAgents(project, { forceRefresh: false });
             if (!loaded) {
                 throw new Error('Agent catalog unavailable');
             }
