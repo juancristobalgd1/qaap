@@ -12,6 +12,7 @@ import {
     clearNativeAgentModelCache,
     discoverClaudeCliModels,
     discoverCodexAccountModels,
+    forgetNativeModelMemoryForTests,
     hasLiveNativeAgentModels,
     invalidateNativeAgentModels,
     listNativeAgentModels,
@@ -20,6 +21,7 @@ import {
     parseCodexModelsCache,
     prepareNativeAgentModels,
     resolveCodexAgentHome,
+    setNativeModelCatalogStoreDirForTests,
 } from './qaap-agent-native-models';
 
 describe('qaap-agent-native-models', () => {
@@ -27,8 +29,10 @@ describe('qaap-agent-native-models', () => {
     let originalPath: string | undefined;
 
     beforeEach(() => {
-        clearNativeAgentModelCache();
         sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-native-models-'));
+        // Persisted catalogs go to the sandbox, never to the real ~/.qaap; set before the clear touches the store.
+        setNativeModelCatalogStoreDirForTests(path.join(sandbox, 'store'));
+        clearNativeAgentModelCache();
         originalPath = process.env.PATH;
     });
 
@@ -74,6 +78,57 @@ describe('qaap-agent-native-models', () => {
         invalidateNativeAgentModels('cursor');
         const discovered = await prepareNativeAgentModels('cursor');
         expect(discovered.map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+    });
+
+    describe('persisted live catalogs across restarts', () => {
+        const storeFile = (): string => path.join(sandbox, 'store', 'native-model-catalogs.json');
+
+        it('persists a live discovery and serves it at once after a restart', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            await prepareNativeAgentModels('cursor');
+            const stored = JSON.parse(fs.readFileSync(storeFile(), 'utf8')) as Record<string, { models: { modelId: string }[] }>;
+            expect(stored.cursor.models.map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+            expect((fs.statSync(storeFile()).mode & 0o777)).to.equal(0o600);
+
+            // Restart: the in-memory cache is gone and the CLI is not reachable yet (no binary on PATH).
+            forgetNativeModelMemoryForTests();
+            process.env.PATH = sandbox;
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(true);
+            // The restored entry is due for refresh, so the failed background listing keeps the live list.
+            await prepareNativeAgentModels('cursor');
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+        });
+
+        it('drops the persisted catalog on invalidation so a restart does not bring it back', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            await prepareNativeAgentModels('cursor');
+            invalidateNativeAgentModels('cursor');
+            const stored = JSON.parse(fs.readFileSync(storeFile(), 'utf8')) as Record<string, unknown>;
+            expect(stored).to.not.have.property('cursor');
+
+            forgetNativeModelMemoryForTests();
+            process.env.PATH = sandbox;
+            expect(listNativeAgentModels('cursor')).to.deep.equal(listStaticNativeAgentModels('cursor'));
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+        });
+
+        it('ignores a corrupt catalog file and answers the curated list', async () => {
+            fs.mkdirSync(path.join(sandbox, 'store'), { recursive: true });
+            fs.writeFileSync(storeFile(), '{"cursor": {"models": [not json');
+            forgetNativeModelMemoryForTests();
+            process.env.PATH = sandbox;
+            expect(listNativeAgentModels('cursor')).to.deep.equal(listStaticNativeAgentModels('cursor'));
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+        });
     });
 
     describe('hasLiveNativeAgentModels', () => {

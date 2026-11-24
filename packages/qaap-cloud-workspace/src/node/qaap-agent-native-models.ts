@@ -45,6 +45,181 @@ export const NATIVE_MODEL_FALLBACK_RETRY_MS = 60_000;
 function isNativeModelEntryStale(entry: NativeModelCacheEntry, now: number = Date.now()): boolean {
     return now >= entry.refreshAt;
 }
+/** File, in the backend's `~/.qaap` directory, that keeps the last live catalogs across restarts. */
+const NATIVE_MODEL_CATALOG_FILE_NAME = 'native-model-catalogs.json';
+/** Most catalogs kept on disk; the entry with the oldest `savedAt` is dropped first. */
+const NATIVE_MODEL_CATALOG_STORE_MAX_ENTRIES = 64;
+/** A catalog saved longer ago than this is not restored after a restart. */
+const NATIVE_MODEL_CATALOG_STORE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+
+/** One live catalog as kept on disk, by cache key. */
+interface PersistedNativeModelCatalog {
+    readonly models: QaapQaiqModelOption[];
+    readonly savedAt: number;
+}
+
+/** Test override of the directory holding the catalog file; `undefined` uses `~/.qaap`. */
+let nativeModelCatalogStoreDir: string | undefined;
+/** Persisted catalogs by cache key, read from disk once, lazily. */
+let persistedNativeModelCatalogs: Map<string, PersistedNativeModelCatalog> | undefined;
+
+/**
+ * Points the persisted catalog store at another directory and forgets what was loaded from the previous one.
+ * Tests only: production always uses `~/.qaap`, which survives backend restarts.
+ */
+export function setNativeModelCatalogStoreDirForTests(dir: string | undefined): void {
+    nativeModelCatalogStoreDir = dir;
+    persistedNativeModelCatalogs = undefined;
+}
+
+/**
+ * Drops the in-memory catalogs and the loaded copy of the store, as a backend restart does; the file is kept.
+ * Tests only.
+ */
+export function forgetNativeModelMemoryForTests(): void {
+    cache.clear();
+    discoveries.clear();
+    persistedNativeModelCatalogs = undefined;
+}
+
+/** Path of the persisted catalog file. */
+function nativeModelCatalogFilePath(): string {
+    return path.join(nativeModelCatalogStoreDir ?? path.join(os.homedir(), '.qaap'), NATIVE_MODEL_CATALOG_FILE_NAME);
+}
+
+/** A persisted model row must at least carry its id; anything else is dropped as corrupt. */
+function isPersistedNativeModelOption(value: unknown): value is QaapQaiqModelOption {
+    return typeof value === 'object' && value !== null && typeof (value as { modelId?: unknown }).modelId === 'string';
+}
+
+/** One stored catalog, or undefined when its shape is not a catalog with at least one model. */
+function parsePersistedNativeModelCatalog(value: unknown): PersistedNativeModelCatalog | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const { models, savedAt } = value as { models?: unknown; savedAt?: unknown };
+    if (!Array.isArray(models) || typeof savedAt !== 'number' || !Number.isFinite(savedAt)) {
+        return undefined;
+    }
+    const valid = models.filter(isPersistedNativeModelOption);
+    return valid.length > 0 ? { models: valid, savedAt } : undefined;
+}
+
+/**
+ * The persisted catalogs, read from disk on first use. A missing, unreadable or corrupt file yields an empty store.
+ */
+function loadPersistedNativeModelCatalogs(): Map<string, PersistedNativeModelCatalog> {
+    if (persistedNativeModelCatalogs) {
+        return persistedNativeModelCatalogs;
+    }
+    const loaded = new Map<string, PersistedNativeModelCatalog>();
+    try {
+        const parsed: unknown = JSON.parse(fs.readFileSync(nativeModelCatalogFilePath(), 'utf8'));
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            for (const [key, value] of Object.entries(parsed)) {
+                const catalog = parsePersistedNativeModelCatalog(value);
+                if (catalog) {
+                    loaded.set(key, catalog);
+                }
+            }
+        }
+    } catch {
+        // missing or corrupt: start with an empty store, the CLI listing refills it
+    }
+    persistedNativeModelCatalogs = loaded;
+    return loaded;
+}
+
+/**
+ * Writes the whole store atomically (temp file, then rename) with mode 0600. Best effort: a failed write only
+ * means one more CLI listing after the next restart.
+ */
+function writePersistedNativeModelCatalogs(store: Map<string, PersistedNativeModelCatalog>): void {
+    const file = nativeModelCatalogFilePath();
+    const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    try {
+        const body: Record<string, PersistedNativeModelCatalog> = {};
+        for (const [key, catalog] of store) {
+            body[key] = catalog;
+        }
+        fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(temp, JSON.stringify(body), { mode: 0o600 });
+        fs.renameSync(temp, file);
+    } catch {
+        try {
+            fs.rmSync(temp, { force: true });
+        } catch {
+            // best effort: a leftover temp file is harmless
+        }
+    }
+}
+
+/**
+ * Saves one live CLI catalog and keeps the store within its size cap by dropping the oldest entries.
+ * Called once per successful discovery, never for the curated fallback.
+ */
+function persistNativeModelCatalog(key: string, models: QaapQaiqModelOption[]): void {
+    const store = loadPersistedNativeModelCatalogs();
+    store.set(key, { models, savedAt: Date.now() });
+    while (store.size > NATIVE_MODEL_CATALOG_STORE_MAX_ENTRIES) {
+        let oldestKey: string | undefined;
+        let oldestSavedAt = Number.POSITIVE_INFINITY;
+        for (const [candidate, catalog] of store) {
+            if (catalog.savedAt < oldestSavedAt) {
+                oldestSavedAt = catalog.savedAt;
+                oldestKey = candidate;
+            }
+        }
+        if (oldestKey === undefined) {
+            break;
+        }
+        store.delete(oldestKey);
+    }
+    writePersistedNativeModelCatalogs(store);
+}
+
+/**
+ * Removes the persisted catalogs whose keys match, so a sign-out or a fresh request cannot bring back an old list.
+ */
+function forgetPersistedNativeModelCatalogs(matches: (key: string) => boolean): void {
+    const store = loadPersistedNativeModelCatalogs();
+    let changed = false;
+    for (const key of [...store.keys()]) {
+        if (matches(key)) {
+            store.delete(key);
+            changed = true;
+        }
+    }
+    if (changed) {
+        writePersistedNativeModelCatalogs(store);
+    }
+}
+
+/**
+ * The persisted live catalog for a key as a cache entry that is already due for refresh: it is served at once
+ * and replaced by the background discovery. Undefined when none is stored or it is older than the maximum age.
+ */
+function restorePersistedNativeModelCatalog(key: string): NativeModelCacheEntry | undefined {
+    const catalog = loadPersistedNativeModelCatalogs().get(key);
+    if (!catalog || Date.now() - catalog.savedAt > NATIVE_MODEL_CATALOG_STORE_MAX_AGE_MS) {
+        return undefined;
+    }
+    return { models: catalog.models, live: true, refreshAt: 0 };
+}
+
+/** The cache entry for a key; on a miss, the persisted live catalog is loaded into the cache. */
+function cachedNativeModelEntry(key: string): NativeModelCacheEntry | undefined {
+    const cached = cache.get(key);
+    if (cached) {
+        return cached;
+    }
+    const restored = restorePersistedNativeModelCatalog(key);
+    if (restored) {
+        cache.set(key, restored);
+    }
+    return restored;
+}
+
 /** In-flight CLI discoveries; the event loop is shared with every other request, so never spawn synchronously. */
 const discoveries = new Map<string, Promise<QaapQaiqModelOption[]>>();
 
@@ -140,7 +315,7 @@ export function listNativeAgentModels(
         return listStaticNativeAgentModels(normalized, antigravityBin);
     }
     const key = nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin);
-    const entry = cache.get(key);
+    const entry = cachedNativeModelEntry(key);
     if (entry) {
         // Serve what we have at once; a stale entry is refreshed in the background.
         if (isNativeModelEntryStale(entry)) {
@@ -171,7 +346,7 @@ export function hasLiveNativeAgentModels(
     if (!harnessKey) {
         return false;
     }
-    return cache.get(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin))?.live === true;
+    return cachedNativeModelEntry(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin))?.live === true;
 }
 
 /**
@@ -185,7 +360,7 @@ export function hasNativeAgentModelsEntry(
     antigravityBin?: QaapAntigravityCliBin,
 ): boolean {
     const harnessKey = agentId?.trim().toLowerCase();
-    return !!harnessKey && cache.has(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin));
+    return !!harnessKey && cachedNativeModelEntry(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin)) !== undefined;
 }
 
 /**
@@ -208,7 +383,7 @@ export function prepareNativeAgentModels(
         return Promise.resolve(listStaticNativeAgentModels(normalized, bin));
     }
     const key = nativeModelCacheKey(harnessKey, options.ownerLogin, bin);
-    const entry = cache.get(key);
+    const entry = cachedNativeModelEntry(key);
     if (entry && !isNativeModelEntryStale(entry)) {
         return Promise.resolve(entry.models);
     }
@@ -234,6 +409,7 @@ export function prepareNativeAgentModels(
             discoveries.delete(key);
             if (discovered.length > 0) {
                 cache.set(key, { models: discovered, live: true, refreshAt: Date.now() + NATIVE_MODEL_CACHE_TTL_MS });
+                persistNativeModelCatalog(key, discovered);
                 return discovered;
             }
             const previous = cache.get(key);
@@ -254,6 +430,7 @@ export function prepareNativeAgentModels(
 export function clearNativeAgentModelCache(): void {
     cache.clear();
     discoveries.clear();
+    forgetPersistedNativeModelCatalogs(() => true);
 }
 
 /**
@@ -274,6 +451,10 @@ export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string
         cache.delete(key);
         discoveries.delete(key);
     }
+    // The persisted copy of the same keys goes too, so a sign-out cannot resurrect the old list after a restart.
+    const persistedKeys = new Set(keys);
+    forgetPersistedNativeModelCatalogs(key => persistedKeys.has(key)
+        || (wildcard && key.startsWith(`${harnessKey}:`)));
 }
 
 /**
