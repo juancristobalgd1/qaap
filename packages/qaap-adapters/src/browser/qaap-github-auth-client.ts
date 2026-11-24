@@ -45,6 +45,12 @@ import { rememberQaapHostedRuntime } from '../common/qaap-hosted-runtime';
 import { rememberQaapDefaultAgentIdConfig } from '../common/qaap-default-agent-config';
 import { fetchQaapGetWithTransientRetry } from '../common/qaap-transient-get';
 import { takeQaapBootPrefetch } from './qaap-boot-prefetch';
+import {
+    activeGithubPullRequestsBackoff,
+    recordGithubPullRequestsServerError,
+    recordGithubPullRequestsSignInRequired,
+    resetGithubPullRequestsBackoff,
+} from './qaap-github-pull-requests-backoff';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     clearQaapAuthSession,
@@ -310,9 +316,24 @@ export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositor
     return response.json() as Promise<QaapGithubRepositoriesResponse>;
 }
 
+/**
+ * The open pull requests of the signed-in account. While the backoff of a failed earlier answer is in force
+ * (see `qaap-github-pull-requests-backoff.ts`), no request is sent: a 401 answers signed out, a 5xx throws.
+ */
 export async function fetchQaapGithubPullRequests(
     repositories?: readonly string[],
 ): Promise<QaapGithubPullRequestsResponse> {
+    const paused = activeGithubPullRequestsBackoff();
+    if (paused?.reason === 'sign-in') {
+        return { pullRequests: [], signedIn: false };
+    }
+    if (paused) {
+        throw new QaapUserFacingError(
+            nls.localize('qaap/githubPullRequests/temporarilyUnavailable', 'GitHub pull requests are not available right now. Retrying shortly.'),
+            503,
+            'github_pull_requests_backoff',
+        );
+    }
     const reposQuery = repositories?.length
         ? `?repos=${encodeURIComponent(repositories.join(','))}`
         : '';
@@ -326,11 +347,16 @@ export async function fetchQaapGithubPullRequests(
         ),
     );
     if (response.status === 401) {
+        recordGithubPullRequestsSignInRequired();
         return { pullRequests: [], signedIn: false };
     }
     if (!response.ok) {
+        if (response.status >= 500) {
+            recordGithubPullRequestsServerError();
+        }
         throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub pull requests (${response.status})`);
     }
+    resetGithubPullRequestsBackoff();
     const body = await response.json() as Partial<QaapGithubPullRequestsResponse>;
     return {
         pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],
