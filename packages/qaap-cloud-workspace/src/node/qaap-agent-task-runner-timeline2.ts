@@ -1,4 +1,5 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
+import { lazyPreferenceReader } from './qaap-agent-task-runner-utils2';
 import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
 import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 import {
@@ -623,7 +624,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             // Applied before the Codex gate overlay, which copies the sign-in from CODEX_HOME.
             const launchPlan = resolveQaapHarnessLaunchPlan(
                 task.harnessInstanceId ?? ctx.resolveTaskAgentId(task),
-                ctx.preferenceReaderForOwner(task.ownerLogin),
+                lazyPreferenceReader(() => ctx.preferenceReaderForOwner(task.ownerLogin)),
             );
             if (launchPlan.envNames?.length && ctx.harnessEnvSecrets) {
                 // Values stay in the spawn env only: never in the command line, a log or the task record.

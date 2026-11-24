@@ -765,11 +765,13 @@ export function preferenceReaderForOwner(ctx: QaapOwnerSettingsSource, ownerLogi
     if (usesSharedAiSettingsFallback(ownerLogin) && isQaapMultiUserBackend()) {
         return (key: string): unknown => schemaDefaultForAiSetting(preferenceService, key);
     }
-    const diskSettings = ctx.readUserSettingsFromDisk(ownerLogin);
+    // Read on the first key, then reused: one reader is one disk read, and none when no key is asked for.
+    let diskSettings: Record<string, unknown> | undefined;
+    const disk = (): Record<string, unknown> => (diskSettings ??= ctx.readUserSettingsFromDisk(ownerLogin));
     if (!usesSharedAiSettingsFallback(ownerLogin)) {
         // Authenticated tenants: their own settings.json, else the schema default — never shared/User-scope values.
         return (key: string): unknown => {
-            const value = diskSettings[key];
+            const value = disk()[key];
             // eslint-disable-next-line no-null/no-null
             return value !== undefined && value !== null ? value : schemaDefaultForAiSetting(preferenceService, key);
         };
@@ -780,8 +782,17 @@ export function preferenceReaderForOwner(ctx: QaapOwnerSettingsSource, ownerLogi
         if (fromPref !== undefined && fromPref !== null && fromPref !== '') {
             return fromPref;
         }
-        return diskSettings[key];
+        return disk()[key];
     };
+}
+
+/**
+ * A reader created on its first key and reused after: for call sites where most runs read no setting at all (a
+ * harness instance route is only looked up for `codex#2`-style ids).
+ */
+export function lazyPreferenceReader(create: () => QaapPreferenceReader): QaapPreferenceReader {
+    let reader: QaapPreferenceReader | undefined;
+    return (key: string): unknown => (reader ??= create())(key);
 }
 
 // ─── Provider env stripping ──────────────────────────────────────────────────
