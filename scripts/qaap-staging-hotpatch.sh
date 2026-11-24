@@ -39,6 +39,10 @@ else
     sudo rm -f "$OVERRIDE"
     EXTRA=""
 fi
+# Staging-only resource override, kept until compose.staging.yml of the repository reaches /opt/qaap with a merge.
+if [ -f /opt/qaap-staging/resources.override.yml ]; then
+    EXTRA="$EXTRA -f /opt/qaap-staging/resources.override.yml"
+fi
 cd /opt/qaap
 H=$(sed -n "s/^QAAP_PUBLIC_HOST=//p" .env)
 QAAP_STAGING_IMAGE="$BASE" QAAP_PUBLIC_HOST="$H" docker compose -p qaap-staging -f deploy/staging/compose.staging.yml $EXTRA up -d --no-build --force-recreate theia-staging 2>&1 | tail -1

@@ -57,9 +57,10 @@ services:
       QAAP_DOCKER_REMOTE_PARALLEL_ROOT: /opt/qaap-staging/parallel
       QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT: /opt/qaap-staging/auth/users
       QAAP_TENANT_HOME_ROOT: /home/qaap-tenants
-      # Small tenants: all of staging stays well under production's headroom.
-      QAAP_TENANT_MEMORY_LIMIT: "1610612736"
-      QAAP_TENANT_CPU_LIMIT: "1"
+      # Same tenant size as a production tenant (2 CPU, 2 GiB): with 1 CPU, staging measured CPU starvation
+      # (throttled 62 % of periods) that production tenants do not have, and its timings misled every check.
+      QAAP_TENANT_MEMORY_LIMIT: "2147483648"
+      QAAP_TENANT_CPU_LIMIT: "2"
       QAAP_TENANT_PIDS_LIMIT: "256"
       QAAP_TENANT_TMPFS_SIZE: 256m
       # Previews only for the two operators, as in production.
