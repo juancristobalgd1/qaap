@@ -134,9 +134,11 @@ export class MobileProjectsInboxPrUi {
                 return;
             }
             if (response.signedIn === false) {
-                if (readQaapSignedIn()) {
-                    clearQaapAuthSession();
-                }
+                // GitHub refused the stored token (expired, revoked, unreadable): the inbox offers to reconnect GitHub,
+                // but the Qaap session stays. /auth/session (checked above) still says signed in, so clearing it here
+                // made the next project sync write it back, and every write and clear fired qaap-auth-session-changed,
+                // which refreshed projects and this inbox again: a full re-render loop several times a second (staging,
+                // 24 Nov 2026).
                 this.host.inboxGithubSignedIn = false;
                 this.host.inboxGithubLogin = undefined;
                 this.host.inboxPullRequests = [];

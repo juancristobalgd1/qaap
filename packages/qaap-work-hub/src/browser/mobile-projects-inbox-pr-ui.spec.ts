@@ -7,6 +7,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 let disableJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import { clearQaapAuthSession, readQaapSignedIn, writeQaapAuthSession } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { invalidateQaapAuthConfigCache } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -97,5 +98,67 @@ describe('MobileProjectsInboxPrUi under skip-auth', () => {
         expect(host.inboxPullRequests).to.deep.equal([]);
         expect(host.inboxGithubSignedIn).to.equal(undefined);
         expect(requests.some(url => url.includes('/pull-requests'))).to.equal(false);
+    });
+});
+
+describe('MobileProjectsInboxPrUi when GitHub refuses the stored token', () => {
+
+    let previousFetch: typeof fetch;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+    after(() => {
+        disableJSDOM();
+    });
+
+    beforeEach(() => {
+        invalidateQaapAuthConfigCache();
+        previousFetch = globalThis.fetch;
+        const respond = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        globalThis.fetch = (async (input: string | URL | Request): Promise<Response> => {
+            const url = String(input);
+            if (url.includes('/auth/config')) {
+                return respond({ skipAuth: false, githubOAuth: true });
+            }
+            if (url.includes('/auth/session')) {
+                return respond({ signedIn: true, user: { provider: 'github', login: 'octo', name: 'Octo' } });
+            }
+            if (url.includes('/pull-requests')) {
+                return respond({ pullRequests: [], signedIn: false });
+            }
+            return respond({});
+        }) as typeof fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = previousFetch;
+        invalidateQaapAuthConfigCache();
+    });
+
+    it('offers to reconnect GitHub but keeps the Qaap session and fires no session change', async () => {
+        // The session helpers dispatch through the jsdom window, which only accepts its own event classes.
+        const previousCustomEvent = globalThis.CustomEvent;
+        (globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = (window as unknown as { CustomEvent: typeof CustomEvent }).CustomEvent;
+        writeQaapAuthSession('github', { provider: 'github', login: 'octo', name: 'Octo' });
+        let changes = 0;
+        const onChange = (): void => {
+            changes++;
+        };
+        window.addEventListener('qaap-auth-session-changed', onChange);
+        try {
+            const host = makeHost();
+            await new MobileProjectsInboxPrUi(host).refreshInboxPullRequests();
+            expect(host.inboxGithubSignedIn).to.equal(false);
+            expect(host.inboxPullRequests).to.deep.equal([]);
+            // Was: the inbox cleared the session, the project sync wrote it back, and each change re-rendered the
+            // Work Hub, which refreshed this inbox again (a loop several times a second).
+            expect(readQaapSignedIn()).to.equal(true);
+            expect(changes).to.equal(0);
+        } finally {
+            window.removeEventListener('qaap-auth-session-changed', onChange);
+            clearQaapAuthSession();
+            (globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent;
+        }
     });
 });
