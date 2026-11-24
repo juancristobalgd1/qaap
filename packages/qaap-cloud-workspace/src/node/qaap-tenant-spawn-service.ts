@@ -573,7 +573,7 @@ export class QaapTenantSpawnService {
         if (!files.ok) {
             throw new Error(`Could not prepare tenant workspace files for agent uid ${uid} (${files.reason}); install find and acl.`);
         }
-        const skipped = [...(dirs.skipped ?? []), ...(files.skipped ?? [])];
+        const skipped = [...new Set([...(dirs.skipped ?? []), ...(files.skipped ?? [])])];
         if (skipped.length > 0) {
             // Private subtrees the agent created (0700, owned by its uid) cannot be read by the backend (no
             // CAP_DAC_READ_SEARCH). The agent reaches them itself, so they are skipped rather than blocking every agent.
@@ -639,12 +639,13 @@ export class QaapTenantSpawnService {
     protected sweepAgentAccessSinceLastSweep(uid: number, dir: string): { readonly dirs: QaapTenantAccessCommandResult; readonly files: QaapTenantAccessCommandResult } {
         const stamp = this.aclSweepStampPath(uid, dir);
         const changedSince = stamp && fs.existsSync(stamp) ? stamp : undefined;
-        const dirs = this.sweepAgentAccess(uid, 'd', dir, changedSince);
-        const files = dirs.ok ? this.sweepAgentAccess(uid, 'f', dir, changedSince) : dirs;
-        if (stamp && dirs.ok && files.ok) {
+        // One walk grants directories and files: the walk itself is the cost once few entries changed (~63,000
+        // stats per cold start on staging, twice), so two passes doubled it.
+        const result = this.sweepAgentAccessBothTypes(uid, dir, changedSince);
+        if (stamp && result.ok) {
             this.writeAclSweepStamp(stamp);
         }
-        return { dirs, files };
+        return { dirs: result, files: result };
     }
 
     /** Stamp of the last complete sweep of `dir` for `uid` in the current access mode, or `undefined` when stamps are off. */
@@ -682,6 +683,25 @@ export class QaapTenantSpawnService {
         } catch (error) {
             console.warn(`[qaap-security] could not record the agent access sweep of ${stamp}: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+
+    /** {@link sweepAgentAccess} for directories and files in a single `find` walk. */
+    protected sweepAgentAccessBothTypes(uid: number, dir: string, changedSince?: string): QaapTenantAccessCommandResult {
+        const select = [dir, '-xdev', '-uid', '0', ...(changedSince ? ['-cnewer', changedSince] : [])];
+        const branch = (type: 'd' | 'f', actions: readonly string[]): string[] => ['(', '-type', type, ...actions, ')'];
+        if (this.usesAgentGroupAccess()) {
+            const group = this.agentAccessGroup(uid);
+            return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select,
+                ...branch('d', ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwxs', '{}', '+']),
+                '-o',
+                ...branch('f', ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwX', '{}', '+']),
+            ]));
+        }
+        return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select,
+            ...branch('d', ['-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']),
+            '-o',
+            ...branch('f', ['-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']),
+        ]));
     }
 
     /**

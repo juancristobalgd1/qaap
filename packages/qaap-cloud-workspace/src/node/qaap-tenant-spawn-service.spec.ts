@@ -33,6 +33,11 @@ afterEach(() => {
     }
 });
 
+/** The `-type` values of a find command, in order (one walk covers directories and files). */
+function findTypes(args: readonly string[]): string[] {
+    return args.flatMap((arg, index) => (arg === '-type' ? [args[index + 1]] : []));
+}
+
 interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv; shell?: boolean } }
 
 /**
@@ -238,13 +243,14 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             service.prepareTenantIsolation(cwd);
             service.prepareTenantIsolation(cwd);
 
-            expect(service.commands).to.have.length(3);
+            // The root grant, then one walk for directories and files (two walks doubled the cold-start cost).
+            expect(service.commands).to.have.length(2);
             expect(service.commands[0]).to.deep.equal({
                 file: 'setfacl',
                 args: ['-m', 'u:1001:rwx,d:u:1001:rwx', tenantRoot],
             });
-            expect(service.commands[1]?.args).to.include.members(['-uid', '0', '-type', 'd']);
-            expect(service.commands[2]?.args).to.include.members(['-uid', '0', '-type', 'f']);
+            expect(service.commands[1]?.args).to.include.members(['-uid', '0']);
+            expect(findTypes(service.commands[1]!.args)).to.deep.equal(['d', 'f']);
             expect(service.commands.flatMap(command => command.args).join(' ')).not.to.include(path.join(reposRoot, 'users', 'bob'));
         } finally {
             fs.rmSync(reposRoot, { recursive: true, force: true });
@@ -264,12 +270,12 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         const finds = service.commands.filter(command => command.file === 'find');
         // Existing root-owned dirs and files (opencode.db, opencode.log) under cache and data, and the
         // root-owned CLI state (.codex, .claude, ...) under home that the sign-in links point to.
-        expect(finds).to.have.length(6);
+        expect(finds).to.have.length(3);
         for (const dir of [`${root}/cache`, `${root}/data`, QaapTenantAgentStorageEnv.homeDir(root)]) {
             const forDir = finds.filter(command => command.args[0] === dir);
-            expect(forDir.map(command => command.args[command.args.indexOf('-type') + 1])).to.deep.equal(['d', 'f']);
-            expect(forDir[0]?.args).to.include.members(['-uid', '0', 'u:1001:rwx,d:u:1001:rwx']);
-            expect(forDir[1]?.args).to.include.members(['-uid', '0', 'u:1001:rwX']);
+            expect(forDir).to.have.length(1);
+            expect(findTypes(forDir[0]!.args)).to.deep.equal(['d', 'f']);
+            expect(forDir[0]?.args).to.include.members(['-uid', '0', 'u:1001:rwx,d:u:1001:rwx', 'u:1001:rwX']);
         }
     });
 
@@ -309,9 +315,9 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             const finds = service.commands.filter(command => command.file === 'find');
             const homeDir = QaapTenantAgentStorageEnv.homeDir(storageRoot);
             // The cache failure skips only its own file sweep; data and home are still repaired.
-            expect(finds.filter(command => command.args[0] === homeDir).map(command => command.args[command.args.indexOf('-type') + 1]))
-                .to.deep.equal(['d', 'f']);
-            expect(finds.filter(command => command.args[0] === QaapTenantAgentStorageEnv.dataDir(storageRoot))).to.have.length(2);
+            expect(finds.filter(command => command.args[0] === homeDir).map(command => findTypes(command.args)))
+                .to.deep.equal([['d', 'f']]);
+            expect(finds.filter(command => command.args[0] === QaapTenantAgentStorageEnv.dataDir(storageRoot))).to.have.length(1);
             expect(warnings).to.have.length(1);
             expect(warnings[0]).to.include(QaapTenantAgentStorageEnv.cacheDir(storageRoot));
             expect(service.isPrepared(storageRoot)).to.equal(true);
@@ -475,13 +481,13 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             const first = new SweepFailureService();
             first.prepare(cwd);
             const firstFinds = first.commands.filter(command => command.file === 'find');
-            expect(firstFinds).to.have.length(2);
+            expect(firstFinds).to.have.length(1);
             expect(firstFinds.every(command => !command.args.includes('-cnewer'))).to.equal(true);
             // A new backend process (container restart) prepares the same root again.
             const second = new SweepFailureService();
             second.prepare(cwd);
             const secondFinds = second.commands.filter(command => command.file === 'find');
-            expect(secondFinds).to.have.length(2);
+            expect(secondFinds).to.have.length(1);
             for (const command of secondFinds) {
                 const stamp = command.args[command.args.indexOf('-cnewer') + 1];
                 expect(command.args).to.include('-cnewer');
@@ -492,8 +498,8 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
 
         it('records no stamp after a failed sweep, so the next attempt sweeps the whole tree', () => {
             const failing = new SweepFailureService();
-            failing.failures.f = { ok: false, reason: 'find exit status 2: boom', stderr: ['find: boom'] };
-            expect(() => failing.prepare(cwd)).to.throw('Could not prepare tenant workspace files');
+            failing.failures.d = { ok: false, reason: 'find exit status 2: boom', stderr: ['find: boom'] };
+            expect(() => failing.prepare(cwd)).to.throw('Could not prepare tenant workspace directories');
             const retry = new SweepFailureService();
             retry.prepare(cwd);
             expect(retry.commands.filter(command => command.file === 'find').some(command => command.args.includes('-cnewer'))).to.equal(false);
