@@ -78,6 +78,12 @@ const QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS = 1_200;
  * after a reload.
  */
 const QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS = 12_000;
+/**
+ * `fresh=1` itself waits longer: after a connect the listing runs on a tenant still busy with the sign-in, and
+ * past 12 s it answered with the old catalog, which the browser then cached (staging, 24 Nov 2026: Groq listed by
+ * the backend, picker still on NVIDIA only). A cold first request keeps the shorter budget above.
+ */
+const QAAP_NATIVE_MODEL_AFTER_CONNECT_DISCOVERY_BUDGET_MS = 25_000;
 /** How long the picker's model request waits for the billing account before answering without it. */
 const QAAP_AGENT_MODELS_BILLING_BUDGET_MS = 800;
 
@@ -538,7 +544,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             ownerLogin: login,
             spawner,
             antigravityBin,
-        }), awaitLiveDiscovery ? QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS : QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
+        }), fresh
+            ? QAAP_NATIVE_MODEL_AFTER_CONNECT_DISCOVERY_BUDGET_MS
+            : awaitLiveDiscovery ? QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS : QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;

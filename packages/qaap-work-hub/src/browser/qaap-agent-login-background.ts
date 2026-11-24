@@ -55,6 +55,39 @@ import { agentLoginUtf8ByteLength, QaapAgentLoginBufferTap } from './qaap-agent-
 
 const HARNESS_STATUS_TIMEOUT_MS = 5000;
 const CONNECTED_CLOSE_DELAY_MS = 1800;
+/** After a connect, the catalog is asked again at these delays (ms) in case the CLI listing outran the fresh request. */
+const AGENT_MODELS_AFTER_CONNECT_FOLLOW_UPS_MS: readonly number[] = [8_000, 20_000, 45_000];
+
+/**
+ * Asks for the agent's catalog again a few times after a connect: the fresh request can answer with the previous
+ * catalog when the CLI listing outlasts it, and the browser then kept that answer for a minute (Groq connected,
+ * picker on NVIDIA only until a reload). When the model ids change, the composers are told through the signed-in
+ * event, which makes them reload the catalog. Stops after the first change.
+ */
+function followAgentModelsAfterConnect(agentId: string, listed: readonly { readonly modelId: string }[] | undefined): void {
+    let known = (listed ?? []).map(model => model.modelId).sort().join('\n');
+    let index = 0;
+    const next = (): void => {
+        const delay = AGENT_MODELS_AFTER_CONNECT_FOLLOW_UPS_MS[index++];
+        if (delay === undefined) {
+            return;
+        }
+        window.setTimeout(() => {
+            invalidateAgentModelsCache(agentId);
+            void fetchAgentModelsForAgent(agentId).then(models => {
+                const ids = models.map(model => model.modelId).sort().join('\n');
+                if (models.length > 0 && ids !== known) {
+                    known = ids;
+                    window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
+                    return;
+                }
+                next();
+            }, () => next());
+        }, delay);
+    };
+    next();
+}
+
 /** A driven TUI login starts the CLI first, then types its way to the link (a harness auth profile may set its own). */
 const TUI_LOGIN_CHALLENGE_TIMEOUT_MS = 30_000;
 const INPUT_DRIVER_TICK_MS = 150;
@@ -421,8 +454,9 @@ export async function openAgentLoginDialogInBackground(
                 void attestSignInIfUnprobed().then(async () => {
                     // The new sign-in or provider brings new models (Pi + NVIDIA): load the CLI's own listing now, so
                     // the composer and the picker show them without a reload.
-                    await fetchAgentModelsForAgent(agentId, { fresh: true }).catch(() => undefined);
+                    const listed = await fetchAgentModelsForAgent(agentId, { fresh: true }).catch(() => undefined);
                     window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
+                    followAgentModelsAfterConnect(agentId, listed);
                     return onConnected?.();
                 }).catch(error => {
                     console.warn('[qaap] Agent login UI refresh failed:', error);

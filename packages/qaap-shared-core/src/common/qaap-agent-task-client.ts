@@ -752,8 +752,8 @@ export async function requestHarnessSignOut(harnessId: string): Promise<QaapHarn
 /** Upper bound for one agent model catalog request, so a hung probe rejects instead of leaving the picker loading. */
 export const AGENT_MODELS_REQUEST_TIMEOUT_MS = 15000;
 
-/** A `fresh` catalog request waits on the CLI listing server-side (up to 12 s): allow for it. */
-export const AGENT_MODELS_FRESH_REQUEST_TIMEOUT_MS = 20000;
+/** A `fresh` catalog request waits on the CLI listing server-side (up to 25 s): allow for it. */
+export const AGENT_MODELS_FRESH_REQUEST_TIMEOUT_MS = 30000;
 
 /** How long a successful model catalog per agent is reused before the next call refetches it. */
 export const AGENT_MODELS_CACHE_TTL_MS = 60_000;
