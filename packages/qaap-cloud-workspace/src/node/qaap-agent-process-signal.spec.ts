@@ -8,6 +8,7 @@ import { ChildProcess, spawn } from 'child_process';
 import {
     agentProcessIdentityOf,
     agentProcessSignalRunner,
+    hangUpAgentTerminal,
     AgentProcessIdentity,
     AgentProcessSignalOutcome,
     rememberAgentProcessIdentity,
@@ -131,3 +132,32 @@ describe('qaap-agent-process-signal', () => {
 function fakeChild(pid: number): ChildProcess {
     return { pid } as ChildProcess;
 }
+
+describe('hangUpAgentTerminal', () => {
+
+    it('hangs up a terminal shell and leaves nothing behind', async function (): Promise<void> {
+        if (process.platform === 'win32' || typeof process.getuid !== 'function') {
+            this.skip();
+        }
+        const shell = spawn('sh', ['-c', 'sleep 30'], { detached: true, stdio: 'ignore' });
+        const exited = new Promise<NodeJS.Signals | null>(resolve => shell.once('exit', (_code, signal) => resolve(signal)));
+        const scheduled: (() => void)[] = [];
+        hangUpAgentTerminal(shell.pid, { uid: process.getuid!() }, 10, run => {
+            scheduled.push(run);
+        });
+        expect(await exited).to.equal('SIGHUP');
+        // The SIGKILL follow-up finds nothing left and signals nothing.
+        scheduled.forEach(run => run());
+    });
+
+    it('does nothing without the agent identity (no uid drop) or without a pid', () => {
+        const scheduled: (() => void)[] = [];
+        hangUpAgentTerminal(process.pid, undefined, 10, run => {
+            scheduled.push(run);
+        });
+        hangUpAgentTerminal(undefined, { uid: 1001 }, 10, run => {
+            scheduled.push(run);
+        });
+        expect(scheduled).to.deep.equal([]);
+    });
+});
