@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
+import { QAAP_TENANT_AGENT_ACCESS_ENV, QAAP_TENANT_AGENT_ACCESS_GROUP } from './qaap-tenant-runtime';
 import { QaapTenantSpawnService, type QaapTenantAccessCommandResult } from './qaap-tenant-spawn-service';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
@@ -275,6 +276,78 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             expect(service.commands.flatMap(command => command.args).join(' ')).not.to.include(path.join(reposRoot, 'users', 'bob'));
         } finally {
             fs.rmSync(reposRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('groups the find -o branches so -uid 0 and -cnewer guard both directories and files (real find check)', async function (): Promise<void> {
+        if (process.platform === 'win32' || typeof process.getuid !== 'function') {
+            this.skip();
+        }
+        const tempDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-find-precedence-')));
+        const subDir = path.join(tempDir, 'sub');
+        const filePath = path.join(subDir, 'agent-owned.txt');
+        fs.mkdirSync(subDir, { recursive: true });
+        fs.writeFileSync(filePath, 'ok\n');
+
+        /** Rewrites `-exec ... +` actions to `-print` and replaces `-uid 0` with `targetUid` while preserving exact grouping. */
+        const rewriteForRealFind = (args: readonly string[], targetUid: number): string[] => {
+            const out: string[] = [];
+            for (let i = 0; i < args.length; i++) {
+                if (args[i] === '-uid' && i + 1 < args.length) {
+                    out.push('-uid', String(targetUid));
+                    i++;
+                } else if (args[i] === '-exec') {
+                    // Collapse consecutive `-exec ... +` actions inside the same branch into one `-print`.
+                    if (out[out.length - 1] !== '-print') {
+                        out.push('-print');
+                    }
+                    while (i < args.length && args[i] !== '+') {
+                        i++;
+                    }
+                } else {
+                    out.push(args[i]);
+                }
+            }
+            return out;
+        };
+
+        class CaptureBothTypesService extends TenantBackendAclTestService {
+            async capture(dir: string): Promise<readonly string[]> {
+                await this.sweepAgentAccessBothTypes(1001, dir);
+                return this.commands.find(command => command.file === 'find')!.args;
+            }
+        }
+
+        const savedAccess = process.env[QAAP_TENANT_AGENT_ACCESS_ENV];
+        try {
+            const currentUid = process.getuid();
+            for (const mode of ['acl', QAAP_TENANT_AGENT_ACCESS_GROUP] as const) {
+                if (mode === QAAP_TENANT_AGENT_ACCESS_GROUP) {
+                    process.env[QAAP_TENANT_AGENT_ACCESS_ENV] = QAAP_TENANT_AGENT_ACCESS_GROUP;
+                } else {
+                    delete process.env[QAAP_TENANT_AGENT_ACCESS_ENV];
+                }
+                const args = await new CaptureBothTypesService().capture(tempDir);
+                const afterUid = args.slice(args.indexOf('-uid') + 2);
+                expect(afterUid[0], `${mode}: outer opening paren`).to.equal('(');
+                expect(afterUid[afterUid.length - 1], `${mode}: outer closing paren`).to.equal(')');
+
+                const nonMatching = spawnSync('find', rewriteForRealFind(args, currentUid + 1), { encoding: 'utf8' });
+                expect(nonMatching.status, `${mode} non-matching stderr: ${nonMatching.stderr}`).to.equal(0);
+                expect(nonMatching.stdout.trim(), `${mode}: agent-owned file must not match -uid 0`).to.equal('');
+
+                const matching = spawnSync('find', rewriteForRealFind(args, currentUid), { encoding: 'utf8' });
+                expect(matching.status, `${mode} matching stderr: ${matching.stderr}`).to.equal(0);
+                const lines = matching.stdout.trim().split(/\r?\n/).filter(Boolean);
+                expect(lines, `${mode}: root-owned dir and file must both match`).to.include.members([subDir, filePath]);
+            }
+        } finally {
+            if (savedAccess === undefined) {
+                delete process.env[QAAP_TENANT_AGENT_ACCESS_ENV];
+            } else {
+                process.env[QAAP_TENANT_AGENT_ACCESS_ENV] = savedAccess;
+            }
+            fs.rmSync(tempDir, { recursive: true, force: true });
         }
     });
 
