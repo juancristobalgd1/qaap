@@ -31,6 +31,8 @@ export interface MobileProjectsPullRequestDetailHost {
 
 export type MobileProjectsPullRequestDetailTab = 'summary' | 'timeline' | 'code';
 type PullRequestDetailTab = MobileProjectsPullRequestDetailTab;
+export type PullRequestCommentDialogMode = 'comment' | 'review';
+export type PullRequestReviewVerdict = 'approve' | 'comment' | 'request_changes';
 
 /** Main-content pull-request detail surface opened from the sidebar navigator. */
 export class MobileProjectsPullRequestDetailUi {
@@ -50,6 +52,12 @@ export class MobileProjectsPullRequestDetailUi {
     protected description = '';
     protected commentDraft = '';
     protected comments: string[] = [];
+    protected localTimelineEntries: QaapGithubPullRequestTimelineEvent[] = [];
+    protected commentDialogOpen = false;
+    protected commentDialogMode: PullRequestCommentDialogMode = 'comment';
+    protected reviewVerdict: PullRequestReviewVerdict = 'comment';
+    protected pendingCommentFocus = false;
+    protected popoverListenersCleanup: (() => void) | undefined;
     protected renderedPullRequestKey = '';
 
     constructor(protected readonly host: MobileProjectsPullRequestDetailHost) { }
@@ -66,10 +74,9 @@ export class MobileProjectsPullRequestDetailUi {
         if (!this.host.pullRequestDetail) {
             return;
         }
-        this.notice = nls.localize(
-            'qaap/pullRequests/chatNotice',
-            'Use the agent composer below to discuss this pull request.',
-        );
+        this.commentDialogOpen = true;
+        this.commentDialogMode = 'comment';
+        this.pendingCommentFocus = true;
         this.render();
     }
 
@@ -83,6 +90,8 @@ export class MobileProjectsPullRequestDetailUi {
     }
 
     renderEmpty(): void {
+        this.disposePopoverListeners();
+        this.commentDialogOpen = false;
         const root = document.createElement('div');
         root.className = 'theia-mobile-work-hub-pull-request-empty-detail';
 
@@ -114,8 +123,10 @@ export class MobileProjectsPullRequestDetailUi {
     }
 
     render(): void {
+        this.disposePopoverListeners();
         const pullRequest = this.host.pullRequestDetail;
         if (!pullRequest) {
+            this.commentDialogOpen = false;
             this.host.scroll.replaceChildren();
             return;
         }
@@ -128,6 +139,11 @@ export class MobileProjectsPullRequestDetailUi {
             this.description = pullRequest.description?.trim() || this.defaultDescription(pullRequest);
             this.commentDraft = '';
             this.comments = [];
+            this.localTimelineEntries = [];
+            this.commentDialogOpen = false;
+            this.commentDialogMode = 'comment';
+            this.reviewVerdict = 'comment';
+            this.pendingCommentFocus = false;
             this.merged = pullRequest.state === 'merged';
             this.mergeConfirming = false;
             this.notice = '';
@@ -153,11 +169,13 @@ export class MobileProjectsPullRequestDetailUi {
         } else {
             root.append(this.createSummaryView(pullRequest));
         }
-        const detailChildren: HTMLElement[] = [root];
-        if (this.activeTab !== 'code') {
-            detailChildren.push(this.createActivityCommentComposer());
+        const floatingDock = this.createFloatingCommentDock();
+        this.host.scroll.replaceChildren(root, floatingDock);
+        if (this.commentDialogOpen && this.pendingCommentFocus) {
+            this.pendingCommentFocus = false;
+            const textarea = floatingDock.querySelector<HTMLTextAreaElement>('.qaap-pr-popover-textarea');
+            textarea?.focus();
         }
-        this.host.scroll.replaceChildren(...detailChildren);
     }
 
     /**
@@ -504,7 +522,7 @@ export class MobileProjectsPullRequestDetailUi {
         const events: QaapGithubPullRequestTimelineEvent[] = [
             { kind: 'other', actor: pullRequest.author, actorAvatarUrl: pullRequest.authorAvatarUrl, text: undefined },
             ...(pullRequest.timeline ?? []),
-            ...this.comments.map(comment => ({ kind: 'commented' as const, actor: nls.localize('qaap/pullRequests/you', 'You'), text: comment })),
+            ...this.localTimelineEntries,
         ];
         for (const event of events) {
             const item = document.createElement('li');
@@ -722,32 +740,257 @@ export class MobileProjectsPullRequestDetailUi {
         return activity;
     }
 
-    protected createActivityCommentComposer(): HTMLElement {
-        const commentRow = document.createElement('div');
-        commentRow.className = 'theia-mobile-work-hub-pull-request-comment-row';
-        const comment = document.createElement('textarea');
-        comment.className = 'theia-mobile-work-hub-pull-request-comment';
-        comment.placeholder = nls.localize('qaap/pullRequests/commentPlaceholder', 'Leave a comment');
-        comment.value = this.commentDraft;
-        comment.rows = 2;
-        comment.setAttribute('aria-label', comment.placeholder);
-        comment.addEventListener('input', () => {
-            this.commentDraft = comment.value;
-        });
-        const submit = this.createButton(nls.localize('qaap/pullRequests/comment', 'Comment'), 'theia-mobile-work-hub-pull-request-comment-submit');
-        submit.disabled = !this.commentDraft.trim();
-        submit.addEventListener('click', () => {
-            const value = this.commentDraft.trim();
-            if (!value) {
-                return;
+    protected disposePopoverListeners(): void {
+        this.popoverListenersCleanup?.();
+        this.popoverListenersCleanup = undefined;
+    }
+
+    protected canSubmitCommentDialog(): boolean {
+        if (this.commentDialogMode === 'review' && this.reviewVerdict === 'approve') {
+            return true;
+        }
+        return this.commentDraft.trim().length > 0;
+    }
+
+    protected submitCommentDialog(): void {
+        if (!this.canSubmitCommentDialog()) {
+            return;
+        }
+        const value = this.commentDraft.trim();
+        const you = nls.localize('qaap/pullRequests/you', 'You');
+        const createdAt = new Date().toISOString();
+        if (this.commentDialogMode === 'review') {
+            const reviewState: QaapGithubPullRequestTimelineEvent['reviewState'] = this.reviewVerdict === 'approve'
+                ? 'approved'
+                : this.reviewVerdict === 'request_changes'
+                    ? 'changes_requested'
+                    : 'commented';
+            this.localTimelineEntries.push({
+                kind: 'reviewed',
+                actor: you,
+                reviewState,
+                text: value || undefined,
+                createdAt,
+            });
+            if (value) {
+                this.comments.push(value);
             }
+            this.notice = this.reviewVerdict === 'approve'
+                ? nls.localize('qaap/pullRequests/reviewApprovedAdded', 'Approval added to the timeline.')
+                : this.reviewVerdict === 'request_changes'
+                    ? nls.localize('qaap/pullRequests/reviewChangesAdded', 'Change request added to the timeline.')
+                    : nls.localize('qaap/pullRequests/reviewCommentAdded', 'Review comment added to the timeline.');
+            this.reviewVerdict = 'comment';
+        } else {
             this.comments.push(value);
-            this.commentDraft = '';
+            this.localTimelineEntries.push({
+                kind: 'commented',
+                actor: you,
+                text: value,
+                createdAt,
+            });
             this.notice = nls.localize('qaap/pullRequests/commentAdded', 'Comment added to the activity.');
+        }
+        this.commentDraft = '';
+        this.commentDialogOpen = false;
+        this.render();
+    }
+
+    /** Floating bottom-right comment trigger button with an anchored Comment / Review popover dialog. */
+    protected createFloatingCommentDock(): HTMLElement {
+        const dock = document.createElement('div');
+        dock.className = 'qaap-pr-floating-dock';
+
+        const anchor = document.createElement('div');
+        anchor.className = 'qaap-pr-floating-anchor';
+
+        if (this.commentDialogOpen) {
+            anchor.append(this.createCommentPopover());
+            const handleKeyDown = (event: KeyboardEvent): void => {
+                if (event.key === 'Escape' && this.commentDialogOpen) {
+                    event.preventDefault();
+                    this.commentDialogOpen = false;
+                    this.render();
+                }
+            };
+            const handlePointerDown = (event: Event): void => {
+                if (!this.commentDialogOpen) {
+                    return;
+                }
+                const target = event.target;
+                if (target instanceof Node && !anchor.contains(target)) {
+                    this.commentDialogOpen = false;
+                    this.render();
+                }
+            };
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('pointerdown', handlePointerDown);
+            this.popoverListenersCleanup = () => {
+                document.removeEventListener('keydown', handleKeyDown);
+                document.removeEventListener('pointerdown', handlePointerDown);
+            };
+        }
+
+        const triggerLabel = this.commentDialogOpen
+            ? nls.localize('qaap/pullRequests/closeCommentDialog', 'Close comment dialog')
+            : nls.localize('qaap/pullRequests/openCommentDialog', 'Leave a comment or review');
+        const fab = document.createElement('button');
+        fab.type = 'button';
+        fab.className = 'qaap-pr-fab';
+        fab.classList.toggle('theia-mod-open', this.commentDialogOpen);
+        fab.classList.toggle('theia-mod-has-draft', !this.commentDialogOpen && this.commentDraft.trim().length > 0);
+        fab.title = triggerLabel;
+        fab.setAttribute('aria-label', triggerLabel);
+        fab.setAttribute('aria-haspopup', 'dialog');
+        fab.setAttribute('aria-expanded', String(this.commentDialogOpen));
+        const fabIcon = document.createElement('span');
+        fabIcon.className = 'codicon codicon-comment';
+        fabIcon.setAttribute('aria-hidden', 'true');
+        fab.append(fabIcon);
+        fab.addEventListener('click', () => {
+            this.commentDialogOpen = !this.commentDialogOpen;
+            this.pendingCommentFocus = this.commentDialogOpen;
             this.render();
         });
-        commentRow.append(comment, submit);
-        return commentRow;
+
+        anchor.append(fab);
+        dock.append(anchor);
+        return dock;
+    }
+
+    protected createCommentPopover(): HTMLElement {
+        const dialog = document.createElement('div');
+        dialog.className = 'qaap-pr-comment-popover';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-label', nls.localize('qaap/pullRequests/commentDialogLabel', 'Comment or review pull request'));
+
+        const head = document.createElement('div');
+        head.className = 'qaap-pr-popover-head';
+
+        const tabs = document.createElement('div');
+        tabs.className = 'qaap-pr-popover-tabs';
+        tabs.setAttribute('role', 'tablist');
+        for (const [mode, label] of [
+            ['comment', nls.localizeByDefault('Comment')],
+            ['review', nls.localizeByDefault('Review')],
+        ] as const) {
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = 'qaap-pr-popover-tab';
+            tab.dataset.mode = mode;
+            tab.textContent = label;
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-selected', String(this.commentDialogMode === mode));
+            tab.classList.toggle('theia-mod-active', this.commentDialogMode === mode);
+            tab.addEventListener('click', () => {
+                if (this.commentDialogMode !== mode) {
+                    this.commentDialogMode = mode;
+                    this.pendingCommentFocus = true;
+                    this.render();
+                }
+            });
+            tabs.append(tab);
+        }
+
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'qaap-pr-popover-close';
+        const closeLabel = nls.localizeByDefault('Close');
+        close.title = closeLabel;
+        close.setAttribute('aria-label', closeLabel);
+        const closeIcon = document.createElement('span');
+        closeIcon.className = 'codicon codicon-close';
+        closeIcon.setAttribute('aria-hidden', 'true');
+        close.append(closeIcon);
+        close.addEventListener('click', () => {
+            this.commentDialogOpen = false;
+            this.render();
+        });
+        head.append(tabs, close);
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'qaap-pr-popover-textarea';
+        textarea.placeholder = this.commentDialogMode === 'review'
+            ? nls.localize('qaap/pullRequests/reviewPlaceholder', 'Leave a review comment')
+            : nls.localize('qaap/pullRequests/commentPlaceholder', 'Leave a comment');
+        textarea.value = this.commentDraft;
+        textarea.rows = 3;
+        textarea.setAttribute('aria-label', textarea.placeholder);
+
+        const submit = document.createElement('button');
+        submit.type = 'button';
+        submit.className = 'qaap-pr-popover-submit';
+        const submitIcon = document.createElement('span');
+        submitIcon.className = `codicon ${this.commentDialogMode === 'review' ? 'codicon-check' : 'codicon-send'}`;
+        submitIcon.setAttribute('aria-hidden', 'true');
+        const submitLabel = document.createElement('span');
+        submitLabel.textContent = this.commentDialogMode === 'review'
+            ? nls.localize('qaap/pullRequests/submitReview', 'Submit review')
+            : nls.localizeByDefault('Comment');
+        submit.append(submitIcon, submitLabel);
+        const syncSubmitDisabled = (): void => {
+            submit.disabled = !this.canSubmitCommentDialog();
+        };
+        syncSubmitDisabled();
+        submit.addEventListener('click', () => this.submitCommentDialog());
+
+        textarea.addEventListener('input', () => {
+            this.commentDraft = textarea.value;
+            syncSubmitDisabled();
+        });
+        textarea.addEventListener('keydown', event => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                event.preventDefault();
+                this.submitCommentDialog();
+            }
+        });
+
+        dialog.append(head, textarea);
+
+        if (this.commentDialogMode === 'review') {
+            const verdicts = document.createElement('div');
+            verdicts.className = 'qaap-pr-popover-verdicts';
+            verdicts.setAttribute('role', 'radiogroup');
+            verdicts.setAttribute('aria-label', nls.localize('qaap/pullRequests/reviewVerdict', 'Review verdict'));
+            const verdictButtons: HTMLButtonElement[] = [];
+            for (const [verdict, iconClass, label] of [
+                ['approve', 'codicon-pass', nls.localize('qaap/pullRequests/verdictApprove', 'Approve')],
+                ['comment', 'codicon-comment', nls.localizeByDefault('Comment')],
+                ['request_changes', 'codicon-request-changes', nls.localizeByDefault('Changes')],
+            ] as const) {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = `qaap-pr-popover-verdict theia-mod-${verdict}`;
+                option.dataset.verdict = verdict;
+                option.setAttribute('role', 'radio');
+                option.setAttribute('aria-checked', String(this.reviewVerdict === verdict));
+                option.classList.toggle('theia-mod-active', this.reviewVerdict === verdict);
+                const icon = document.createElement('span');
+                icon.className = `codicon ${iconClass}`;
+                icon.setAttribute('aria-hidden', 'true');
+                const text = document.createElement('span');
+                text.textContent = label;
+                option.append(icon, text);
+                option.addEventListener('click', () => {
+                    this.reviewVerdict = verdict;
+                    for (const candidate of verdictButtons) {
+                        const active = candidate.dataset.verdict === verdict;
+                        candidate.classList.toggle('theia-mod-active', active);
+                        candidate.setAttribute('aria-checked', String(active));
+                    }
+                    syncSubmitDisabled();
+                });
+                verdictButtons.push(option);
+                verdicts.append(option);
+            }
+            dialog.append(verdicts);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'qaap-pr-popover-actions';
+        actions.append(submit);
+        dialog.append(actions);
+        return dialog;
     }
 
     protected createCodeView(pullRequest: QaapGithubPullRequestSummary): HTMLElement {

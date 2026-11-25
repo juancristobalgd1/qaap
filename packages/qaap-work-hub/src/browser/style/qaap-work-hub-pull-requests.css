@@ -31,44 +31,47 @@
 
 .theia-mobile-work-hub-pull-requests-tabs {
   display: flex;
-  gap: 4px;
-  padding: 4px 12px 8px;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 10px 6px;
   border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 7%, transparent);
 }
 
 .theia-mobile-work-hub-pull-requests-tab {
   min-width: 0;
-  padding: 7px 10px;
+  padding: 5px 8px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   background: transparent;
   color: var(--theia-descriptionForeground, #9f9b95);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1.3;
   white-space: nowrap;
 }
 
 .theia-mobile-work-hub-pull-requests-tab:hover,
 .theia-mobile-work-hub-pull-requests-tab.theia-mod-active {
-  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 9%, transparent);
   color: var(--theia-foreground, #f4f1e8);
 }
 
 .theia-mobile-work-hub-pull-request-detail-icon-button {
   display: inline-flex;
-  flex: 0 0 34px;
+  flex: 0 0 32px;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
   color: var(--theia-descriptionForeground, #9f9b95);
   cursor: pointer;
+  line-height: 1;
   text-decoration: none;
 }
 
@@ -80,23 +83,25 @@
 .theia-mobile-work-hub-pull-requests-results {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0 8px 16px;
+  padding: 2px 8px 16px;
   overflow: auto;
 }
 
 .theia-mobile-work-hub-pull-requests-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .theia-mobile-work-hub-pull-request-item {
   display: flex;
+  align-items: flex-start;
+  box-sizing: border-box;
   width: 100%;
-  gap: 10px;
-  padding: 11px 10px;
+  gap: 8px;
+  padding: 8px 9px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 9px;
   background: transparent;
   color: var(--theia-foreground, #f4f1e8);
   cursor: pointer;
@@ -107,25 +112,26 @@
 .theia-mobile-work-hub-pull-request-item:hover,
 .theia-mobile-work-hub-pull-request-item:focus-visible {
   border-color: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
   outline: none;
 }
 
 .theia-mobile-work-hub-pull-request-item.theia-mod-selected {
-  border-color: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 62%, transparent);
-  background: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 13%, transparent);
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 52%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 11%, transparent);
 }
 
 .theia-mobile-work-hub-pull-request-status {
   display: inline-flex;
-  flex: 0 0 24px;
+  flex: 0 0 18px;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
   border-radius: 50%;
-  font-size: 15px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .theia-mobile-work-hub-pull-request-status.theia-mod-open { color: #6bd48a; }
@@ -137,13 +143,13 @@
   flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
-  gap: 3px;
+  gap: 2px;
 }
 
 .theia-mobile-work-hub-pull-request-title-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -152,8 +158,9 @@
   min-width: 0;
   overflow: hidden;
   color: var(--theia-foreground, #f4f1e8);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -161,7 +168,7 @@
 .theia-mobile-work-hub-pull-request-since {
   flex: 0 0 auto;
   color: var(--theia-descriptionForeground, #8d8983);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 .theia-mobile-work-hub-pull-request-meta,
@@ -169,6 +176,7 @@
   overflow: hidden;
   color: var(--theia-descriptionForeground, #8d8983);
   font-size: 11px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -208,21 +216,25 @@
 .theia-mobile-work-hub-pull-requests-state-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 5px;
+  padding: 6px 10px 8px;
 }
 
 .theia-mobile-work-hub-pull-requests-state-chip {
-  min-height: 28px;
-  padding: 4px 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 9px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
   border-radius: 999px;
   background: transparent;
   color: var(--theia-descriptionForeground, #9f9b95);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -346,10 +358,10 @@
 
 .theia-mobile-work-hub-pull-request-header {
   display: flex;
-  min-height: 42px;
+  min-height: 36px;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
 }
@@ -367,12 +379,17 @@
 
 .theia-mobile-work-hub-pull-request-header-leading {
   min-width: 0;
-  gap: 10px;
+  gap: 8px;
 }
 
 .theia-mobile-work-hub-pull-request-header-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   color: #6bd48a;
-  font-size: 18px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .theia-mobile-work-hub-pull-request-header-status.theia-mod-merged {
@@ -381,7 +398,9 @@
 
 .theia-mobile-work-hub-pull-request-header-leading > strong {
   color: var(--theia-foreground, #f4f1e8);
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .theia-mobile-work-hub-pull-request-header-tabs {
@@ -481,15 +500,25 @@
   display: none;
 }
 
-.theia-mod-pull-request-detail .theia-mobile-projects-scroll,
-.theia-mod-pull-requests-active .theia-mobile-projects-scroll {
-  overflow: auto;
-}
-
-/* A sticky child sticks inside the scroller's padding box: drop the bottom
-   padding so the comment footer sits flush and nothing scrolls under it. */
-.theia-mod-pull-request-detail .theia-mobile-projects-scroll {
-  padding-bottom: 0;
+/* Pull request detail / empty state owns the scrollport directly. Override the
+   chat-host `align-items: center !important`, `overflow: hidden`, and 40px
+   horizontal / 20px bottom padding rules so `.qaap-pr` never shifts right,
+   clips horizontally, or exposes content below sticky overlays. */
+.theia-mobile-projects.theia-mod-pull-request-detail > .theia-mobile-projects-scroll,
+.theia-mobile-projects.theia-mod-pull-requests-active > .theia-mobile-projects-scroll,
+body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-pull-request-detail > .theia-mobile-projects-scroll,
+body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-pull-requests-active > .theia-mobile-projects-scroll {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
 }
 
 .theia-mod-pull-request-detail .theia-mobile-projects-subtitle,
@@ -533,9 +562,12 @@
 }
 
 .theia-mobile-work-hub-pull-request-detail {
-  max-width: 1100px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 820px;
+  min-width: 0;
   margin: 0 auto;
-  padding: 14px clamp(18px, 4vw, 48px) 80px;
+  padding: 14px clamp(16px, 3vw, 28px) 84px;
   color: var(--theia-foreground, #f4f1e8);
 }
 
@@ -543,8 +575,7 @@
 .theia-mobile-work-hub-pull-request-detail-actions,
 .theia-mobile-work-hub-pull-request-detail-tabs,
 .theia-mobile-work-hub-pull-request-branch-summary,
-.theia-mobile-work-hub-pull-request-merge-confirmation,
-.theia-mobile-work-hub-pull-request-comment-row {
+.theia-mobile-work-hub-pull-request-merge-confirmation {
   display: flex;
   align-items: center;
 }
@@ -723,12 +754,16 @@
 }
 
 .theia-mobile-work-hub-pull-request-description-text {
-  max-width: 940px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 0 0 12px;
   color: var(--theia-foreground, #f4f1e8);
-  font-size: 14px;
-  line-height: 1.65;
+  font-size: 13.5px;
+  line-height: 1.62;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .theia-mobile-work-hub-pull-request-description-text > :first-child {
@@ -769,25 +804,32 @@
 }
 
 .theia-mobile-work-hub-pull-request-description-text code {
-  padding: 2px 5px;
+  padding: 1px 5px;
   border-radius: 5px;
   background: color-mix(in srgb, var(--theia-foreground) 9%, transparent);
   font-family: var(--monaco-monospace-font, monospace);
-  font-size: 0.9em;
+  font-size: 0.87em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .theia-mobile-work-hub-pull-request-description-text pre {
-  overflow: auto;
-  margin: 10px 0 14px;
-  padding: 12px;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--theia-editor-background, #1b1b1b);
+  font-size: 12.5px;
 }
 
 .theia-mobile-work-hub-pull-request-description-text pre code {
   padding: 0;
   background: transparent;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .theia-mobile-work-hub-pull-request-description-text blockquote {
@@ -815,8 +857,7 @@
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
 }
 
-.theia-mobile-work-hub-pull-request-description-editor,
-.theia-mobile-work-hub-pull-request-comment {
+.theia-mobile-work-hub-pull-request-description-editor {
   display: block;
   width: 100%;
   box-sizing: border-box;
@@ -827,12 +868,12 @@
   background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
   color: var(--theia-foreground, #f4f1e8);
   font: inherit;
-  line-height: 1.45;
+  font-size: 13.5px;
+  line-height: 1.5;
   resize: vertical;
 }
 
-.theia-mobile-work-hub-pull-request-description-editor:focus,
-.theia-mobile-work-hub-pull-request-comment:focus {
+.theia-mobile-work-hub-pull-request-description-editor:focus {
   border-color: var(--theia-focusBorder, #6ca9ff);
 }
 
@@ -856,7 +897,7 @@
 }
 
 .theia-mobile-work-hub-pull-request-activity-item {
-  padding: 11px 13px;
+  padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
   border-radius: 9px;
   background: color-mix(in srgb, var(--theia-foreground) 4%, transparent);
@@ -864,27 +905,9 @@
   font-size: 13px;
 }
 
-.theia-mobile-work-hub-pull-request-comment-row {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  align-items: flex-end;
-  gap: 9px;
-  margin: 8px 0 0;
-  padding: 10px 2px calc(10px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
-  background: var(--theia-editor-background, #1b1b1b);
-  box-shadow: 0 -8px 20px color-mix(in srgb, var(--theia-editor-background, #1b1b1b) 72%, transparent);
-}
-
-.theia-mobile-work-hub-pull-request-comment {
-  flex: 1 1 auto;
-}
-
-.theia-mobile-work-hub-pull-request-comment-submit,
 .theia-mobile-work-hub-pull-request-confirm-button,
 .theia-mobile-work-hub-pull-request-cancel-button {
-  padding: 8px 12px;
+  padding: 6px 11px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
@@ -892,23 +915,35 @@
   cursor: pointer;
   font: inherit;
   font-size: 12px;
+  font-weight: 500;
 }
 
-.theia-mobile-work-hub-pull-request-comment-submit:disabled {
-  cursor: default;
-  opacity: 0.45;
+.theia-mobile-work-hub-pull-request-confirm-button:hover,
+.theia-mobile-work-hub-pull-request-cancel-button:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+}
+
+.theia-mobile-work-hub-pull-request-code {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .theia-mobile-work-hub-pull-request-code-summary,
 .theia-mobile-work-hub-pull-request-empty-code {
   color: var(--theia-descriptionForeground, #9f9b95);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .theia-mobile-work-hub-pull-request-file {
-  margin-top: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 8px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 11%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
   border-radius: 9px;
 }
 
@@ -916,14 +951,25 @@
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 9px;
-  padding: 11px 13px;
+  min-width: 0;
+  gap: 8px;
+  padding: 9px 11px;
   border: 0;
-  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 4%, transparent);
   color: var(--theia-foreground, #f4f1e8);
   cursor: pointer;
   font: inherit;
+  font-size: 12.5px;
   text-align: left;
+}
+
+.theia-mobile-work-hub-pull-request-file-header > .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .theia-mobile-work-hub-pull-request-file-name {
@@ -1009,50 +1055,54 @@
   .theia-mobile-work-hub-pull-request-metadata-row {
     grid-template-columns: 22px 100px 1fr;
   }
-
-  .theia-mobile-work-hub-pull-request-comment-row {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }
 
-/* ── Pull request detail (header · tabs · summary · timeline) ─────────────────────────────── */
+/* ── Pull request detail (header · tabs · summary · timeline · floating comment popover) ── */
 .qaap-pr {
   display: flex;
   flex-direction: column;
+  flex: 1 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 820px;
+  min-width: 0;
+  margin: 0 auto;
   gap: 0;
-  padding: 8px 18px 24px;
+  padding: 12px clamp(16px, 3vw, 28px) 84px;
   color: var(--theia-foreground);
 }
 
 .qaap-pr-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  min-width: 0;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
 }
 
 .qaap-pr-topbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
+  gap: 6px;
+  min-width: 0;
+  min-height: 34px;
 }
 
 .qaap-pr-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--theia-descriptionForeground);
   cursor: pointer;
+  line-height: 1;
 }
 
 .qaap-pr-icon-button:hover:not(:disabled) {
@@ -1061,12 +1111,16 @@
 }
 
 .qaap-pr-icon-button:disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: default;
 }
 
 .qaap-pr-icon-button .codicon {
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
 }
 
 .qaap-pr-primary-action,
@@ -1083,12 +1137,17 @@
 
 .qaap-pr-crumb {
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
   color: var(--theia-descriptionForeground);
-  font-size: 16px;
+  font-size: 13px;
+  line-height: 1.3;
   text-decoration: none;
+}
+
+.qaap-pr-crumb:hover {
+  color: var(--theia-foreground);
 }
 
 .qaap-pr-crumb-repo {
@@ -1099,7 +1158,7 @@
 
 .qaap-pr-crumb-repo::after {
   content: ' /';
-  opacity: 0.6;
+  opacity: 0.55;
 }
 
 .qaap-pr-crumb-number {
@@ -1109,9 +1168,13 @@
 }
 
 .qaap-pr-crumb-external {
-  align-self: center;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
   color: var(--theia-textLink-foreground);
+  opacity: 0.85;
 }
 
 .qaap-pr-spacer {
@@ -1123,20 +1186,22 @@
   margin: 2px 0 0;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  -webkit-line-clamp: 2;
+  font-size: clamp(17px, 2.1vw, 20px);
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
   color: var(--theia-foreground);
+  overflow-wrap: anywhere;
 }
 
 .qaap-pr-byline,
 .qaap-pr-branches {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
   min-width: 0;
 }
 
@@ -1144,10 +1209,10 @@
   display: inline-flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
+  font-size: 12.5px;
 }
 
 .qaap-pr-person .qaap-pr-muted {
@@ -1172,14 +1237,15 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   overflow: hidden;
   border-radius: 50%;
   background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
   color: var(--theia-foreground);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
+  line-height: 1;
 }
 
 .qaap-pr-avatar img {
@@ -1193,20 +1259,22 @@
 .qaap-pr-checkout {
   flex: 0 0 auto;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  padding: 4px 0 4px 6px;
-  border: none;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
   border-radius: 6px;
-  background: transparent;
+  background: color-mix(in srgb, var(--theia-foreground) 4%, transparent);
   color: var(--theia-descriptionForeground);
   font-family: var(--theia-code-font-family, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .qaap-pr-checkout:hover {
+  border-color: color-mix(in srgb, var(--theia-foreground) 16%, transparent);
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
   color: var(--theia-foreground);
 }
@@ -1216,7 +1284,7 @@
   overflow: hidden;
   color: var(--theia-descriptionForeground);
   font-family: var(--theia-code-font-family, ui-monospace, monospace);
-  font-size: 13px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1227,7 +1295,15 @@
   align-items: center;
   gap: 6px;
   color: var(--theia-descriptionForeground);
-  font-size: 14px;
+  font-size: 12.5px;
+}
+
+.qaap-pr-diffstat .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .qaap-pr-adds {
@@ -1245,42 +1321,57 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 12px;
-  padding: 16px 0 6px;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 12px 0 8px;
 }
 
 .qaap-pr-tabs {
   display: inline-flex;
   gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
 }
 
 .qaap-pr-tab {
-  min-height: 32px;
-  padding: 0 14px;
+  min-height: 28px;
+  padding: 0 11px;
   border: none;
-  border-radius: 9px;
+  border-radius: 7px;
   background: transparent;
   color: var(--theia-descriptionForeground);
   font: inherit;
-  font-size: 15px;
+  font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
+}
+
+.qaap-pr-tab:hover:not(.theia-mod-active) {
+  color: var(--theia-foreground);
 }
 
 .qaap-pr-tab.theia-mod-active {
   background: var(--theia-editor-background);
   color: var(--theia-foreground);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .qaap-pr-checks-rollup {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   color: var(--theia-descriptionForeground);
+  font-size: 12.5px;
+}
+
+.qaap-pr-checks-rollup .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
+  line-height: 1;
 }
 
 .qaap-pr-checks-rollup.theia-mod-pending .codicon,
@@ -1305,57 +1396,65 @@
 .qaap-pr-summary {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  gap: 2px;
 }
 
 .qaap-pr-rows {
   display: flex;
   flex-direction: column;
-  padding: 6px 0 10px;
+  min-width: 0;
+  padding: 2px 0 8px;
 }
 
 .qaap-pr-row {
   display: grid;
-  grid-template-columns: 128px 1fr;
+  grid-template-columns: 108px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  min-height: 44px;
+  gap: 10px;
+  min-height: 34px;
 }
 
 .qaap-pr-row-label {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--theia-descriptionForeground);
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .qaap-pr-row-label .codicon {
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .qaap-pr-row-value {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: 5px 7px;
   min-width: 0;
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .qaap-pr-row-action {
-  width: 30px;
-  height: 30px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
 }
 
 .qaap-pr-person-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 10px 2px 2px;
+  gap: 5px;
+  padding: 2px 8px 2px 2px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .qaap-pr-person-chip.theia-mod-approved {
@@ -1368,17 +1467,22 @@
 
 .qaap-pr-label {
   --qaap-pr-label-color: var(--theia-focusBorder, var(--theia-textLink-foreground));
-  padding: 3px 10px;
-  border-radius: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--qaap-pr-label-color) 18%, transparent);
   color: color-mix(in srgb, var(--qaap-pr-label-color) 70%, var(--theia-foreground));
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
 }
 
 .qaap-pr-section {
-  padding: 8px 0 4px;
-  border: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 6px 0 8px;
+  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
 }
 
 .qaap-pr-section-head {
@@ -1386,57 +1490,104 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 32px;
 }
 
 .qaap-pr-section-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 0;
+  gap: 6px;
+  width: auto;
+  padding: 6px 0;
   border: none;
   background: transparent;
   color: var(--theia-descriptionForeground);
   font: inherit;
-  font-size: 15px;
+  font-size: 13px;
   cursor: pointer;
 }
 
+.qaap-pr-section-toggle:hover {
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-section-toggle .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .qaap-pr-section-title {
-  font-weight: 500;
+  font-weight: 600;
+}
+
+.qaap-pr-section-action {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+}
+
+.qaap-pr-section .theia-mobile-work-hub-pull-request-description {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 0 4px;
 }
 
 .qaap-pr-section .theia-mobile-work-hub-pull-request-description-text {
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.62;
+  color: color-mix(in srgb, var(--theia-foreground) 92%, transparent);
 }
 
-.qaap-pr-section .theia-mobile-work-hub-pull-request-description,
 .qaap-pr-section .theia-mobile-work-hub-pull-request-description-text > :last-child {
   margin-bottom: 0;
   padding-bottom: 0;
 }
 
+.qaap-pr-section .theia-mobile-work-hub-pull-request-description-text ul,
+.qaap-pr-section .theia-mobile-work-hub-pull-request-description-text ol {
+  margin: 6px 0 12px;
+  padding-left: 20px;
+}
+
 .qaap-pr-section .theia-mobile-work-hub-pull-request-description-text code {
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 1px 5px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-  font-size: 0.82em;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .qaap-pr-checks {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  gap: 2px;
+  padding: 2px 0 4px;
 }
 
 .qaap-pr-check {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  min-height: 46px;
+  gap: 10px;
+  min-height: 36px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 7px;
   color: var(--theia-foreground);
-  font-size: 15px;
+  font-size: 13px;
   text-decoration: none;
+}
+
+a.qaap-pr-check:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
 }
 
 a.qaap-pr-check:hover .qaap-pr-check-name {
@@ -1444,25 +1595,32 @@ a.qaap-pr-check:hover .qaap-pr-check-name {
 }
 
 .qaap-pr-check-icon {
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
 }
 
 .qaap-pr-check-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qaap-pr-check-state {
   color: var(--theia-descriptionForeground);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .qaap-pr-timeline {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+  gap: 12px;
   margin: 8px 0 0;
   padding: 0;
   list-style: none;
@@ -1471,31 +1629,38 @@ a.qaap-pr-check:hover .qaap-pr-check-name {
 .qaap-pr-timeline::before {
   content: '';
   position: absolute;
-  top: 12px;
-  bottom: 12px;
-  left: 11px;
+  top: 11px;
+  bottom: 11px;
+  left: 10.5px;
   width: 1px;
-  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 11%, transparent);
 }
 
 .qaap-pr-timeline-item {
   position: relative;
   display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 12px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.qaap-pr-timeline-body {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .qaap-pr-timeline-marker {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--theia-editor-background);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theia-foreground) 14%, transparent);
   color: var(--theia-descriptionForeground);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .qaap-pr-timeline-item.theia-mod-merged .qaap-pr-timeline-marker {
@@ -1503,30 +1668,324 @@ a.qaap-pr-check:hover .qaap-pr-check-name {
 }
 
 .qaap-pr-timeline-line {
-  padding-top: 3px;
-  font-size: 14px;
-  line-height: 1.4;
+  padding-top: 2px;
+  font-size: 13px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .qaap-pr-timeline-bubble {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
-  font-size: 14px;
+  margin-top: 6px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theia-foreground) 4%, transparent);
+  font-size: 13px;
 }
 
-@media (max-width: 420px) {
+/* ── Floating Comment / Review Trigger & Popover Dialog (T3 Code–style) ────────────────── */
+.qaap-pr-floating-dock {
+  position: sticky;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  align-self: flex-end;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  margin: 0 18px 0 auto;
+  pointer-events: none;
+}
+
+.qaap-pr-floating-anchor {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.qaap-pr-fab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-editor-background, #181818)) 94%, var(--theia-foreground) 6%);
+  color: var(--theia-descriptionForeground);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.34), 0 1px 3px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  line-height: 1;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.qaap-pr-fab:hover,
+.qaap-pr-fab:focus-visible,
+.qaap-pr-fab.theia-mod-open {
+  border-color: color-mix(in srgb, var(--theia-foreground) 24%, transparent);
+  background: color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-editor-background, #181818)) 88%, var(--theia-foreground) 12%);
+  color: var(--theia-foreground);
+  outline: none;
+}
+
+.qaap-pr-fab .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.qaap-pr-fab.theia-mod-has-draft::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--theia-focusBorder, #6ca9ff);
+}
+
+.qaap-pr-comment-popover {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 28px));
+  max-width: calc(100vw - 28px);
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  border-radius: 12px;
+  background: var(--theia-editorWidget-background, var(--theia-sideBar-background, #161616));
+  color: var(--theia-foreground);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.48), 0 2px 10px rgba(0, 0, 0, 0.28);
+}
+
+.qaap-pr-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qaap-pr-popover-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+}
+
+.qaap-pr-popover-tab {
+  min-height: 26px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.qaap-pr-popover-tab:hover:not(.theia-mod-active) {
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-popover-tab.theia-mod-active {
+  background: color-mix(in srgb, var(--theia-foreground) 14%, var(--theia-editorWidget-background, #161616));
+  color: var(--theia-foreground);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+.qaap-pr-popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.qaap-pr-popover-close:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-popover-close .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.qaap-pr-popover-textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 76px;
+  max-height: 200px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  border-radius: 9px;
+  outline: none;
+  background: color-mix(in srgb, var(--theia-editor-background, #111111) 75%, transparent);
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.48;
+  resize: vertical;
+}
+
+.qaap-pr-popover-textarea::placeholder {
+  color: var(--theia-descriptionForeground);
+  opacity: 0.78;
+}
+
+.qaap-pr-popover-textarea:focus {
+  border-color: var(--theia-focusBorder, #4b7cf3);
+  box-shadow: 0 0 0 1px var(--theia-focusBorder, #4b7cf3);
+}
+
+.qaap-pr-popover-verdicts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.qaap-pr-popover-verdict {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 11%, transparent);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.qaap-pr-popover-verdict .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.qaap-pr-popover-verdict:hover {
+  border-color: color-mix(in srgb, var(--theia-foreground) 20%, transparent);
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-popover-verdict.theia-mod-active {
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 55%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 14%, transparent);
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-popover-verdict.theia-mod-approve.theia-mod-active {
+  border-color: color-mix(in srgb, var(--theia-gitDecoration-addedResourceForeground, #3fb950) 60%, transparent);
+  background: color-mix(in srgb, var(--theia-gitDecoration-addedResourceForeground, #3fb950) 14%, transparent);
+  color: var(--theia-gitDecoration-addedResourceForeground, #3fb950);
+}
+
+.qaap-pr-popover-verdict.theia-mod-request_changes.theia-mod-active {
+  border-color: color-mix(in srgb, var(--theia-errorForeground, #f85149) 60%, transparent);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f85149) 14%, transparent);
+  color: var(--theia-errorForeground, #f85149);
+}
+
+.qaap-pr-popover-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.qaap-pr-popover-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  color: var(--theia-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.qaap-pr-popover-submit .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.qaap-pr-popover-submit:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--theia-foreground) 24%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 15%, transparent);
+}
+
+.qaap-pr-popover-submit:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@media (max-width: 480px) {
   .qaap-pr {
-    padding: 6px 14px 20px;
+    padding: 8px 14px 80px;
   }
 
   .qaap-pr-row {
-    grid-template-columns: 110px 1fr;
+    grid-template-columns: 94px minmax(0, 1fr);
   }
 
   .qaap-pr-title {
-    font-size: 22px;
+    font-size: 17px;
+  }
+
+  .qaap-pr-floating-dock {
+    margin-right: 12px;
+  }
+
+  .qaap-pr-comment-popover {
+    width: min(360px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
   }
 }
