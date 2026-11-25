@@ -9,6 +9,7 @@ import { isQaapStaticBootstrapCommand } from './qaap-project-bootstrap-static';
 import { resolveThreadPreviewRoot } from './qaap-thread-preview-root';
 import { resolveQaapTranscriptTrace, resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 import { normalizeWorktreeCwd } from './qaap-worktree-label';
+import { foldQaapPrivatePathAlias } from './qaap-preview-identity';
 
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
 const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)\]]*)?/i;
@@ -244,7 +245,8 @@ export interface TranscriptPreviewProbeScope {
 }
 
 function previewRootKey(root: string): string {
-    const normalized = normalizeWorktreeCwd(root);
+    // The claim root is the realpath (`/private/var/…` on macOS), the thread root may not be.
+    const normalized = foldQaapPrivatePathAlias(normalizeWorktreeCwd(root));
     // Windows paths are case-insensitive; the claim root is the realpath, the thread root is not.
     return /^[a-z]:/i.test(normalized) ? normalized.toLowerCase() : normalized;
 }

@@ -11,6 +11,7 @@ import {
     qaapPreviewProjectIdMatches,
     qaapPreviewFileUriMatchesProjectName,
     claimedPreviewCoordinatesMatchProject,
+    foldQaapPrivatePathAlias,
     resolveQaapPreviewIdentity,
 } from './qaap-preview-identity';
 import {
@@ -65,6 +66,29 @@ describe('qaap-preview-identity', () => {
             conversationId: 'section-b',
             processId: 'process-123',
         })).not.to.equal(previewId);
+    });
+
+    it('matches a macOS realpath claim (/private/var) against the /var path the frontend holds', () => {
+        // A task worktree under $TMPDIR: the backend registers the realpath of the root, the
+        // bootstrap and the Work Hub keep the symlinked spelling. They are the same project.
+        const claim = 'file:///private/var/folders/cv/T/qaap-worktrees/_dev/3e63c785';
+        const frontendRoot = 'file:///var/folders/cv/T/qaap-worktrees/_dev/3e63c785';
+        expect(qaapPreviewProjectIdMatches(claim, frontendRoot)).to.equal(true);
+        expect(qaapPreviewProjectIdMatches(claim, `recent:${frontendRoot}`)).to.equal(true);
+        expect(qaapPreviewProjectIdMatches(frontendRoot, claim)).to.equal(true);
+        expect(qaapPreviewProjectIdMatches('file:///private/tmp/app', 'file:///tmp/app')).to.equal(true);
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: claim,
+            projectId: 'ws:file:///Users/dev/.qaap/workspaces/qa-e2e-todo',
+            threadRootUri: frontendRoot,
+        })).to.equal(true);
+        // Only the system links fold: other worktrees and look-alike names stay distinct.
+        expect(qaapPreviewProjectIdMatches(claim, 'file:///var/folders/cv/T/qaap-worktrees/_dev/other')).to.equal(false);
+        expect(qaapPreviewProjectIdMatches('file:///private/varnish/app', 'file:///varnish/app')).to.equal(false);
+        expect(qaapPreviewProjectIdMatches('file:///private/home/app', 'file:///home/app')).to.equal(false);
+        expect(foldQaapPrivatePathAlias('/private/var/folders/x')).to.equal('/var/folders/x');
+        expect(foldQaapPrivatePathAlias('/private/var')).to.equal('/var');
+        expect(foldQaapPrivatePathAlias('/srv/private/var/x')).to.equal('/srv/private/var/x');
     });
 
     it('matches canonical project roots across Work Hub routing keys', () => {

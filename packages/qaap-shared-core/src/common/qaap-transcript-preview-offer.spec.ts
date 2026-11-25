@@ -140,4 +140,16 @@ describe('transcript preview port ownership', () => {
         )).to.equal(true);
         expect(transcriptPreviewProbeBelongsToScope({ previewId: 'p' }, { conversationId: 'conv-1', root: '/repo' })).to.equal(true);
     });
+
+    it('treats the macOS realpath of a worktree claim (/private/var) as the thread\'s /var root', () => {
+        const scope = { conversationId: 'conv-1', root: '/var/folders/cv/T/qaap-worktrees/_dev/3e63c785' };
+        expect(transcriptPreviewProbeBelongsToScope(
+            { previewId: 'p', conversationId: 'conv-2', root: '/private/var/folders/cv/T/qaap-worktrees/_dev/3e63c785' },
+            scope,
+        )).to.equal(true);
+        expect(transcriptPreviewProbeBelongsToScope(
+            { previewId: 'p', root: '/private/var/folders/cv/T/qaap-worktrees/_dev/other' },
+            scope,
+        )).to.equal(false);
+    });
 });

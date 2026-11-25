@@ -96,7 +96,7 @@ export interface MobileProjectsTranscriptLiveHost {
     requestTranscriptPreview?(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
-        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; readonly automatic?: boolean; },
     ): Promise<void>;
     stageTranscriptPreviewReadyUrl(readyUrl: string): void;
     projectBootstrap?: QaapProjectBootstrapService;

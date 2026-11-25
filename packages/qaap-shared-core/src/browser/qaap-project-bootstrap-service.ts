@@ -106,6 +106,12 @@ export const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 500;
 /** Retry only transient process exits; never loop on install or port conflicts. */
 export const DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS = 2;
 export const DEV_PREVIEW_AUTO_RETRY_DELAY_MS = 1_500;
+/**
+ * Failed dev-run cycles (each one already spent its auto-retries) after which automatic launchers
+ * stop restarting the same root. The run stays `run-failed` with its error until the user starts
+ * the preview again or a run of the root is seen healthy.
+ */
+export const DEV_RUN_AUTOMATIC_RESTART_LIMIT = 2;
 
 /** Delay before auto-attaching or restarting a remembered dev port after workspace load. */
 export const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
@@ -423,6 +429,14 @@ export class QaapProjectBootstrapService {
     public portRecoveryFrom: number | undefined;
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public previewAutoRetryAttempts = 0;
+    /**
+     * Consecutive failed dev-run cycles of {@link devRunFailureStreakRoot} without a healthy probe in
+     * between; bounds automatic restarts (see {@link DEV_RUN_AUTOMATIC_RESTART_LIMIT}).
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devRunFailureStreak = 0;
+    /** @internal Root key the failure streak counts for. */
+    public devRunFailureStreakRoot: string | undefined;
     /** @internal Roots whose dev run already triggered one automatic install this session (no install loops). */
     public readonly devFailureAutoInstalledRoots = new Set<string>();
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
@@ -742,6 +756,23 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public adoptExistingPreviewIdentity(port: number, probe: QaapDevPreviewProbeResponse): void {
         adoptExistingPreviewIdentityExtracted(this, port, probe);
+    }
+
+    /**
+     * True when the current root's dev run failed {@link DEV_RUN_AUTOMATIC_RESTART_LIMIT} times in a
+     * row: automatic launchers must leave the failure on screen instead of restarting it again.
+     */
+    public isDevRunAutomaticRestartExhausted(): boolean {
+        // Not gated on `run-failed`: re-detecting the root on the next launch rewrites the phase.
+        return this.devRunFailureStreakRoot !== undefined
+            && this.devRunFailureStreakRoot === this._descriptor?.rootUri.toString()
+            && this.devRunFailureStreak >= DEV_RUN_AUTOMATIC_RESTART_LIMIT;
+    }
+
+    /** Forgets the failure streak: an explicit user start, or a run seen healthy. */
+    public resetDevRunFailureStreak(): void {
+        this.devRunFailureStreak = 0;
+        this.devRunFailureStreakRoot = undefined;
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

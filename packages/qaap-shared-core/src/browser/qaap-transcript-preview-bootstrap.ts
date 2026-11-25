@@ -41,6 +41,12 @@ export interface EnsureTranscriptDevPreviewOptions {
     readonly conversationId?: string;
     /** Authoritative project root when it differs from the conversation cwd. */
     readonly workspaceRoot?: string;
+    /**
+     * An explicit user start (Run app, Play): always launches and clears the failure streak.
+     * Automatic launchers (transcript kickoff, autopilot, recovery) leave a root whose runs keep
+     * failing in its `run-failed` state instead (see `isDevRunAutomaticRestartExhausted`).
+     */
+    readonly userInitiated?: boolean;
 }
 
 /** Parses a proxied or direct localhost preview URL into a dev-server port. */
@@ -299,6 +305,17 @@ async function ensureTranscriptDevPreviewExtracted(
         return alreadyListening;
     }
 
+    // Optional calls: hosts and tests hand in partial bootstrap doubles.
+    if (options.userInitiated) {
+        bootstrap.resetDevRunFailureStreak?.();
+    } else if (bootstrap.isDevRunAutomaticRestartExhausted?.()) {
+        // The root's runs failed repeatedly (each after its own auto-retries). Restarting it from
+        // every transcript tick was the endless "Starting preview…" loop: keep the error instead.
+        console.info('[qaap-bootstrap] automatic restart skipped after repeated failures', {
+            root: snapshot.descriptor.rootUri.toString(),
+        });
+        return undefined;
+    }
     const needsInstall = snapshot.needsInstall === true
         || !snapshot.descriptor.nodeModulesPresent
         || snapshot.phase === 'install-failed';

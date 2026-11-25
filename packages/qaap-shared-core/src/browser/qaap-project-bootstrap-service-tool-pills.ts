@@ -240,6 +240,7 @@ export function startDevPreviewHealthMonitorExtracted(ctx: QaapProjectBootstrapS
             const verdict = classifyDevPreviewHealthProbe(probe, !probe.ready || ctx.probeBelongsToActiveProject(probe.projectId));
             if (verdict === 'healthy') {
                 ctx.devPreviewHealthFailures = 0;
+                ctx.resetDevRunFailureStreak();
                 slowSince = undefined;
                 healthyChecks++;
             } else {

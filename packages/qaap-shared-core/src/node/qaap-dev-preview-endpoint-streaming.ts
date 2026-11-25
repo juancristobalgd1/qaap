@@ -1,6 +1,7 @@
 // Extracted from qaap-dev-preview-endpoint.ts
 
 import type { Request, Response } from '@theia/core/shared/express';
+import { FileUri } from '@theia/core/lib/node';
 import * as http from 'http';
 import * as net from 'net';
 import {
@@ -15,12 +16,13 @@ import {
     isQaapPreviewId,
     isQaapProcessPreviewIdentity,
     normalizeQaapPreviewConversationId,
+    normalizeQaapPreviewProjectId,
     QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
     qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
-import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint';
+import { PREVIEW_RESERVATION_START_GRACE_MS, canonicalizeQaapPreviewRoot } from './qaap-dev-preview-endpoint';
 import { classifyQaapPreviewProbeState, probeQaapPreviewPidLiveness, releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
@@ -308,6 +310,31 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
         res.json(body);
 }
 
+/**
+ * A process claim's projectId is the realpath of its root (see `handleProcessClaimExtracted`), while
+ * the frontend asks with the path it holds: a task worktree under `/var/folders/…` (a symlink on
+ * macOS) or any symlinked checkout. Add each `file:` candidate's canonical form so both match.
+ */
+export function withCanonicalFileProjectIds(projectCandidates: readonly string[]): string[] {
+    const candidates = [...projectCandidates];
+    for (const candidate of projectCandidates) {
+        const normalized = normalizeQaapPreviewProjectId(candidate);
+        if (!/^file:\/\//i.test(normalized)) {
+            continue;
+        }
+        let canonical: string;
+        try {
+            canonical = FileUri.create(canonicalizeQaapPreviewRoot(FileUri.fsPath(normalized))).toString();
+        } catch {
+            continue;
+        }
+        if (!candidates.includes(canonical)) {
+            candidates.push(canonical);
+        }
+    }
+    return candidates;
+}
+
 export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): Promise<void> {
         const raw = req.query.projectId;
         const projectCandidates = (Array.isArray(raw) ? raw : [raw])
@@ -324,11 +351,12 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         const conversationFilter = typeof req.query.conversationId === 'string'
             ? normalizeQaapPreviewConversationId(req.query.conversationId)
             : undefined;
+        const matchCandidates = withCanonicalFileProjectIds(projectCandidates);
         const projectRecords = ctx.portRegistry.records()
             .filter(candidate => candidate.ownerLogin === login
                 && isQaapProcessPreviewIdentity(candidate)
                 && !ctx.isIdeListenPort(candidate.port)
-                && qaapPreviewProjectIdMatches(candidate.projectId, ...projectCandidates))
+                && qaapPreviewProjectIdMatches(candidate.projectId, ...matchCandidates))
             .sort((left, right) => right.touchedAt - left.touchedAt || right.claimedAt - left.claimedAt);
         // The project's one shared dev server may be claimed by a sibling conversation: when this
         // conversation has no record of its own, fall back to the newest live record of the project.
