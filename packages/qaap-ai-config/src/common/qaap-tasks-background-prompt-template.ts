@@ -20,7 +20,7 @@ import { QAAP_TASKS_BACKGROUND_CONTEXT_PROMPT_ID } from '@theia/qaap-shared-core
  */
 const QAAP_TASKS_BACKGROUND_CONTEXT_TEMPLATE = `# Qaap environment context
 
-You are running inside a **Qaap cloud workspace** — an ephemeral, per-project sandbox that holds this repository. Paths are relative to the workspace root; do not assume any path from another project or machine.
+You are running inside a **Qaap workspace** — the per-project working directory that holds this repository (a cloud sandbox in hosted Qaap, a folder on the user's own machine in Qaap desktop). Paths are relative to the workspace root; do not assume any path from another project or machine, and do not change files outside the workspace.
 
 Qaap auto-detects web projects and can start an in-IDE preview (static \`index.html\` on port 8080, or Node dev scripts on their usual ports).
 

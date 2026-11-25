@@ -9,6 +9,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { injectable } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
+import { mapQaapToolKind } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapBashReadOnlyClassifier } from '@theia/qaap-shared-core/lib/common/qaap-bash-readonly-classifier';
 import {
     QAAP_TOOL_GATE_MAX_ASK_TTL_SEC,
@@ -27,6 +28,7 @@ import {
     type QaapQaiqControlAutoReason,
 } from '../common/qaap-qaiq-control-auto-response';
 import type { QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
+import { QaapTaskWorktreeContainment } from './qaap-task-worktree-containment';
 
 /** Everything the service needs to decide one QAIQ `can_use_tool` control request. */
 export interface QaapQaiqToolGateInput {
@@ -40,6 +42,11 @@ export interface QaapQaiqToolGateInput {
     readonly options: QaapQaiqControlAutoOptions;
     /** Lazy: only consulted when the request is answered without queueing, like the legacy inline code. */
     readonly reservedPort?: () => number | undefined;
+    /**
+     * The task's isolated git worktree, when it runs in one: write/edit tools may not target a path outside
+     * it, and a shell command naming such a path is denied (auto-approve) or queued for the user.
+     */
+    readonly containWorkspace?: string;
 }
 
 export interface QaapQaiqToolGateOutcome {
@@ -117,7 +124,12 @@ export class QaapToolGateService {
     evaluateQaiqControlRequest(input: QaapQaiqToolGateInput): QaapQaiqToolGateOutcome {
         const { command, autoApprove, request, cwd } = input;
         const autoDecision = resolveQaiqControlRequestAutoDecision(command, autoApprove, request, input.options);
-        const action = autoDecision.action;
+        let action = autoDecision.action;
+        const containmentDenial = action === 'deny' ? undefined : this.findQaiqContainmentDenial(input);
+        if (containmentDenial) {
+            // A shell command is queued for the user in request-approval runs; a write tool is always refused.
+            action = containmentDenial.queue && autoApprove === false ? 'queue' : 'deny';
+        }
         let devServerDenial: string | undefined;
         let destructiveDenial: string | undefined;
         let denyMessage: string | undefined;
@@ -128,13 +140,15 @@ export class QaapToolGateService {
             destructiveDenial = findQaiqDestructiveCommandGuardDenial(request, cwd);
             denyMessage = devServerDenial
                 ?? destructiveDenial
+                ?? containmentDenial?.reason
                 ?? (action === 'deny' && request.toolName
                     ? buildQaiqAutoDeniedToolMessage(request.toolName, request.toolInput)
                     : undefined);
         }
+        const keepsReason = !containmentDenial && autoDecision.reason !== undefined;
         return {
             action,
-            ...(autoDecision.reason !== undefined ? { reason: autoDecision.reason } : {}),
+            ...(keepsReason ? { reason: autoDecision.reason } : {}),
             ...(autoDecision.detail !== undefined ? { detail: autoDecision.detail } : {}),
             ...(autoDecision.readOnlyBlockedReason !== undefined ? { readOnlyBlockedReason: autoDecision.readOnlyBlockedReason } : {}),
             ...(devServerDenial !== undefined ? { devServerDenial } : {}),
@@ -144,6 +158,25 @@ export class QaapToolGateService {
             observabilityDecision: action === 'allow' ? 'approve' : action === 'deny' ? 'reject' : 'queue',
             scheduleQueueTimeout: action === 'queue' && autoApprove !== false,
         };
+    }
+
+    protected readonly containment: QaapTaskWorktreeContainment = QaapTaskWorktreeContainment.shared;
+
+    /** Worktree containment for a QAIQ / Claude Code stdio control request; `queue` marks a shell command. */
+    protected findQaiqContainmentDenial(input: QaapQaiqToolGateInput): { reason: string; queue: boolean } | undefined {
+        const workspace = input.containWorkspace;
+        const toolName = input.request.toolName ?? '';
+        if (!workspace || !toolName) {
+            return undefined;
+        }
+        const toolInput = input.request.toolInput ?? {};
+        const kind = mapQaapToolKind(toolName);
+        if (kind === 'shell') {
+            const shellReason = this.containment.findShellEscape(typeof toolInput.command === 'string' ? toolInput.command : undefined, input.cwd, workspace);
+            return shellReason ? { reason: shellReason, queue: true } : undefined;
+        }
+        const writeReason = this.containment.findWriteEscape(toolName, kind, toolInput, input.cwd, workspace);
+        return writeReason ? { reason: writeReason, queue: false } : undefined;
     }
 
     protected readonly inflight = new Map<string, Promise<QaapToolGateDecision>>();
@@ -182,6 +215,10 @@ export class QaapToolGateService {
             };
         }
         const isShell = req.toolKind === 'shell';
+        // A task in its own git worktree stays in it: writes outside are refused, and a shell command naming a
+        // path outside is refused in auto-approve runs or shown to the user otherwise. Shared-tree tasks skip this.
+        const worktree = this.containment.isIsolatedWorktree(env.workspace) ? env.workspace : undefined;
+        let shellEscapeNeedsAsk = false;
         // Guards key on the QAIQ shell tool name; the adapter already normalized the kind.
         const toolName = isShell ? 'Bash' : req.rawToolName;
         const requestFor = (toolInput: Record<string, unknown>): QaapQaiqPendingControlRequest => ({
@@ -211,6 +248,15 @@ export class QaapToolGateService {
                         reason: nls.localize('theia/qaap-cloud-workspace/toolGateReadOnly', 'This task is read-only; it may not modify the workspace.'),
                     };
                 }
+            }
+            if (worktree) {
+                const escape = isShell
+                    ? this.containment.findShellEscape(typeof toolInput.command === 'string' ? toolInput.command : undefined, req.cwd, worktree)
+                    : this.containment.findWriteEscape(req.rawToolName, req.toolKind, toolInput, req.cwd, worktree);
+                if (escape && (!isShell || env.autoApprove !== false)) {
+                    return { kind: 'deny', source: 'policy', reason: escape };
+                }
+                shellEscapeNeedsAsk = shellEscapeNeedsAsk || !!escape;
             }
             const guarded = requestFor(toolInput);
             const destructive = findQaiqDestructiveCommandGuardDenial(guarded, req.cwd);
@@ -255,11 +301,13 @@ export class QaapToolGateService {
                     reason: nls.localize('theia/qaap-cloud-workspace/toolGateHookDenied', 'Blocked by a PreToolUse hook: {0}', outcome.reason ?? 'Denied by a PreToolUse hook.'),
                 };
             }
-            if (outcome.decision === 'allow') {
+            if (outcome.decision === 'allow' && !shellEscapeNeedsAsk) {
                 return { kind: 'allow', source: 'hook', ...(updatedInput ? { updatedInput } : {}) };
             }
             forceAsk = outcome.decision === 'ask';
         }
+        // A request-approval run shows a shell command that leaves the worktree to the user, even past a hook allow.
+        forceAsk = forceAsk || shellEscapeNeedsAsk;
         if (!forceAsk && !env.strictReadOnly && !env.readOnlyWorkspace && isQaapDelegationToolAutoAllowed(req.rawToolName, env.delegationServer, env.autoApprove)) {
             return { kind: 'allow', source: 'policy', ...(updatedInput ? { updatedInput } : {}) };
         }
