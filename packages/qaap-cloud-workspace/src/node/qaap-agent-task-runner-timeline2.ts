@@ -1,4 +1,5 @@
 import { QaapTaskWorktreeContainment } from './qaap-task-worktree-containment';
+import { QaapDesktopTaskSandbox } from './qaap-desktop-task-sandbox';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { lazyPreferenceReader } from './qaap-agent-task-runner-utils2';
 import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
@@ -731,7 +732,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
                     // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.
                     overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
-                    ownSandboxOff: ctx.runsInTaskSandbox?.() === true,
+                    // Seatbelt cannot nest: under the desktop task sandbox Codex's own sandbox-exec would fail every shell call.
+                    ownSandboxOff: ctx.runsInTaskSandbox?.() === true || QaapDesktopTaskSandbox.shared.appliesTo(task.cwd),
                     ...(delegation?.transport === 'codex-config'
                         ? { delegationMcp: { ...(delegationPlacement?.options ?? currentQaapDelegationMcpConfigOptions()), serverName: delegation.mcpServerName, instructions: QAAP_AGENT_DELEGATION_GUIDANCE } }
                         : {}),
@@ -777,6 +779,15 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             // is a window in which Stop can land. A task Stop already settled must not get a child.
             if (ctx.tasks.get(task.id)?.state !== 'running') {
                 throw new QaapAgentSpawnSkippedError();
+            }
+            if (QaapDesktopTaskSandbox.shared.appliesTo(task.cwd)) {
+                // macOS desktop, own worktree: the harness and everything it runs may only write inside the worktree.
+                // Fails closed: when sandbox-exec is missing or rejects the profile, the task fails before any spawn.
+                spawnCommand = await QaapDesktopTaskSandbox.shared.wrapCommand(spawnCommand, task.cwd, childEnv, quoteShellArg);
+                logStream.write(`[qaap] Task sandbox on: writes outside ${task.cwd} fail with "Operation not permitted" (QAAP_DESKTOP_TASK_SANDBOX).\n`);
+                if (ctx.tasks.get(task.id)?.state !== 'running') {
+                    throw new QaapAgentSpawnSkippedError();
+                }
             }
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(spawnCommand, {

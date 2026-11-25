@@ -11,6 +11,7 @@ import {
     QAAP_PROJECT_INFO_TRUNCATION_NOTICE,
     QAAP_REPO_CONTENT_BOUNDARY_NOTE,
     QAAP_ISOLATED_WORKTREE_NOTE,
+    QAAP_TASK_WRITE_SANDBOX_NOTE,
 } from './qaap-agent-task-context';
 
 describe('prependAgentTaskContextToPrompt', () => {
@@ -159,6 +160,15 @@ describe('prependAgentTaskContextToPrompt isolated worktree note', () => {
         // A Qaap rule, so it comes before the workspace-data boundary, not after it.
         expect(result.indexOf(QAAP_ISOLATED_WORKTREE_NOTE)).to.be.lessThan(result.indexOf(QAAP_REPO_CONTENT_BOUNDARY_NOTE));
         expect(result.endsWith('---\n\nChange the h1')).to.equal(true);
+    });
+
+    it('adds the OS sandbox note only when the worktree is write-sandboxed', () => {
+        const sandboxed = prependAgentTaskContextToPrompt('Change the h1', undefined, undefined, { isolatedWorktree: true, writeSandboxed: true });
+        expect(sandboxed).to.contain(QAAP_ISOLATED_WORKTREE_NOTE);
+        expect(sandboxed).to.contain(QAAP_TASK_WRITE_SANDBOX_NOTE);
+        expect(sandboxed).to.contain('Operation not permitted');
+        const plain = prependAgentTaskContextToPrompt('Change the h1', undefined, undefined, { isolatedWorktree: true });
+        expect(plain).not.to.contain(QAAP_TASK_WRITE_SANDBOX_NOTE);
     });
 
     it('is absent for a shared-tree task', () => {
