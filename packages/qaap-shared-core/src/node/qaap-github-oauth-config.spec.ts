@@ -53,4 +53,18 @@ describe('resolveQaapPublicOrigin', () => {
         const headers = { host: '[::1]:3000', 'x-forwarded-proto': 'javascript' };
         expect(resolveQaapPublicOrigin(request(headers, '::1'), {})).to.equal('http://[::1]:3000');
     });
+
+    it('uses the ephemeral loopback Host on desktop even when QAAP_OAUTH_PUBLIC_URL is in .env', () => {
+        const desktopReq = request({ host: 'localhost:55279' }, '127.0.0.1');
+        expect(resolveQaapPublicOrigin(desktopReq, {
+            QAAP_DESKTOP: '1',
+            QAAP_OAUTH_PUBLIC_URL: 'http://localhost:3000',
+        })).to.equal('http://localhost:55279');
+        // Hosted production still honours QAAP_OAUTH_PUBLIC_URL even if QAAP_DESKTOP is set.
+        expect(resolveQaapPublicOrigin(desktopReq, {
+            QAAP_DESKTOP: '1',
+            NODE_ENV: 'production',
+            QAAP_OAUTH_PUBLIC_URL: 'https://qaaq.dev',
+        })).to.equal('https://qaaq.dev');
+    });
 });

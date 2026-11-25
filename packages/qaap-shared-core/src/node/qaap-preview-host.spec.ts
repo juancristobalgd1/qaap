@@ -61,6 +61,13 @@ describe('qaap-preview-host', () => {
         expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', { QAAP_OAUTH_PUBLIC_URL: 'http://localhost:3101' })).to.equal(undefined);
     });
 
+    it('uses the desktop ephemeral localhost port instead of a stale QAAP_OAUTH_PUBLIC_URL', () => {
+        const desktopEnv = { QAAP_DESKTOP: '1', QAAP_OAUTH_PUBLIC_URL: 'http://localhost:3000' };
+        const label = buildQaapPreviewHostLabel('u-dev-w-x-1', 'secret');
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:55279', desktopEnv)).to.equal('localhost:55279');
+        expect(resolveQaapIsolatedParentOrigin(`${label}.localhost:55279`, desktopEnv)).to.equal('http://localhost:55279');
+    });
+
     it('extracts the host label of a preview host and nothing else', () => {
         expect(parseQaapPreviewHostLabel('u-alice-w-x-1.preview.example.test', 'preview.example.test')).to.equal('u-alice-w-x-1');
         expect(parseQaapPreviewHostLabel('U-ALICE-W-X-1.preview.example.test:443', 'preview.example.test')).to.equal('u-alice-w-x-1');

@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { QAAP_GITHUB_OAUTH_CALLBACK_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 
 export interface QaapGithubOAuthConfig {
@@ -55,7 +57,12 @@ export function isQaapTrustedProxyPeer(req: QaapPublicOriginRequest, env: NodeJS
  * trusted proxy peer and the host is syntax-checked so it cannot smuggle a path or a second origin.
  */
 export function resolveQaapPublicOrigin(req: QaapPublicOriginRequest, env: NodeJS.ProcessEnv = process.env): string {
-    const envUrl = env.QAAP_OAUTH_PUBLIC_URL?.trim();
+    // The local desktop app listens on a fresh ephemeral loopback port per launch and uses GitHub
+    // device flow (no OAuth callback URL), so a web `QAAP_OAUTH_PUBLIC_URL` left in `.env` (e.g.
+    // `http://localhost:3000`) points at a dead port and breaks every preview URL. In hosted mode,
+    // `QAAP_OAUTH_PUBLIC_URL` always wins.
+    const ignoreEnvPublicUrl = isQaapDesktopRuntime(env) && !isQaapHostedEnvironment(env);
+    const envUrl = ignoreEnvPublicUrl ? undefined : env.QAAP_OAUTH_PUBLIC_URL?.trim();
     if (envUrl) {
         return normalizeQaapPublicUrl(envUrl);
     }

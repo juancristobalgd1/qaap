@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { createHash } from 'crypto';
+import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { isQaapPreviewId } from '../common/qaap-preview-identity';
 import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
@@ -34,7 +35,8 @@ export function isQaapLocalPreviewIsolationEnabled(env: NodeJS.ProcessEnv = proc
  * production, where it is client-controlled.
  */
 export function resolveQaapPreviewBaseDomainForRequest(rawHost: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined {
-    if (env.QAAP_PREVIEW_BASE_DOMAIN?.trim() || env.QAAP_OAUTH_PUBLIC_URL?.trim()) {
+    const desktopLocal = isQaapDesktopRuntime(env) && !isQaapHostedEnvironment(env);
+    if (env.QAAP_PREVIEW_BASE_DOMAIN?.trim() || (!desktopLocal && env.QAAP_OAUTH_PUBLIC_URL?.trim())) {
         return resolveQaapPreviewBaseDomain(env);
     }
     if (!rawHost || isQaapHostedEnvironment(env) || !isQaapLocalPreviewIsolationEnabled(env)) {
@@ -60,7 +62,8 @@ export function resolveQaapPreviewBaseDomainForRequest(rawHost: string | undefin
  * loader must name this origin, never the preview host itself. Undefined when no origin applies.
  */
 export function resolveQaapIsolatedParentOrigin(rawHost: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined {
-    const explicit = env.QAAP_OAUTH_PUBLIC_URL?.trim();
+    const desktopLocal = isQaapDesktopRuntime(env) && !isQaapHostedEnvironment(env);
+    const explicit = desktopLocal ? undefined : env.QAAP_OAUTH_PUBLIC_URL?.trim();
     if (explicit) {
         try {
             const url = new URL(explicit);
