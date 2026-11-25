@@ -7,7 +7,9 @@ import { expect } from 'chai';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import {
     findQaapClosingReport,
+    isLastAgentTurnReviewRejected,
     isQaapClosingReportTraceEvent,
+    isQaapIndependentReviewRejectedReport,
     isQaapNoticeTraceEvent,
     QAAP_NOTICE_TRACE_ID_PREFIX,
     mergeSegmentTraceEvents,
@@ -120,6 +122,24 @@ describe('qaap-transcript-trace-model closing reports', () => {
         it('returns undefined when there is no closing report', () => {
             expect(findQaapClosingReport(message([{ type: 'error', id: 'error-1', message: 'boom' }]))).to.equal(undefined);
             expect(findQaapClosingReport(undefined)).to.equal(undefined);
+        });
+    });
+
+    describe('independent review rejection detection', () => {
+        it('detects rejected independent reviews from the closing report headline or details', () => {
+            expect(isQaapIndependentReviewRejectedReport('Completed with warnings — the independent review rejected the change.\nChecks: passed.')).to.equal(true);
+            expect(isQaapIndependentReviewRejectedReport('Completed with warnings.\nIndependent review: rejected by codex — path traversal bug.')).to.equal(true);
+            expect(isQaapIndependentReviewRejectedReport('Completed with warnings — verification checks are failing.\nIndependent review: not run.')).to.equal(false);
+            expect(isQaapIndependentReviewRejectedReport('Done.\nIndependent review: passed.')).to.equal(false);
+            expect(isQaapIndependentReviewRejectedReport(undefined)).to.equal(false);
+        });
+
+        it('checks only the latest agent turn in a conversation', () => {
+            const rejectedTurn = { ...message([{ type: 'error', id: 'closing-report-1', message: 'Completed with warnings — the independent review rejected the change.' }]), role: 'agent' as const };
+            const cleanTurn = { ...message([{ type: 'error', id: 'closing-report-2', message: 'Done.\nIndependent review: passed.' }]), role: 'agent' as const };
+            expect(isLastAgentTurnReviewRejected({ messages: [rejectedTurn] })).to.equal(true);
+            expect(isLastAgentTurnReviewRejected({ messages: [rejectedTurn, cleanTurn] })).to.equal(false);
+            expect(isLastAgentTurnReviewRejected(undefined)).to.equal(false);
         });
     });
 

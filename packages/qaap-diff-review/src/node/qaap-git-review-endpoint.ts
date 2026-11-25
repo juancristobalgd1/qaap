@@ -85,6 +85,9 @@ class QaapGitBaselineConflictError extends Error {
     }
 }
 
+/** A push or PR workflow refused because the repository has no usable remote configured yet. */
+class QaapGitNoRemoteError extends Error { }
+
 interface QaapTaskSnapshot {
     tree?: string;
     /** When the latest snapshot started (not finished). */
@@ -421,6 +424,11 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
+            // Check remote availability before mutating branches or commits so a local-only repo
+            // fails cleanly with a clear message instead of leaving a commit and raw git stderr.
+            if (this.shouldPush(action)) {
+                await this.resolvePushRemote(root, action);
+            }
             // A task commit is checked before the branch is created, so a refusal (409) leaves nothing behind.
             const plan = baseCommit ? await this.planTaskCommit(root, baseCommit) : undefined;
             await this.ensureGitIdentity(root);
@@ -436,7 +444,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 await this.git(root, ['commit', '-m', message]);
             }
             const stat = await this.readLastCommitStat(root);
-            const pushedTo = this.shouldPush(action) ? await this.pushCurrentBranch(root, this.auth.authenticate(req)) : undefined;
+            const pushedTo = this.shouldPush(action) ? await this.pushCurrentBranch(root, this.auth.authenticate(req), action) : undefined;
             res.json({
                 ok: true,
                 action,
@@ -446,7 +454,12 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 ...(indexWarning ? { warning: indexWarning } : {}),
             });
         } catch (error) {
-            res.status(error instanceof QaapGitBaselineConflictError ? 409 : 500).json({ error: this.errorMessage(error) });
+            const status = error instanceof QaapGitBaselineConflictError
+                ? 409
+                : error instanceof QaapGitNoRemoteError
+                    ? 422
+                    : 500;
+            res.status(status).json({ error: this.errorMessage(error) });
         }
     }
 
@@ -468,8 +481,48 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             || action === 'commit-create-pr';
     }
 
+    /**
+     * Resolves which remote a push workflow should target (`undefined` when the current branch
+     * already tracks an upstream), or throws {@link QaapGitNoRemoteError} with an actionable message
+     * so callers never surface raw `fatal: 'origin' does not appear to be a git repository`.
+     */
+    protected async resolvePushRemote(root: string, action: QaapGitCommitWorkflowAction = 'commit-push'): Promise<string | undefined> {
+        try {
+            const upstream = (await this.git(root, ['rev-parse', '--abbrev-ref', '@{u}'])).trim();
+            if (upstream) {
+                return undefined;
+            }
+        } catch {
+            // No upstream yet — inspect configured remotes below.
+        }
+        const remotes = (await this.git(root, ['remote']))
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean);
+        if (remotes.length === 0) {
+            throw new QaapGitNoRemoteError(
+                action === 'commit-create-pr'
+                    ? 'This project is not connected to a GitHub remote yet. Connect or publish it to GitHub (add an "origin" remote) before creating a pull request.'
+                    : 'This repository has no git remote configured yet. Add an "origin" remote before pushing.',
+            );
+        }
+        if (remotes.includes('origin')) {
+            return 'origin';
+        }
+        if (remotes.length === 1) {
+            return remotes[0];
+        }
+        throw new QaapGitNoRemoteError(
+            `No upstream or "origin" remote is configured for this branch (available remotes: ${remotes.join(', ')}). Set an upstream remote before pushing.`,
+        );
+    }
+
     /** Pushes the current branch; returns where a hosted push went so the client can show it. */
-    protected async pushCurrentBranch(root: string, auth?: QaapGithubAuthContext): Promise<QaapGitPushDestination | undefined> {
+    protected async pushCurrentBranch(
+        root: string,
+        auth?: QaapGithubAuthContext,
+        action: QaapGitCommitWorkflowAction = 'commit-push',
+    ): Promise<QaapGitPushDestination | undefined> {
         // Hosted: the GitHub token stays in this backend (QaapHostedGitPush); agents never see it.
         if (auth?.kind === 'authenticated' && auth.session.user.provider === 'github' && auth.session.accessToken
             && this.hostedPush && isQaapHostedEnvironment()) {
@@ -480,12 +533,12 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 return target.destination;
             }
         }
-        try {
-            await this.git(root, ['rev-parse', '--abbrev-ref', '@{u}']);
+        const fallbackRemote = await this.resolvePushRemote(root, action);
+        if (!fallbackRemote) {
             await this.git(root, ['push']);
-        } catch {
+        } else {
             const branch = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-            await this.git(root, ['push', '-u', 'origin', branch]);
+            await this.git(root, ['push', '-u', fallbackRemote, branch]);
         }
         return undefined;
     }

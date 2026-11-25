@@ -99,4 +99,26 @@ describe('mobile-turn-result-footer', () => {
         footer.querySelector<HTMLButtonElement>('.theia-mod-secondary')!.click();
         expect(calls).to.deep.equal(['open']);
     });
+
+    it('blocks Create PR and promotes Continue when the independent review rejected the turn', () => {
+        const { calls, handlers: h } = handlers();
+        const footer = createMobileTurnResultFooterElement({
+            verdict: {
+                tone: 'warning',
+                title: 'Completed with warnings — the independent review rejected the change',
+                details: ['Independent review: rejected — path traversal risk'],
+                reviewRejected: true,
+            },
+            state: { previewState: 'live', canCreatePr: true },
+        }, h);
+        expect(buttonLabels(footer)).to.deep.equal(['Open preview', 'Create PR', 'Continue']);
+
+        const blockedPr = footer.querySelector<HTMLButtonElement>('[data-pr-blocked="review-rejected"]');
+        expect(blockedPr?.disabled).to.equal(true);
+        blockedPr?.click();
+        expect(calls).to.deep.equal([]);
+
+        footer.querySelector<HTMLButtonElement>('.theia-mod-primary')!.click();
+        expect(calls).to.deep.equal(['continue']);
+    });
 });
