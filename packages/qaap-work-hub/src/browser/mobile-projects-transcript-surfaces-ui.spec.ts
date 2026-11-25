@@ -27,7 +27,16 @@ import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/brows
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import * as sinon from 'sinon';
-import { fallBackFromSupersededTranscriptPreviewExtracted, handleUnavailableTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
+import {
+    fallBackFromSupersededTranscriptPreviewExtracted,
+    handleUnavailableTranscriptPreviewExtracted,
+    retireSupersededConversationPortHint,
+    transcriptPreviewTabProbeModeExtracted,
+} from './mobile-projects-transcript-surfaces-ui-timeline';
+import {
+    findTranscriptPreviewPortHint,
+    resetTranscriptPreviewHintStateForTests,
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { USER_NAVIGATED_PREVIEW_CLASS } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 import { TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS, TRANSCRIPT_PREVIEW_TAB_PROBE_MS } from './mobile-projects-transcript-surfaces-ui-activity';
 import { firstInPriorityOrder } from './mobile-projects-transcript-surfaces-ui-thought-brief';
@@ -449,6 +458,59 @@ describe('MobileProjectsTranscriptSurfacesUi — Preview tab probe after the tur
         host.transcriptOpenSummaryId = otherSummary.id;
         ui.scheduleTranscriptPreviewTabProbe(project, otherSummary);
         expect(delays[delays.length - 1]).to.equal(TRANSCRIPT_PREVIEW_TAB_PROBE_MS);
+    });
+
+    /** The QA task: the agent checked its own server on :3002; the claimed preview runs elsewhere. */
+    function conversationNaming3002(status: QaapAgentConversationDTO['status']): QaapAgentConversationDTO {
+        return {
+            ...sampleSummary(),
+            status,
+            messages: [
+                { id: 'u1', role: 'user', content: 'Change the main title to red', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: 'Todo app running on http://localhost:3002', createdAt: 2 },
+            ],
+        } as unknown as QaapAgentConversationDTO;
+    }
+
+    it('backs off instead of sweeping every 900 ms while a mounted page already shows the preview', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        const project = sampleProject();
+        const summary = sampleSummary();
+        const root = document.createElement('div');
+        host.transcriptPreviewHost!.append(root);
+        host.transcriptEmbeddedPreview = { root } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        const streaming = conversationNaming3002('streaming');
+        host.transcriptLastConv = streaming;
+
+        // Nothing mounted for the section yet: the turn may be bringing the server up.
+        expect(transcriptPreviewTabProbeModeExtracted(ui, project, summary, streaming)).to.equal('fast');
+        ui.setMountedPreviewUrl(ui.previewScopeId(summary), 'http://a414701d.localhost:3000/');
+        expect(transcriptPreviewTabProbeModeExtracted(ui, project, summary, streaming)).to.equal('idle');
+        // Turn over, page showing: nothing left to discover.
+        expect(transcriptPreviewTabProbeModeExtracted(ui, project, summary, conversationNaming3002('idle'))).to.equal(undefined);
+        // An explicit start still probes fast.
+        host.transcriptPreviewRequestPending = true;
+        expect(transcriptPreviewTabProbeModeExtracted(ui, project, summary, streaming)).to.equal('fast');
+    });
+
+    it('retires the conversation\'s stale named port once the live claim was adopted, ending the idle probe', () => {
+        resetTranscriptPreviewHintStateForTests();
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        const conv = conversationNaming3002('idle');
+        host.transcriptLastConv = conv;
+        host.projects = [sampleProject()];
+        expect(ui.shouldKeepTranscriptPreviewTabProbe(sampleProject(), sampleSummary(), conv)).to.equal(true);
+
+        // A stale URL on another port leaves the hint alone.
+        retireSupersededConversationPortHint(ui, 'http://localhost/qaap-dev/5173/');
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(3002);
+
+        retireSupersededConversationPortHint(ui, 'http://localhost/qaap-dev/3002/');
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(undefined);
+        expect(ui.shouldKeepTranscriptPreviewTabProbe(sampleProject(), sampleSummary(), conv)).to.equal(false);
+        resetTranscriptPreviewHintStateForTests();
     });
 });
 

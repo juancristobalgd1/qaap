@@ -373,6 +373,7 @@ export async function switchTranscriptPreviewAppExtracted(ctx: MobileProjectsTra
             conversationId: summary.id,
             projectId: project.id,
             skipConversationPortProbe: true,
+            userInitiated: true,
         });
         if (launchGeneration !== ctx.previewLaunchGeneration || ctx.host.transcriptPreviewSuppressedByUser) {
             return;

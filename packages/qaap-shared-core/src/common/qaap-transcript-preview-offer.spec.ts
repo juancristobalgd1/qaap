@@ -7,6 +7,13 @@ import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
 import {
     conversationShouldProbeDefaultDevPreviewPorts,
+    conversationShouldWatchDevPreview,
+    findTranscriptPreviewPortHint,
+    findTranscriptPreviewUrlFromConversation,
+    noteTranscriptPreviewHintProbe,
+    resetTranscriptPreviewHintStateForTests,
+    retireTranscriptPreviewPortHint,
+    TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS,
     messageRequestsDevPreview,
     resolveReadyTranscriptPreviewUrlFromProbe,
     transcriptPreviewProbeBackoffMs,
@@ -139,5 +146,126 @@ describe('transcript preview port ownership', () => {
             { conversationId: 'conv-1', root: 'c:/users/alice/repo/' },
         )).to.equal(true);
         expect(transcriptPreviewProbeBelongsToScope({ previewId: 'p' }, { conversationId: 'conv-1', root: '/repo' })).to.equal(true);
+    });
+
+    it('treats the macOS realpath of a worktree claim (/private/var) as the thread\'s /var root', () => {
+        const scope = { conversationId: 'conv-1', root: '/var/folders/cv/T/qaap-worktrees/_dev/3e63c785' };
+        expect(transcriptPreviewProbeBelongsToScope(
+            { previewId: 'p', conversationId: 'conv-2', root: '/private/var/folders/cv/T/qaap-worktrees/_dev/3e63c785' },
+            scope,
+        )).to.equal(true);
+        expect(transcriptPreviewProbeBelongsToScope(
+            { previewId: 'p', root: '/private/var/folders/cv/T/qaap-worktrees/_dev/other' },
+            scope,
+        )).to.equal(false);
+    });
+});
+
+describe('stale transcript preview port hints', () => {
+    afterEach(() => resetTranscriptPreviewHintStateForTests());
+
+    const url = (port: number): string => `http://localhost:3000/qaap-dev/${port}/`;
+    /** The QA task: the agent tested its own server on 3002; the preview later ran on 3001. */
+    const testedOn3002 = (status: QaapAgentConversationDTO['status']): QaapAgentConversationDTO => ({
+        ...conversation([
+            { id: 'u1', role: 'user', content: 'Run the app and open the preview', createdAt: 1 },
+            {
+                id: 'a1', role: 'agent', createdAt: 2,
+                content: 'Checked it with PORT=3002 node server.js: Todo app running on http://localhost:3002',
+            },
+        ]),
+        status,
+    });
+    const probeLog = (claims: Record<number, Omit<TranscriptPreviewPortProbeResult, 'ready' | 'previewUrl'>>, log: number[]) =>
+        async (port: number): Promise<TranscriptPreviewPortProbeResult> => {
+            log.push(port);
+            return { ready: port in claims, previewUrl: url(port), ...claims[port] };
+        };
+
+    it('retires a dead, unclaimed named port once the conversation\'s claimed preview is found on another port', async () => {
+        const conv = testedOn3002('streaming');
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(3002);
+        const first: number[] = [];
+        const ready = await resolveReadyTranscriptPreviewUrlFromProbe(conv, probeLog({
+            3001: { previewId: 'p-own', conversationId: 'conv-1', root: '/repo' },
+        }, first));
+        expect(ready).to.equal(url(3001));
+        expect(first[0]).to.equal(3002);
+
+        // Next tick: 3002 is no longer the hint, so it is not probed first (nor at all).
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(undefined);
+        expect(findTranscriptPreviewUrlFromConversation(conv)).to.equal(undefined);
+        const second: number[] = [];
+        expect(await resolveReadyTranscriptPreviewUrlFromProbe(conv, probeLog({
+            3001: { previewId: 'p-own', conversationId: 'conv-1', root: '/repo' },
+        }, second))).to.equal(url(3001));
+        expect(second).not.to.include(3002);
+    });
+
+    it('keeps a named port that is not up yet while the turn streams (server still booting)', async () => {
+        const conv = testedOn3002('streaming');
+        const t0 = 1_000;
+        expect(noteTranscriptPreviewHintProbe(conv, 3002, { ready: false }, t0)).to.equal(true);
+        noteTranscriptPreviewHintProbe(conv, 3002, { ready: false }, t0 + 10 * TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS);
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(3002);
+        // Nothing else answers: the hint is not retired by the sweep either.
+        await resolveReadyTranscriptPreviewUrlFromProbe(conv, probeLog({}, []));
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(3002);
+    });
+
+    it('retires a named port that stays dead and unclaimed for the grace after the turn ended', () => {
+        const conv = testedOn3002('idle');
+        const t0 = 1_000;
+        noteTranscriptPreviewHintProbe(conv, 3002, { ready: false }, t0);
+        noteTranscriptPreviewHintProbe(conv, 3002, { ready: false }, t0 + TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS - 1);
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(3002);
+        noteTranscriptPreviewHintProbe(conv, 3002, { ready: false }, t0 + TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS);
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(undefined);
+    });
+
+    it('restarts the grace when the named port answers or is claimed in between', () => {
+        const conv = testedOn3002('idle');
+        noteTranscriptPreviewHintProbe(conv, 3002, { ready: false }, 0);
+        expect(noteTranscriptPreviewHintProbe(conv, 3002, { ready: false, previewId: 'p' }, 1)).to.equal(false);
+        noteTranscriptPreviewHintProbe(conv, 3002, { ready: false }, TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS);
+        expect(findTranscriptPreviewPortHint(conv)).to.equal(3002);
+    });
+
+    it('stops the idle preview watch once the only signal was the retired port', () => {
+        const conv: QaapAgentConversationDTO = {
+            ...conversation([
+                { id: 'u1', role: 'user', content: 'Change the main title to red', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: 'Verified: Todo app running on http://localhost:3002', createdAt: 2 },
+            ]),
+            status: 'idle',
+        };
+        expect(conversationShouldWatchDevPreview(conv)).to.equal(true);
+        retireTranscriptPreviewPortHint(conv, 3002);
+        expect(conversationShouldWatchDevPreview(conv)).to.equal(false);
+        expect(transcriptPreviewProbePorts(conv)).to.deep.equal([]);
+    });
+
+    it('revives the port when a newer message names it again, and keeps other conversations untouched', () => {
+        const conv = testedOn3002('idle');
+        retireTranscriptPreviewPortHint(conv, 3002);
+        expect(findTranscriptPreviewPortHint({ ...conv, id: 'conv-other' })).to.equal(3002);
+        const later: QaapAgentConversationDTO = {
+            ...conv,
+            messages: [
+                ...conv.messages,
+                { id: 'a2', role: 'agent', content: 'Restarted it: http://localhost:3002', createdAt: 3 },
+            ],
+        };
+        expect(findTranscriptPreviewPortHint(later)).to.equal(3002);
+        // An older, still-live mention of another port surfaces once the newer one is retired.
+        const twoPorts: QaapAgentConversationDTO = {
+            ...conversation([
+                { id: 'a0', role: 'agent', content: 'Vite ready on http://localhost:5173', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: 'Also tried http://localhost:3002', createdAt: 2 },
+            ]),
+            id: 'conv-two',
+        };
+        retireTranscriptPreviewPortHint(twoPorts, 3002);
+        expect(findTranscriptPreviewPortHint(twoPorts)).to.equal(5173);
     });
 });

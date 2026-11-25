@@ -2079,6 +2079,47 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(res.record.body?.previewUrl).to.contain(`/qaap-preview/${newest.previewId}`);
         });
 
+        it('finds a claim registered under the realpath when asked with a symlinked root (macOS /var worktree)', async () => {
+            const fs = await import('fs');
+            const os = await import('os');
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-current-realpath-'));
+            try {
+                const realRoot = path.join(sandbox, 'real-worktree');
+                const linkedRoot = path.join(sandbox, 'linked-worktree');
+                fs.mkdirSync(realRoot);
+                fs.symlinkSync(realRoot, linkedRoot, process.platform === 'win32' ? 'junction' : 'dir');
+                // The claim handler stores the canonical (realpath) root as the project id.
+                const canonicalRoot = canonicalizeQaapPreviewRoot(realRoot);
+                const canonicalId = FileUri.create(canonicalRoot).toString();
+                const registry = new Registry();
+                const record = registry.register({
+                    ...resolveQaapPreviewIdentity({
+                        userId: 'alice', workspaceId: canonicalId, projectId: canonicalId, conversationId: 'default', processId: 'run-1',
+                    }),
+                    ownerLogin: 'alice',
+                    root: canonicalRoot,
+                    port: 4180,
+                })!;
+                const ep = new CurrentTestEndpoint();
+                ep.setCurrentFakes('alice', registry);
+                const res = makeJsonRes();
+                // The frontend asks with the path it holds (the link), like `file:///var/folders/…`.
+                await ep.exposeHandleCurrent(currentReq(`recent:${FileUri.create(linkedRoot).toString()}`), res);
+                expect(res.record.body?.previewId).to.equal(record.previewId);
+                expect(res.record.body?.ready).to.equal(true);
+            } finally {
+                fs.rmSync(sandbox, { recursive: true, force: true });
+            }
+        });
+
+        it('adds the canonical file URI of a symlinked candidate and leaves other keys untouched', async () => {
+            const { withCanonicalFileProjectIds } = await import('./qaap-dev-preview-endpoint-streaming');
+            expect(withCanonicalFileProjectIds(['github:acme/site', 'ws:github:acme/site'])).to.deep.equal(['github:acme/site', 'ws:github:acme/site']);
+            const missing = FileUri.create(path.resolve('/qaap-missing-root-for-spec')).toString();
+            expect(withCanonicalFileProjectIds([missing])).to.deep.equal([missing]);
+        });
+
         it('answers an empty claim (200, no previewId) when the project only has claims owned by another tenant', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

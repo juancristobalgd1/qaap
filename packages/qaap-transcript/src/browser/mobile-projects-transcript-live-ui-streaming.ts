@@ -357,7 +357,8 @@ export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: Mobile
         canRelaunch: !!ctx.host.requestTranscriptPreview,
     });
     if (action === 'relaunch' && ctx.host.requestTranscriptPreview) {
-        void ctx.host.requestTranscriptPreview(project, summary, { allowAgentFallback: false });
+        // Not a user click: bounded by the bootstrap's automatic-restart limit.
+        void ctx.host.requestTranscriptPreview(project, summary, { allowAgentFallback: false, automatic: true });
         return action;
     }
     if (action === 'clear') {

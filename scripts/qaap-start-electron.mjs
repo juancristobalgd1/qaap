@@ -47,6 +47,14 @@ const env = loadElectronDotEnv(path.resolve(process.cwd(), '.env'), { ...process
 env.QAAP_SKIP_AUTH = env.QAAP_SKIP_AUTH || '1';
 // The desktop runtime serves the GitHub device-flow routes and lets a GitHub session import repositories.
 env.QAAP_DESKTOP = '1';
+// The web OAuth public URL (`.env` shares it with `start:browser`) names a fixed origin such as
+// http://localhost:3000. The desktop backend listens on a loopback port chosen at launch and signs in
+// with the device flow, so that origin is another server: every reader of the variable (preview URLs,
+// isolated preview hosts and their frame-ancestors, CSP) would point the app at it. Derive the
+// origin from the window's own requests instead. Set it empty rather than deleting it: `theia start`
+// re-reads `.env` (applyLocalEnvFile) and only fills variables that are still undefined; every reader
+// trims the value and treats an empty one as unset.
+env.QAAP_OAUTH_PUBLIC_URL = '';
 
 /**
  * macOS titles the menu bar's application menu (and the Dock / Cmd-Tab entry) with the running bundle's

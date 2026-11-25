@@ -499,6 +499,57 @@ describe('QaapProjectBootstrapService dev run guards', () => {
 
             expect(ctx.previewAutoRetryAttempts).to.equal(2);
         });
+
+        it('counts each final failure of a root toward the automatic-restart bound', async () => {
+            const root = URI.fromFilePath(PROJECT_CWD);
+            const make = (): QaapProjectBootstrapServiceContext => failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], rootUri: root },
+                // Auto-retries already spent: this failure is final.
+                previewAutoRetryAttempts: 2,
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+                devRunFailureStreak: 0,
+                devRunFailureStreakRoot: undefined,
+            }).ctx;
+            const ctx = make();
+            await activity.failDevRunExtracted(ctx, 'The dev server stopped responding. Retry to start it again.', PLAN, 7);
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.devRunFailureStreak).to.equal(1);
+            expect(ctx.devRunFailureStreakRoot).to.equal(root.toString());
+
+            ctx._phase = 'running';
+            await activity.failDevRunExtracted(ctx, 'The dev server stopped responding. Retry to start it again.', PLAN, 7);
+            expect(ctx.devRunFailureStreak).to.equal(2);
+
+            // Another root starts its own streak.
+            const other = URI.fromFilePath('/workspace/other');
+            ctx._descriptor = { ...ctx._descriptor!, rootUri: other };
+            ctx._phase = 'running';
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 1.', PLAN, 7);
+            expect(ctx.devRunFailureStreak).to.equal(1);
+            expect(ctx.devRunFailureStreakRoot).to.equal(other.toString());
+        });
+    });
+
+    describe('health of a worktree preview whose claim root is the macOS realpath', () => {
+        it('treats its own ready server as healthy instead of foreign', () => {
+            const timeline: typeof import('./qaap-project-bootstrap-service-timeline') = require('./qaap-project-bootstrap-service-timeline');
+            const { classifyDevPreviewHealthProbe } = require('./qaap-project-bootstrap-port') as typeof import('./qaap-project-bootstrap-port');
+            const ctx = {
+                // The bootstrap holds the path it was handed (`$TMPDIR` spelling)...
+                activeWorkspaceRoot: new URI('file:///var/folders/cv/T/qaap-worktrees/_dev/3e63c785'),
+                _descriptor: undefined,
+                activeProjectId: 'ws:file:///Users/dev/.qaap/workspaces/qa-e2e-todo',
+                previewProjectId: (root: URI) => root.toString(),
+            } as unknown as QaapProjectBootstrapServiceContext;
+            // ...while the backend registered the claim under the realpath of the same root.
+            const probeProjectId = 'file:///private/var/folders/cv/T/qaap-worktrees/_dev/3e63c785';
+            const belongs = timeline.probeBelongsToActiveProjectExtracted(ctx, probeProjectId);
+            expect(belongs).to.equal(true);
+            expect(classifyDevPreviewHealthProbe({ ready: true }, belongs)).to.equal('healthy');
+            expect(timeline.probeBelongsToActiveProjectExtracted(ctx, 'file:///private/var/folders/cv/T/qaap-worktrees/_dev/other'))
+                .to.equal(false);
+        });
     });
 
     describe('restored preview terminal cleanup', () => {

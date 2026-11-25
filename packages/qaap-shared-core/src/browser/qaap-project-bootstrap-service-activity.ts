@@ -258,8 +258,19 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
         const enrichedError = ctx.enrichDevRunError(diagnosedError);
         ctx._error = quotesOutput ? appendLastDevOutput(enrichedError, failureOutput) : enrichedError;
+        recordDevRunFailure(ctx);
         ctx.releaseActivePreview('failDevRun');
         ctx.setPhase('run-failed');
+}
+
+/** Counts a final (post-retry) dev-run failure toward the root's automatic-restart bound. */
+function recordDevRunFailure(ctx: QaapProjectBootstrapServiceContext): void {
+    const root = ctx._descriptor?.rootUri?.toString();
+    if (root !== ctx.devRunFailureStreakRoot) {
+        ctx.devRunFailureStreakRoot = root;
+        ctx.devRunFailureStreak = 0;
+    }
+    ctx.devRunFailureStreak++;
 }
 
 export async function spawnCommandWithRetryExtracted(ctx: QaapProjectBootstrapServiceContext, options: {

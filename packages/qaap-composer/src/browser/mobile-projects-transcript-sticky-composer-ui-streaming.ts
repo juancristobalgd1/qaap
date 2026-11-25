@@ -299,6 +299,7 @@ export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTrans
                 projectId: project.id,
                 workspaceRoot: projectRoot,
                 skipConversationPortProbe: true,
+                userInitiated: true,
             });
             if (!readyUrl) {
                 const state = bootstrap.getStateSnapshot();
@@ -351,6 +352,7 @@ export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTrans
         projectId: project.id,
         workspaceRoot: projectRoot,
         skipConversationPortProbe: true,
+        userInitiated: true,
     });
     if (!readyUrl) {
         void ctx.host.transcriptSurfacesUi?.discoverAndMountTranscriptPreviewIfReady?.(project, summary);

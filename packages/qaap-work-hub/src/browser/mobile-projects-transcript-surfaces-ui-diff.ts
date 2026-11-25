@@ -19,6 +19,8 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
         options?: {
             readonly revealPreviewTab?: boolean;
             readonly allowAgentFallback?: boolean;
+            /** Set by automatic relaunches; every other request is a user start (Run app, Play, Try again). */
+            readonly automatic?: boolean;
         },): Promise<void> {
         if (ctx.host.transcriptPreviewRequestRunning) {
             return;
@@ -104,6 +106,7 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
                 readyUrl = await ensureTranscriptDevPreview(bootstrap, {
                     conversationId: summary.id,
                     projectId: project.id,
+                    userInitiated: options?.automatic !== true,
                     // `refreshFromProjectRoot` above already selected the authoritative Work Hub
                     // project. Refreshing again after an app choice discards the live transition and
                     // can restart the same app twice; wait on the current managed launch instead.

@@ -171,14 +171,30 @@ export function normalizeQaapPreviewProjectId(value: string): string {
     return trimmed;
 }
 
+/**
+ * macOS exposes `/var`, `/tmp` and `/etc` as symlinks into `/private`. The backend registers a
+ * preview under the realpath of its root (`/private/var/folders/…` for a task worktree under
+ * `$TMPDIR`), while the frontend keeps the path it was handed (`/var/folders/…`). Folding the alias
+ * lets both spellings compare equal. Only these three system links are folded (Linux hosts have no
+ * `/private`), and only for comparisons: stored identities keep the realpath.
+ */
+export function foldQaapPrivatePathAlias(pathOrFileUri: string): string {
+    return pathOrFileUri.replace(/^(file:\/\/)?\/private\/(var|tmp|etc)(?=\/|$)/i, '$1/$2');
+}
+
+/** Comparison key of a preview project id: routing prefixes stripped, macOS `/private` alias folded. */
+function previewProjectIdComparisonKey(value: string): string {
+    return foldQaapPrivatePathAlias(normalizeQaapPreviewProjectId(value));
+}
+
 /** Matches a registry project id against canonical roots and legacy Work Hub keys. */
 export function qaapPreviewProjectIdMatches(
     previewProjectId: string,
     ...projectCandidates: Array<string | undefined>
 ): boolean {
-    const normalizedPreviewId = normalizeQaapPreviewProjectId(previewProjectId);
+    const previewKey = previewProjectIdComparisonKey(previewProjectId);
     return projectCandidates.some(candidate => candidate !== undefined
-        && normalizeQaapPreviewProjectId(candidate) === normalizedPreviewId);
+        && previewProjectIdComparisonKey(candidate) === previewKey);
 }
 
 /**
