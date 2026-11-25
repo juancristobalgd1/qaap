@@ -91,6 +91,36 @@ describe('qaap-task-workspace-dirty', () => {
             expect(dirty.kind === 'dirty' && dirty.files).to.deep.equal(['app.js']);
         });
 
+        it('treats an empty initial commit plus untracked project files as clean', async () => {
+            git(['init', '-q']);
+            git(['-c', 'user.email=qaap@test', '-c', 'user.name=qaap', 'commit', '-q', '--allow-empty', '-m', 'Initial commit']);
+            fs.mkdirSync(path.join(root, 'public'));
+            fs.writeFileSync(path.join(root, 'public', 'index.html'), '<h1>todo</h1>\n');
+            fs.writeFileSync(path.join(root, 'server.js'), 'x\n');
+            expect(await readDirtyWorkspace(root, localGitRead)).to.deep.equal({ kind: 'clean' });
+            git(['add', '-A']);
+            expect(await readDirtyWorkspace(root, localGitRead)).to.deep.equal({ kind: 'clean' });
+        });
+
+        it('keeps a modified tracked file dirty when HEAD has files', async () => {
+            git(['init', '-q']);
+            fs.writeFileSync(path.join(root, 'index.html'), '<h1>a</h1>\n');
+            git(['add', '-A']);
+            git(['-c', 'user.email=qaap@test', '-c', 'user.name=qaap', 'commit', '-q', '-m', 'init']);
+            fs.writeFileSync(path.join(root, 'index.html'), '<h1>b</h1>\n');
+            const dirty = await readDirtyWorkspace(root, localGitRead);
+            expect(dirty.kind === 'dirty' && dirty.files).to.deep.equal(['index.html']);
+        });
+
+        it('stays dirty when git cannot list the HEAD tree', async () => {
+            git(['init', '-q']);
+            const answers = async (_cwd: string, args: readonly string[]): Promise<{ status: number | null; stdout: string; stderr: string; timedOut?: boolean }> =>
+                args.includes('status') ? { status: 0, stdout: '?? a.txt\0', stderr: '' }
+                    : args.includes('rev-parse') ? { status: 0, stdout: 'abc\n', stderr: '' }
+                        : { status: 1, stdout: '', stderr: '', timedOut: true };
+            expect((await readDirtyWorkspace(root, answers)).kind).to.equal('dirty');
+        });
+
         it('skips the check for a directory that is not a git repository', async () => {
             fs.writeFileSync(path.join(root, 'notes.txt'), 'x\n');
             expect(await readDirtyWorkspace(root, localGitRead)).to.deep.equal({ kind: 'clean' });

@@ -13,4 +13,11 @@ describe('Qaap background agent context', () => {
         expect(template).to.contain('restarts it after your turn when you changed server code');
         expect(template).to.match(/Do not start your own copy of the app or a test server on another port/);
     });
+
+    it('does not call the workspace an ephemeral sandbox, which is false on desktop', () => {
+        const template = getQaapTasksBackgroundContextFragment().template;
+        expect(template).not.to.contain('ephemeral');
+        expect(template).to.contain('a folder on the user\'s own machine in Qaap desktop');
+        expect(template).to.contain('do not change files outside the workspace');
+    });
 });

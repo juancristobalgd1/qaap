@@ -1,3 +1,4 @@
+import { QaapTaskWorktreeContainment } from './qaap-task-worktree-containment';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { lazyPreferenceReader } from './qaap-agent-task-runner-utils2';
 import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
@@ -892,6 +893,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
             return autoApproveReadOnlyShell;
         };
+        // A task in its own git worktree may not write outside it (see QaapTaskWorktreeContainment).
+        const containWorkspace = QaapTaskWorktreeContainment.shared.isIsolatedWorktree(task.cwd) ? task.cwd : undefined;
         const scanStdioApprovalChunk = (chunk: unknown): void => {
             stdioLineBuffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
             let newline: number;
@@ -920,6 +923,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                             checkPathsInsideCwd: paths => ctx.checkShellPathsInsideCwd(task.cwd, paths),
                         },
                         reservedPort: () => ctx.reservedDevPreviewPort?.(task),
+                        ...(containWorkspace ? { containWorkspace } : {}),
                     });
                     const autoAction = gateOutcome.action;
                     if (gateOutcome.readOnlyBlockedReason) {

@@ -10,6 +10,7 @@ import {
     QAAP_TASK_CONTEXT_MARKER,
     QAAP_PROJECT_INFO_TRUNCATION_NOTICE,
     QAAP_REPO_CONTENT_BOUNDARY_NOTE,
+    QAAP_ISOLATED_WORKTREE_NOTE,
 } from './qaap-agent-task-context';
 
 describe('prependAgentTaskContextToPrompt', () => {
@@ -145,5 +146,24 @@ describe('truncateProjectInfo', () => {
         const result = truncateProjectInfo(text, 40);
         const body = result.slice(0, -QAAP_PROJECT_INFO_TRUNCATION_NOTICE.length);
         expect(body).to.equal('alpha\nbeta');
+    });
+});
+
+describe('prependAgentTaskContextToPrompt isolated worktree note', () => {
+    it('tells a worktree task to stay inside the worktree and to stop when files are missing', () => {
+        const result = prependAgentTaskContextToPrompt('Change the h1', undefined, undefined, { isolatedWorktree: true, gitStatus: 'Branch: qaap/worktree/abc' });
+        expect(result).to.contain(QAAP_ISOLATED_WORKTREE_NOTE);
+        expect(result).to.contain('You are in an isolated git worktree');
+        expect(result).to.contain('including the parent repository its .git file points to');
+        expect(result).to.contain('If files you expected are missing from the worktree, stop and report it');
+        // A Qaap rule, so it comes before the workspace-data boundary, not after it.
+        expect(result.indexOf(QAAP_ISOLATED_WORKTREE_NOTE)).to.be.lessThan(result.indexOf(QAAP_REPO_CONTENT_BOUNDARY_NOTE));
+        expect(result.endsWith('---\n\nChange the h1')).to.equal(true);
+    });
+
+    it('is absent for a shared-tree task', () => {
+        const result = prependAgentTaskContextToPrompt('Change the h1', undefined, undefined, { gitStatus: 'Branch: main' });
+        expect(result).not.to.contain('isolated git worktree');
+        expect(prependAgentTaskContextToPrompt('Change the h1', undefined, undefined, { isolatedWorktree: false })).to.equal('Change the h1');
     });
 });

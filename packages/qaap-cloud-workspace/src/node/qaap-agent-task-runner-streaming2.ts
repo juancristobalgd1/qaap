@@ -4,6 +4,7 @@ import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
+import { QaapTaskWorktreeContainment } from './qaap-task-worktree-containment';
 import { overOwnerOrRepoCapExtracted, sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
@@ -435,6 +436,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
                 gitStatus: ctx.readGitStatusSnapshot(resolvedCwd),
                 repoMemory: ctx.readRepoMemory(resolvedCwd),
                 researchLedger: ctx.readResearchLedger(resolvedCwd),
+                isolatedWorktree: QaapTaskWorktreeContainment.shared.isIsolatedWorktree(resolvedCwd),
             }
             : undefined;
         const promptWithTaskContext = prependAgentTaskContextToPrompt(

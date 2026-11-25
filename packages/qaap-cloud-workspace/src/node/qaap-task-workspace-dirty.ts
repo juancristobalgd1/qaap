@@ -46,8 +46,9 @@ export function resolveTaskIsolationMode(env: NodeJS.ProcessEnv = process.env): 
 /**
  * Uncommitted changes (tracked and untracked) in `cwd` through the tenant-aware git seam. A directory
  * that is not a git repository is `clean` (nothing to protect), and so is a repository with no commits
- * yet: there is no base to diverge from, and a worktree cannot start clean without a commit. A git
- * failure or timeout is `unknown`. Never throws.
+ * yet, or whose `HEAD` commit has an empty tree (an "Initial commit" with every project file still
+ * untracked): there is no base to diverge from, and a worktree cut from such a `HEAD` would start
+ * empty, without the project the task is about. A git failure or timeout is `unknown`. Never throws.
  */
 export async function readDirtyWorkspace(cwd: string, gitRead: QaapGitRead): Promise<QaapDirtyWorkspaceCheck> {
     if (!cwdIsGitRepository(cwd)) {
@@ -82,21 +83,30 @@ export async function readDirtyWorkspace(cwd: string, gitRead: QaapGitRead): Pro
             index++;
         }
     }
-    if (total === 0 || !(await repositoryHasCommits(cwd, gitRead))) {
+    if (total === 0 || await headHasNoFiles(cwd, gitRead)) {
         return { kind: 'clean' };
     }
     return { kind: 'dirty', files, total };
 }
 
 /**
- * `false` only when git says `HEAD` does not resolve (an unborn branch). A timeout or a thrown error
- * counts as having commits, so an unanswered question keeps the workspace protected as dirty.
+ * `true` when `HEAD` does not resolve (an unborn branch) or its tree is empty. A timeout, a failed
+ * answer or a thrown error counts as having files, so an unanswered question keeps the workspace
+ * protected as dirty.
  */
-async function repositoryHasCommits(cwd: string, gitRead: QaapGitRead): Promise<boolean> {
+async function headHasNoFiles(cwd: string, gitRead: QaapGitRead): Promise<boolean> {
     try {
         const head = await gitRead(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']);
-        return head.timedOut === true || head.status === 0;
+        if (head.timedOut === true) {
+            return false;
+        }
+        if (head.status !== 0) {
+            return true;
+        }
+        // Top level only: one entry is enough to know the tree is not empty.
+        const tree = await gitRead(cwd, ['-c', 'core.fsmonitor=false', '--no-optional-locks', 'ls-tree', '--name-only', 'HEAD']);
+        return tree.timedOut !== true && tree.status === 0 && tree.stdout.trim() === '';
     } catch {
-        return true;
+        return false;
     }
 }
