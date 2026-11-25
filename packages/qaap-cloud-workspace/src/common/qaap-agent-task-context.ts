@@ -53,6 +53,12 @@ export const QAAP_ISOLATED_WORKTREE_NOTE =
     + 'Use paths inside the worktree only. If files you expected are missing from the worktree, stop and report it to the user '
     + 'instead of looking for them elsewhere or copying them in.';
 
+/** Added after {@link QAAP_ISOLATED_WORKTREE_NOTE} when the OS write sandbox confines the task (macOS desktop). */
+export const QAAP_TASK_WRITE_SANDBOX_NOTE =
+    'An OS sandbox enforces this: writing anywhere outside the worktree (other than temp dirs and your own CLI state) fails with '
+    + '"Operation not permitted". That error on such a path is the sandbox, not a permissions problem to work around: '
+    + 'keep the change inside the worktree, or stop and tell the user what you needed to write and where.';
+
 /** Additional codebase-derived context sources, front-loaded to give the agent a warm start. */
 export interface QaapAgentRepoContext {
     /**
@@ -72,6 +78,8 @@ export interface QaapAgentRepoContext {
     readonly researchLedger?: string;
     /** The task runs in its own git worktree: adds {@link QAAP_ISOLATED_WORKTREE_NOTE} (a Qaap rule, not workspace data). */
     readonly isolatedWorktree?: boolean;
+    /** The isolated worktree is also write-sandboxed by the OS: adds {@link QAAP_TASK_WRITE_SANDBOX_NOTE}. */
+    readonly writeSandboxed?: boolean;
 }
 
 /**
@@ -110,7 +118,7 @@ export function prependAgentTaskContextToPrompt(
         parts.push(global);
     }
     if (repoContext?.isolatedWorktree) {
-        parts.push(QAAP_ISOLATED_WORKTREE_NOTE);
+        parts.push(repoContext.writeSandboxed ? `${QAAP_ISOLATED_WORKTREE_NOTE}\n\n${QAAP_TASK_WRITE_SANDBOX_NOTE}` : QAAP_ISOLATED_WORKTREE_NOTE);
     }
     const workspaceParts: string[] = [];
     const project = projectInfo?.trim();

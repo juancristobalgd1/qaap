@@ -5,6 +5,7 @@ import { AGENT_STOP_GRACE_TIMEOUT_MS, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS, SHELL_
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { QaapTaskWorktreeContainment } from './qaap-task-worktree-containment';
+import { QaapDesktopTaskSandbox } from './qaap-desktop-task-sandbox';
 import { overOwnerOrRepoCapExtracted, sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
@@ -437,6 +438,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
                 repoMemory: ctx.readRepoMemory(resolvedCwd),
                 researchLedger: ctx.readResearchLedger(resolvedCwd),
                 isolatedWorktree: QaapTaskWorktreeContainment.shared.isIsolatedWorktree(resolvedCwd),
+                writeSandboxed: QaapDesktopTaskSandbox.shared.appliesTo(resolvedCwd),
             }
             : undefined;
         const promptWithTaskContext = prependAgentTaskContextToPrompt(
@@ -469,7 +471,8 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             toolApprovalRules,
             readOnlyWorkspace,
             codexSupportsApproveForMe: detected?.codexSupportsApproveForMe,
-            codexOwnSandboxOff: ctx.runsInTaskSandbox?.() === true,
+            // Seatbelt cannot nest: under the desktop task sandbox Codex runs without its own sandbox-exec.
+            codexOwnSandboxOff: ctx.runsInTaskSandbox?.() === true || QaapDesktopTaskSandbox.shared.appliesTo(resolvedCwd),
         };
         // A read-only turn is never routed through the interactive stdio approval flow: that flow
         // exists so a human can say yes to a write, and on a read-only turn there is no write to say
