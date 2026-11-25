@@ -16,6 +16,16 @@ describe('detectOpencodeFatalStreamError', () => {
             .to.equal('AI_APICallError: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go');
     });
 
+    it('returns the provider error for a main-turn account without credits or model access', () => {
+        const balance = BUILD_QUOTA_LINE.replace(/error\.error=".*"$/, 'error.error="AI_APICallError: Insufficient balance. This request is pay-as-you-go, '
+            + 'billed to OpenCode Models credits. Top up at https://opencode.ai/console/wrk_1/billing?credits=1."');
+        expect(detectOpencodeFatalStreamError(balance)).to.match(/^AI_APICallError: Insufficient balance\./);
+        const access = BUILD_QUOTA_LINE.replace(/error\.error=".*"$/, 'error.error="AI_APICallError: Model access is disabled. '
+            + 'Change model access at https://opencode.ai/console/wrk_1/models."');
+        expect(detectOpencodeFatalStreamError(access)).to.match(/^AI_APICallError: Model access is disabled\./);
+        expect(detectOpencodeFatalStreamError(balance.replace('small=false', 'small=true'))).to.be.undefined;
+    });
+
     it('ignores the title request (small=true) even when it hits the same quota', () => {
         expect(detectOpencodeFatalStreamError(TITLE_QUOTA_LINE)).to.be.undefined;
     });

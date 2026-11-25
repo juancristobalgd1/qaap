@@ -29,7 +29,11 @@ export type QaapAgentFailureKind =
     | 'provider_credits'
     | 'provider_data_policy'
     | 'provider_free_limit'
-    | 'provider_rejected';
+    | 'provider_rejected'
+    /** The harness's own provider account has no balance left (OpenCode "Insufficient balance", Anthropic "credit balance is too low"). */
+    | 'credits_exhausted'
+    /** The provider account has the selected model switched off (OpenCode "Model access is disabled"). */
+    | 'model_access_disabled';
 
 /** What the runner's provider preflight learned about a BYOK key after an ambiguous CLI error. */
 export type QaapProviderKeyVerdict = 'key_rejected' | 'no_credits' | 'free_model_refused';
@@ -192,6 +196,194 @@ const TOOL_UNSUPPORTED_PATTERNS: readonly RegExp[] = [
     /\btool[_\s-]?(?:use|calls?|calling)\s+(?:is\s+|are\s+)?not\s+supported\b/i,
     /\bfunction[_\s-]?calling\s+(?:is\s+)?not\s+supported\b/i,
 ];
+
+/** Billing failures of the provider account a harness runs on: signed in, but it cannot pay for the turn. */
+export type QaapAgentBillingFailureKind = 'credits_exhausted' | 'model_access_disabled';
+
+export interface QaapAgentBillingFailure {
+    readonly kind: QaapAgentBillingFailureKind;
+    /** Provider the account belongs to ("OpenCode", "Anthropic"), when the output names it. */
+    readonly providerLabel?: string;
+    /** The provider's own top-up / model-access page, only from {@link BILLING_LINK_POLICIES}. */
+    readonly url?: string;
+}
+
+/**
+ * "No balance left" wordings. Each needs the provider's own phrase: a bare "insufficient balance"
+ * could be a banking app's test output, so OpenCode's line must also talk about credits or top-ups.
+ * Our own copy ({@link localizeAgentBillingFailureMessage}) is listed so a persisted reason
+ * classifies back to the same kind.
+ */
+const CREDITS_EXHAUSTED_PATTERNS: readonly RegExp[] = [
+    // OpenCode Models (Zen): "AI_APICallError: Insufficient balance. This request is pay-as-you-go, billed to OpenCode Models credits. Top up at https://opencode.ai/…".
+    /\binsufficient\s+balance\b[^\n]{0,240}?\b(?:credits?|top\s+up|billed|pay-as-you-go)\b/i,
+    /\bAI_APICallError:\s*insufficient\s+balance\b/i,
+    // Anthropic API / Claude Code on an API key: "Your credit balance is too low to access the Anthropic API."
+    /\bcredit\s+balance\s+is\s+too\s+low\b/i,
+    /\baccount\s+has\s+no\s+credits\s+left\b/i,
+];
+
+const MODEL_ACCESS_DISABLED_PATTERNS: readonly RegExp[] = [
+    // OpenCode Models (Zen): "Model access is disabled. Change model access at https://opencode.ai/console/<workspace>/models."
+    /\bmodel\s+access\s+is\s+disabled\b/i,
+    /\baccess\s+to\s+this\s+model\s+is\s+disabled\s+in\s+your\b/i,
+];
+
+interface BillingLinkPolicy {
+    readonly providerLabel: string;
+    readonly hostname: string;
+    readonly paths: Readonly<Partial<Record<QaapAgentBillingFailureKind, RegExp>>>;
+}
+
+/**
+ * The only links a billing failure may surface: https, the provider's exact host and its billing /
+ * model-access page. Anything else the output carries (an inference URL, a docs link, a URL an
+ * agent printed) is never shown.
+ */
+const BILLING_LINK_POLICIES: readonly BillingLinkPolicy[] = [
+    {
+        providerLabel: 'OpenCode',
+        hostname: 'opencode.ai',
+        paths: {
+            credits_exhausted: /^\/(?:console|workspace)\/[\w-]+\/billing\/?$/i,
+            model_access_disabled: /^\/(?:console|workspace)\/[\w-]+\/models\/?$/i,
+        },
+    },
+    { providerLabel: 'Anthropic', hostname: 'console.anthropic.com', paths: { credits_exhausted: /^\/settings\/(?:billing|plans)\/?$/i } },
+    { providerLabel: 'Anthropic', hostname: 'platform.claude.com', paths: { credits_exhausted: /^\/settings\/(?:billing|plans)\/?$/i } },
+];
+
+const BILLING_URL_CANDIDATE = /https:\/\/[^\s"'`<>\\)\]]+/gi;
+
+/** `providerID=opencode` on an OpenCode `--print-logs` line. */
+const BILLING_PROVIDER_ID_FIELD = /\bproviderID=([\w.-]+)/;
+const BILLING_PROVIDER_IDS: Readonly<Record<string, string>> = {
+    opencode: 'OpenCode',
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+    openrouter: 'OpenRouter',
+};
+
+function findBillingLink(text: string, kind: QaapAgentBillingFailureKind): { readonly url: string; readonly providerLabel: string } | undefined {
+    for (const match of text.matchAll(BILLING_URL_CANDIDATE)) {
+        let parsed: URL;
+        try {
+            parsed = new URL(match[0].replace(/[.,;:!?]+$/, ''));
+        } catch {
+            continue;
+        }
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) {
+            continue;
+        }
+        const hostname = parsed.hostname.toLowerCase();
+        const policy = BILLING_LINK_POLICIES.find(entry => entry.hostname === hostname && entry.paths[kind]?.test(parsed.pathname));
+        if (policy) {
+            return { url: parsed.toString(), providerLabel: policy.providerLabel };
+        }
+    }
+    return undefined;
+}
+
+function detectBillingProviderLabel(text: string, patterns: readonly RegExp[]): string | undefined {
+    const line = text.split('\n').find(candidate => matchesAny(candidate, patterns)) ?? '';
+    const providerId = BILLING_PROVIDER_ID_FIELD.exec(line)?.[1]?.toLowerCase();
+    if (providerId && BILLING_PROVIDER_IDS[providerId]) {
+        return BILLING_PROVIDER_IDS[providerId];
+    }
+    if (/\bcredit\s+balance\s+is\s+too\s+low\b/i.test(line) || /\banthropic\s+api\b/i.test(line)) {
+        return 'Anthropic';
+    }
+    if (/\bopencode\b/i.test(line)) {
+        return 'OpenCode';
+    }
+    // Our own persisted copy: "Your OpenCode account has no credits left." / "… disabled in your OpenCode account."
+    const stored = /\bYour\s+(.{1,40}?)\s+account\s+has\s+no\s+credits\s+left\b/.exec(line)
+        ?? /\bdisabled\s+in\s+your\s+(.{1,40}?)\s+account\b/.exec(line);
+    if (stored && !/^(?:model\s+)?provider$/i.test(stored[1])) {
+        return stored[1];
+    }
+    return undefined;
+}
+
+function classifyBillingFailureText(text: string): QaapAgentBillingFailure | undefined {
+    const kind: QaapAgentBillingFailureKind | undefined = matchesAny(text, MODEL_ACCESS_DISABLED_PATTERNS)
+        ? 'model_access_disabled'
+        : matchesAny(text, CREDITS_EXHAUSTED_PATTERNS) ? 'credits_exhausted' : undefined;
+    if (!kind) {
+        return undefined;
+    }
+    const link = findBillingLink(text, kind);
+    const providerLabel = link?.providerLabel
+        ?? detectBillingProviderLabel(text, kind === 'model_access_disabled' ? MODEL_ACCESS_DISABLED_PATTERNS : CREDITS_EXHAUSTED_PATTERNS);
+    return {
+        kind,
+        ...(providerLabel ? { providerLabel } : {}),
+        ...(link ? { url: link.url } : {}),
+    };
+}
+
+/** True when `text` reports that the provider account has no credits or the model switched off. */
+export function isAgentBillingFailureText(text: string | undefined): boolean {
+    return !!text && (matchesAny(text, CREDITS_EXHAUSTED_PATTERNS) || matchesAny(text, MODEL_ACCESS_DISABLED_PATTERNS));
+}
+
+export function isAgentBillingFailureKind(kind: string | undefined): kind is QaapAgentBillingFailureKind {
+    return kind === 'credits_exhausted' || kind === 'model_access_disabled';
+}
+
+/**
+ * The billing failure behind a turn: what the CLI itself said (auxiliary side requests such as
+ * OpenCode's title agent excluded), with the provider and its own top-up / model-access link.
+ */
+export function extractAgentBillingFailure(log: string | undefined): QaapAgentBillingFailure | undefined {
+    const sample = agentFailureEvidenceText(collectAgentFailureEvidence(log));
+    return sample ? classifyBillingFailureText(sample) : undefined;
+}
+
+/** Short, actionable copy for a billing failure. Never a sign-in: the account is signed in. */
+export function localizeAgentBillingFailureMessage(failure: Pick<QaapAgentBillingFailure, 'kind' | 'providerLabel' | 'url'>): string {
+    const provider = failure.providerLabel?.trim();
+    if (failure.kind === 'model_access_disabled') {
+        if (provider && failure.url) {
+            return nls.localize(
+                'qaap/agentFailure/modelAccessDisabledWithLink',
+                'Access to this model is disabled in your {0} account. Enable it at {1}, or pick another model.',
+                provider,
+                failure.url,
+            );
+        }
+        if (provider) {
+            return nls.localize(
+                'qaap/agentFailure/modelAccessDisabled',
+                'Access to this model is disabled in your {0} account. Enable it in your {0} settings, or pick another model.',
+                provider,
+            );
+        }
+        return nls.localize(
+            'qaap/agentFailure/modelAccessDisabledAnyProvider',
+            'Access to this model is disabled in your provider account. Enable it in the provider\'s settings, or pick another model.',
+        );
+    }
+    if (provider && failure.url) {
+        return nls.localize(
+            'qaap/agentFailure/creditsExhaustedWithLink',
+            'Your {0} account has no credits left. Top up at {1}, or pick another model.',
+            provider,
+            failure.url,
+        );
+    }
+    if (provider) {
+        return nls.localize(
+            'qaap/agentFailure/creditsExhausted',
+            'Your {0} account has no credits left. Add credits with {0}, or pick another model.',
+            provider,
+        );
+    }
+    return nls.localize(
+        'qaap/agentFailure/creditsExhaustedAnyProvider',
+        'Your provider account has no credits left. Add credits with the provider, or pick another model.',
+    );
+}
 
 /** Auth declarations unambiguous enough to trust wherever the CLI printed them. */
 const AUTH_PATTERNS: readonly RegExp[] = [
@@ -739,8 +931,11 @@ function isProviderRetryRecord(value: unknown): boolean {
  */
 const AUXILIARY_AGENT_LOG_LINE = /\bsmall=true\b|\bagent=(?:title|summary|compaction)\b|"agent"\s*:\s*"(?:title|summary|compaction)"/;
 
+/** Start of an OpenCode `--print-logs` record; a pasted or whitespace-collapsed log keeps several on one line. */
+const OPENCODE_LOG_RECORD_START = /[ \t]+(?=timestamp=\d{4}-\d{2}-\d{2}T\S+\s+level=)/g;
+
 function withoutAuxiliaryAgentLogLines(text: string): string {
-    return text.split('\n').filter(line => !AUXILIARY_AGENT_LOG_LINE.test(line)).join('\n');
+    return text.replace(OPENCODE_LOG_RECORD_START, '\n').split('\n').filter(line => !AUXILIARY_AGENT_LOG_LINE.test(line)).join('\n');
 }
 
 function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvidence {
@@ -969,6 +1164,13 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (matchesAny(sample, MODEL_RETIRED_PATTERNS)) {
         return 'model_unavailable';
     }
+    // The harness's provider account is signed in but cannot pay for the turn (no balance, model switched
+    // off). Before every auth reading: OpenCode answers "Model access is disabled" with a 403 and a
+    // `permission_error`, which the envelope check below would otherwise turn into "Sign in required".
+    const billing = classifyBillingFailureText(sample);
+    if (billing) {
+        return billing.kind;
+    }
     // Before quota/rate limit/model: an OpenRouter "free-models-per-day" 429 or a rejected key
     // behind QAIQ's "issue with the selected model" is the user's key, not the model or Qaap.
     const providerKind = classifyProviderKeyEvidence(sample, agentFailureEnvelopeText(evidence));
@@ -1055,6 +1257,9 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
             );
         case 'provider_rejected':
             return localizeProviderRejectedMessage(providerLabel);
+        case 'credits_exhausted':
+        case 'model_access_disabled':
+            return localizeAgentBillingFailureMessage({ kind, providerLabel: providerLabel?.trim() || undefined });
         case 'quota':
             return nls.localize(
                 'qaap/agentFailure/quotaReached',
@@ -1349,6 +1554,9 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
     if (kind === 'provider_rejected') {
         return localizeProviderRejectedMessage(extractAgentFailureProviderName(trimmed));
     }
+    if (isAgentBillingFailureKind(kind)) {
+        return localizeAgentBillingFailureMessage(extractAgentBillingFailure(trimmed) ?? { kind });
+    }
     if (kind) {
         return localizeAgentFailureMessage(kind, detectAgentFailureProviderLabel(trimmed));
     }
@@ -1538,6 +1746,9 @@ export function resolveAgentTurnFailureMessage(
     } else {
         kind = classifyAgentFailureEvidence(evidence);
     }
+    if (isAgentBillingFailureKind(kind)) {
+        return localizeAgentBillingFailureMessage(classifyBillingFailureText(agentFailureEvidenceText(evidence)) ?? { kind });
+    }
     if (isPiSignInRejectedFailure(resolvedOptions.agentId, kind)) {
         return localizePiSignInRejectedMessage(detectAgentFailureProviderLabel(agentFailureEvidenceText(evidence)));
     }
@@ -1662,7 +1873,11 @@ export type QaapAgentFailureReasonKind =
     | 'provider_key'
     | 'provider_policy'
     /** The provider rejected this request (its own error, not the key or the model's name). */
-    | 'provider_rejected';
+    | 'provider_rejected'
+    /** The harness's provider account has no credits left (signed in, not a sign-in problem). */
+    | 'credits_exhausted'
+    /** The provider account has the selected model switched off. */
+    | 'model_access_disabled';
 
 export interface QaapAgentFailureReason {
     readonly kind: QaapAgentFailureReasonKind;
@@ -1694,6 +1909,13 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
     }
     if (STORED_TOOL_FAILURE.test(error) || REPEATED_TOOL_FAILURE.test(error)) {
         return 'command_failed';
+    }
+    // Before the sign-in wording: an account without credits is signed in.
+    if (matchesAny(error, MODEL_ACCESS_DISABLED_PATTERNS)) {
+        return 'model_access_disabled';
+    }
+    if (matchesAny(error, CREDITS_EXHAUSTED_PATTERNS)) {
+        return 'credits_exhausted';
     }
     if (/needs you to sign in|sign in required/i.test(error)) {
         return 'sign_in';
@@ -1727,6 +1949,10 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
             return 'provider_policy';
         case 'provider_rejected':
             return 'provider_rejected';
+        case 'credits_exhausted':
+            return 'credits_exhausted';
+        case 'model_access_disabled':
+            return 'model_access_disabled';
         case 'model_unavailable':
         case 'tool_unsupported':
             return 'model';
@@ -1794,6 +2020,14 @@ function localizeAgentFailureReasonLabel(
             return nls.localize('qaap/agentFailure/reasonProviderPolicy', 'Blocked by provider settings');
         case 'provider_rejected':
             return nls.localize('qaap/agentFailure/reasonProviderRejected', 'Model provider rejected the request');
+        case 'credits_exhausted': {
+            const provider = detectBillingProviderLabel(sample, CREDITS_EXHAUSTED_PATTERNS);
+            return provider
+                ? nls.localize('qaap/agentFailure/reasonCreditsExhaustedProvider', 'No {0} credits left', provider)
+                : nls.localize('qaap/agentFailure/reasonCreditsExhausted', 'No credits left');
+        }
+        case 'model_access_disabled':
+            return nls.localize('qaap/agentFailure/reasonModelAccessDisabled', 'Model access disabled');
         case 'stopped':
         default:
             return nls.localize('qaap/agentFailure/reasonStopped', 'The agent stopped unexpectedly');
