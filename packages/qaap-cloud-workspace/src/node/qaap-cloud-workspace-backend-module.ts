@@ -175,6 +175,7 @@ import {
     resolveQaapTenantUserRoot,
 } from './qaap-tenant-config-scope';
 import { filterQaapFrontendEnvironment, isQaapSensitiveEnvKey } from './qaap-env-variables';
+import { hangUpAgentTerminal } from './qaap-agent-process-signal';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
     // Placeholder resolution for the OpenAI-compatible manager (see qaap-openai-manager-binding.ts).
@@ -531,6 +532,19 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
         const originalGetEnvVarCollectionDescriptions = shellServer.getEnvVarCollectionDescriptionsByExtension.bind(shellServer);
         shellServer.getEnvVarCollectionDescriptionsByExtension = (...args) =>
             withTenantCollections(() => originalGetEnvVarCollectionDescriptions(...args));
+        // The uid each terminal's shell runs as, so closing it can hang it up as that uid (see hangUpAgentTerminal).
+        const terminalIdentities = new Map<number, { uid?: number; gid?: number }>();
+        const processManager = (server as unknown as { processManager?: { get(id: number): { pid?: number } | undefined } }).processManager;
+        const originalClose = server.close.bind(server);
+        server.close = async (id: number) => {
+            const pid = processManager?.get(id)?.pid;
+            const identity = terminalIdentities.get(id);
+            terminalIdentities.delete(id);
+            await originalClose(id);
+            if (identity?.uid !== undefined) {
+                hangUpAgentTerminal(pid, { uid: identity.uid, gid: identity.gid });
+            }
+        };
         const originalCreate = server.create.bind(server);
         server.create = async (options: IShellTerminalServerOptions) => {
             // S2: the rootURI comes from the browser and decides which tenant the shell runs as
@@ -601,7 +615,12 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             if (Object.keys(homeOverlay).length > 0) {
                 options.env = { ...(options.env ?? {}), ...homeOverlay };
             }
-            return originalCreate(options);
+            const terminalId = await originalCreate(options);
+            const identity = tenantSpawn.resolveSpawnIdentity(cwd);
+            if (terminalId >= 0 && identity.uid !== undefined) {
+                terminalIdentities.set(terminalId, identity);
+            }
+            return terminalId;
         };
         return server;
     });

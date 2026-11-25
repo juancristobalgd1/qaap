@@ -1,4 +1,5 @@
 import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
+import { lazyPreferenceReader } from './qaap-agent-task-runner-utils2';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -228,7 +229,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         const createdAt = Date.now();
         const harnessInstanceId = prompt && resolvedAgentId !== SHELL_AGENT_ID
-            ? resolveQaapHarnessInstanceRoute(request.agent, key => ctx.preferenceReaderForOwner(ownerLogin)(key))?.instanceId
+            ? resolveQaapHarnessInstanceRoute(request.agent, lazyPreferenceReader(() => ctx.preferenceReaderForOwner(ownerLogin)))?.instanceId
             : undefined;
         const task: QaapAgentTask = {
             id,
@@ -623,7 +624,7 @@ export function resolveAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, prompt:
         }
         // A harness instance from Settings → Harness ("Add harness", e.g. `codex#2`) runs as its base
         // harness; its own switch decides, the base harness may be switched off.
-        const instanceRoute = resolveQaapHarnessInstanceRoute(agentId, key => ctx.preferenceReaderForOwner(ownerLogin)(key));
+        const instanceRoute = resolveQaapHarnessInstanceRoute(agentId, lazyPreferenceReader(() => ctx.preferenceReaderForOwner(ownerLogin)));
         if (instanceRoute) {
             assertAgentAllowedOnHostedRuntime(instanceRoute.baseId);
             if (!instanceRoute.configured || !ctx.detectedAgents.has(instanceRoute.baseId)) {

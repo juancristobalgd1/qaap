@@ -15,7 +15,8 @@ import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-t
 
 /** Structural view of the Electron preload API; core types it globally, which this package does not compile against. */
 interface ElectronTitleBarWindow {
-    electronTheiaCore: {
+    /** Absent in a browser tab, and not always there yet on a reload: every read checks it first. */
+    electronTheiaCore?: {
         getTitleBarStyleAtStartup(): Promise<string>;
         isFullScreen(): boolean;
     };
@@ -55,12 +56,15 @@ export class QaapElectronTopBarContribution implements FrontendApplicationContri
     protected mounted = false;
 
     onStart(_app: FrontendApplication): void {
-        if (!environment.electron.is()) {
+        // `environment.electron.is()` can be true while the preload API is missing (a reload): without it there is no
+        // native title bar to mount into, so the contribution does nothing rather than failing the start.
+        const electronCore = (window as unknown as ElectronTitleBarWindow).electronTheiaCore;
+        if (!environment.electron.is() || !electronCore) {
             return;
         }
         // Core's menu contribution hides the top panel synchronously in `onStart`; this callback runs
         // after it, so the Qaap top bar is shown last.
-        (window as unknown as ElectronTitleBarWindow).electronTheiaCore.getTitleBarStyleAtStartup().then(style => {
+        electronCore.getTitleBarStyleAtStartup().then(style => {
             if (style === 'native') {
                 this.mountNativeTopBar();
             }
@@ -92,7 +96,7 @@ export class QaapElectronTopBarContribution implements FrontendApplicationContri
         const body = document.body;
         body.classList.add(QAAP_ELECTRON_MACOS_INSET_TITLEBAR_CLASS);
         const syncFullScreen = (): void => {
-            const fullScreen = (window as unknown as ElectronTitleBarWindow).electronTheiaCore.isFullScreen();
+            const fullScreen = (window as unknown as ElectronTitleBarWindow).electronTheiaCore?.isFullScreen() === true;
             body.classList.toggle(QAAP_ELECTRON_MACOS_FULLSCREEN_CLASS, fullScreen);
         };
         syncFullScreen();

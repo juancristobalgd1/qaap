@@ -13,7 +13,7 @@ import {
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { planDesktopIdeWorkspaceOpen, QaapDesktopIdeHubProject, sameDesktopIdeCwd } from '../common/qaap-desktop-ide-workspace-plan';
+import { isDesktopIdeProjectAlreadyOpen, planDesktopIdeWorkspaceOpen, QaapDesktopIdeHubProject, sameDesktopIdeCwd } from '../common/qaap-desktop-ide-workspace-plan';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { MobileAgentTaskComposer } from '@theia/qaap-composer/lib/browser/mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
@@ -240,7 +240,8 @@ export async function prepareDesktopIdeWorkspaceFromHubExtracted(
     }
     const plan = planDesktopIdeWorkspaceOpen(
         projects.map(project => toDesktopIdeHubProject(ctx, project)),
-        ctx.projectsService.getCurrentWorkspaceCwd(),
+        // Without an open workspace the current cwd can only be the remembered one: not a real open folder.
+        ctx.workspaceService.opened ? ctx.projectsService.getCurrentWorkspaceCwd() : undefined,
         shown ? toDesktopIdeHubProject(ctx, shown) : selected,
     );
     if (plan.kind === 'reload-empty') {
@@ -276,7 +277,9 @@ async function openDesktopIdeProjectExtracted(ctx: MobileOneColumnShellContribut
     // The Hub can show a cached GitHub entry while Theia has the same repository open under a
     // different workspace path. Keep the current workspace in that case: WorkspaceService.open
     // reloads the page even when the workspace is already inside the selected repository.
-    if (ctx.projectsService.projectMatchesCurrentWorkspace(project)) {
+    // Only a workspace that is really open counts: the remembered one also "matches" the hub row
+    // on a page at `/`, and returning here left the IDE with no folder (the status bar still showed it).
+    if (isDesktopIdeProjectAlreadyOpen(ctx.workspaceService.opened, ctx.projectsService.projectMatchesCurrentWorkspace(project))) {
         return false;
     }
     // A hosted desktop hub runs at `/` with no workspace (prod 2026-10-06): open the project in
@@ -295,7 +298,7 @@ async function openDesktopIdeProjectExtracted(ctx: MobileOneColumnShellContribut
         );
         return false;
     }
-    if (!sameDesktopIdeCwd(ctx.projectsService.getCurrentWorkspaceCwd(), cwd)) {
+    if (!sameDesktopIdeCwd(ctx.workspaceService.opened ? ctx.projectsService.getCurrentWorkspaceCwd() : undefined, cwd)) {
         MobileSnackbar.show(
             nls.localize(
                 'qaap/mobile/openDesktopIdeOpeningProject',
@@ -430,7 +433,8 @@ export async function onProjectsPanelOpenInIdeExtracted(ctx: MobileOneColumnShel
         return;
     }
     try {
-        if (project.isCurrent) {
+        // `isCurrent` can come from the remembered workspace URI; only an open workspace is "current".
+        if (project.isCurrent && ctx.workspaceService.opened) {
             const cwd = ctx.projectsService.getCurrentWorkspaceCwd();
             if (cwd && isQaapWorkspaceContainerPath(cwd)) {
                 markPreferDesktopIde();

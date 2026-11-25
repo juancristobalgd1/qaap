@@ -45,6 +45,12 @@ import { rememberQaapHostedRuntime } from '../common/qaap-hosted-runtime';
 import { rememberQaapDefaultAgentIdConfig } from '../common/qaap-default-agent-config';
 import { fetchQaapGetWithTransientRetry } from '../common/qaap-transient-get';
 import { takeQaapBootPrefetch } from './qaap-boot-prefetch';
+import {
+    activeGithubPullRequestsBackoff,
+    recordGithubPullRequestsServerError,
+    recordGithubPullRequestsSignInRequired,
+    resetGithubPullRequestsBackoff,
+} from './qaap-github-pull-requests-backoff';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     clearQaapAuthSession,
@@ -182,6 +188,7 @@ let qaapAuthConfigCache: Promise<QaapAuthConfigResponse> | undefined;
 /** Drop the cached `/auth/config` response so the next {@link fetchQaapAuthConfig} refetches. */
 export function invalidateQaapAuthConfigCache(): void {
     qaapAuthConfigCache = undefined;
+    invalidateQaapAuthSessionCache();
 }
 
 async function requestQaapAuthConfig(): Promise<{ config: QaapAuthConfigResponse, cacheable: boolean }> {
@@ -222,7 +229,42 @@ export function fetchQaapAuthConfig(options?: FetchQaapAuthConfigOptions): Promi
     return pending;
 }
 
+/**
+ * Answers of `/auth/session` are shared for this long: one boot asked it 8 times within a second (project sync, PR
+ * inbox, GitHub chips, login contribution...), each a round trip to a possibly cold tenant. Any session change
+ * (`qaap-auth-session-changed`), sign-out or auth-config invalidation drops the shared answer.
+ */
+const QAAP_AUTH_SESSION_SHARE_MS = 1_500;
+let qaapAuthSessionShared: { readonly at: number; readonly answer: Promise<QaapAuthSessionResponse> } | undefined;
+let qaapAuthSessionListenerInstalled = false;
+
+/** Forgets the shared `/auth/session` answer, so the next call asks the server. */
+export function invalidateQaapAuthSessionCache(): void {
+    qaapAuthSessionShared = undefined;
+}
+
 export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {
+    if (!qaapAuthSessionListenerInstalled && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        qaapAuthSessionListenerInstalled = true;
+        window.addEventListener('qaap-auth-session-changed', invalidateQaapAuthSessionCache);
+    }
+    const shared = qaapAuthSessionShared;
+    if (shared && Date.now() - shared.at < QAAP_AUTH_SESSION_SHARE_MS) {
+        return shared.answer;
+    }
+    const answer = requestQaapAuthSession();
+    const entry = { at: Date.now(), answer };
+    qaapAuthSessionShared = entry;
+    // A failed request is never shared: the next caller asks again.
+    answer.catch(() => {
+        if (qaapAuthSessionShared === entry) {
+            qaapAuthSessionShared = undefined;
+        }
+    });
+    return answer;
+}
+
+async function requestQaapAuthSession(): Promise<QaapAuthSessionResponse> {
     const response = await fetchQaapWithTimeout(
         `${QAAP_AUTH_API_PATH}/session`,
         qaapAuthenticatedFetchInit(),
@@ -295,9 +337,10 @@ export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositor
                 QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
             );
         }
-        // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
-        // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
-        clearQaapAuthSession();
+        // Stored GitHub token expired/revoked. The Qaap session is left alone: clearing it locally (ONB-5) could not
+        // end the server session, so the next session sync wrote it back and the Work Hub flipped between signed
+        // in and out (and the repository dialog said "Connected as" and "Sign in" at once). Callers show a
+        // "sign in to GitHub again" action instead.
         throw new QaapUserFacingError(
             nls.localize('qaap/githubRepositories/sessionExpired', 'Your GitHub session expired. Please sign in again.'),
             401,
@@ -310,9 +353,24 @@ export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositor
     return response.json() as Promise<QaapGithubRepositoriesResponse>;
 }
 
+/**
+ * The open pull requests of the signed-in account. While the backoff of a failed earlier answer is in force
+ * (see `qaap-github-pull-requests-backoff.ts`), no request is sent: a 401 answers signed out, a 5xx throws.
+ */
 export async function fetchQaapGithubPullRequests(
     repositories?: readonly string[],
 ): Promise<QaapGithubPullRequestsResponse> {
+    const paused = activeGithubPullRequestsBackoff();
+    if (paused?.reason === 'sign-in') {
+        return { pullRequests: [], signedIn: false };
+    }
+    if (paused) {
+        throw new QaapUserFacingError(
+            nls.localize('qaap/githubPullRequests/temporarilyUnavailable', 'GitHub pull requests are not available right now. Retrying shortly.'),
+            503,
+            'github_pull_requests_backoff',
+        );
+    }
     const reposQuery = repositories?.length
         ? `?repos=${encodeURIComponent(repositories.join(','))}`
         : '';
@@ -326,11 +384,16 @@ export async function fetchQaapGithubPullRequests(
         ),
     );
     if (response.status === 401) {
+        recordGithubPullRequestsSignInRequired();
         return { pullRequests: [], signedIn: false };
     }
     if (!response.ok) {
+        if (response.status >= 500) {
+            recordGithubPullRequestsServerError();
+        }
         throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub pull requests (${response.status})`);
     }
+    resetGithubPullRequestsBackoff();
     const body = await response.json() as Partial<QaapGithubPullRequestsResponse>;
     return {
         pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],

@@ -32,7 +32,14 @@ import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
-import { antigravityBinFor, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import {
+    antigravityBinFor,
+    expireNativeAgentModels,
+    hasNativeAgentModelsEntry,
+    listNativeAgentModels,
+    onDidChangeNativeAgentModels,
+    prepareNativeAgentModels,
+} from './qaap-agent-native-models';
 import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
@@ -71,6 +78,19 @@ const WS_PING_MS = 25_000;
 const WS_PATH = `${QAAP_AGENT_TASK_API_PATH}/ws`;
 /** How long the picker's model request waits for a cold native CLI model discovery. */
 const QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS = 1_200;
+/**
+ * `fresh=1` (right after a sign-in or a provider was connected): wait for the CLI's own listing instead of
+ * answering with the previous catalog. `pi --list-models` takes 1-2 s on an idle tenant, so the regular
+ * budget answered with the old list, the browser cached it and the new provider's models only showed
+ * after a reload.
+ */
+const QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS = 12_000;
+/**
+ * `fresh=1` itself waits longer: after a connect the listing runs on a tenant still busy with the sign-in, and
+ * past 12 s it answered with the old catalog, which the browser then cached (staging, 24 Nov 2026: Groq listed by
+ * the backend, picker still on NVIDIA only). A cold first request keeps the shorter budget above.
+ */
+const QAAP_NATIVE_MODEL_AFTER_CONNECT_DISCOVERY_BUDGET_MS = 25_000;
 /** How long the picker's model request waits for the billing account before answering without it. */
 const QAAP_AGENT_MODELS_BILLING_BUDGET_MS = 800;
 
@@ -135,6 +155,27 @@ export function describeImprovePromptFailure(error: unknown, agentId: string): Q
         error: reason.label,
         kind: reason.kind,
     };
+}
+
+/**
+ * Owner-scoping gate for pushing a `models-changed` event over an agent-tasks WebSocket.
+ * An owner-scoped discovery only reaches sockets authenticated as that exact owner (case-insensitive);
+ * an owner-less discovery only reaches single-user `skip` sockets and never leaks across authenticated users.
+ */
+export function nativeModelChangeMatchesSocketOwner(
+    eventOwnerLogin: string | undefined,
+    socketCtx: QaapGithubAuthContext,
+    socketOwnerLogin: string | undefined,
+): boolean {
+    if (socketCtx.kind === 'unauthorized') {
+        return false;
+    }
+    const eventOwner = eventOwnerLogin?.trim().toLowerCase() || undefined;
+    const socketOwner = socketOwnerLogin?.trim().toLowerCase() || undefined;
+    if (eventOwner !== undefined) {
+        return socketOwner !== undefined && socketOwner === eventOwner;
+    }
+    return socketCtx.kind === 'skip';
 }
 
 @injectable()
@@ -416,13 +457,14 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 client.close(4401, 'Not signed in');
                 return;
             }
+            const socketOwnerLogin = this.auth.resolveUserLogin(ctx);
             const snapshot = {
                 type: 'snapshot',
                 groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()).map(trimTaskGroupCommandsForWire),
                 agentConfigured: this.runner.isAgentConfigured(),
                 qaiqInstalled: this.runner.isQaiqInstalled(),
-                agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
-                defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
+                agents: this.runner.listAgents(socketOwnerLogin),
+                defaultAgent: this.runner.defaultAgent(socketOwnerLogin),
             };
             client.send(JSON.stringify(snapshot));
 
@@ -437,6 +479,16 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                     ? { type: event.type, task: event.task, chunk: event.chunk }
                     : { type: event.type, task: event.task };
                 client.send(JSON.stringify(msg));
+            });
+
+            const modelsSubscription = onDidChangeNativeAgentModels(event => {
+                if (client.readyState !== WsClient.OPEN) {
+                    return;
+                }
+                if (!nativeModelChangeMatchesSocketOwner(event.ownerLogin, ctx, socketOwnerLogin)) {
+                    return;
+                }
+                client.send(JSON.stringify({ type: 'models-changed', agentId: event.agentId }));
             });
 
             const ping = setInterval(() => {
@@ -458,6 +510,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 clearInterval(ping);
                 clearInterval(heartbeat);
                 subscription.dispose();
+                modelsSubscription.dispose();
             };
             client.on('close', cleanup);
             client.on('error', cleanup);
@@ -517,11 +570,23 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const spawner = isInstance
             ? await this.runner.instanceNativeModelSpawner(normalizedAgent, login)
             : this.runner.nativeModelDiscoverySpawner(login);
+        const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
+        if (fresh) {
+            // Right after a sign-in or a newly connected provider: a still-fresh cached list predates it. Expired, not
+            // forgotten, so a listing that fails or overruns keeps serving the last good catalog.
+            expireNativeAgentModels(catalogAgent, login, antigravityBin);
+        }
+        // On a cold cache (first request after a restart) the answer waits the fresh budget too, or the picker caches
+        // the curated fallback for a minute while `pi --list-models` is still running. A harness whose listing
+        // already failed has a fallback entry and answers at once.
+        const awaitLiveDiscovery = fresh || !hasNativeAgentModelsEntry(catalogAgent, login, antigravityBin);
         await this.withinBudget(prepareNativeAgentModels(catalogAgent, {
             ownerLogin: login,
             spawner,
             antigravityBin,
-        }), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
+        }), fresh
+            ? QAAP_NATIVE_MODEL_AFTER_CONNECT_DISCOVERY_BUDGET_MS
+            : awaitLiveDiscovery ? QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS : QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;
@@ -556,7 +621,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // task groups arrive over the WebSocket snapshot instead.
         const ownerLogin = this.auth.resolveUserLogin(ctx);
         if (refresh) {
-            this.runner.refreshAgentCatalog(ownerLogin);
+            // `agent`: the Connect dialog confirming one harness's sign-in re-probes only that harness.
+            const agent = typeof req.query.agent === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(req.query.agent) ? req.query.agent : undefined;
+            this.runner.refreshAgentCatalog(ownerLogin, agent);
         }
         // An explicit refresh (the Connect dialog confirming a sign-in) needs the probe's real
         // answer; the regular picker load answers within the short default budget.
@@ -1162,11 +1229,23 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected filterTaskGroups(ctx: QaapGithubAuthContext, groups: QaapAgentTaskCwdGroup[]): QaapAgentTaskCwdGroup[] {
+        // Each ownership check resolves real paths synchronously, and the tasks of a group almost always share its
+        // cwd: 1.2-2 s of event loop per snapshot on a cold tenant (CPU profile, 24 Nov 2026). Each distinct cwd is
+        // checked once per call; nothing is remembered across requests, so a later symlink swap is still caught.
+        const owned = new Map<string, boolean>();
+        const owns = (cwd: string): boolean => {
+            let answer = owned.get(cwd);
+            if (answer === undefined) {
+                answer = this.auth.ownsWorkspacePath(ctx, cwd);
+                owned.set(cwd, answer);
+            }
+            return answer;
+        };
         return groups
-            .filter(group => this.auth.ownsWorkspacePath(ctx, group.cwd))
+            .filter(group => owns(group.cwd))
             .map(group => ({
                 ...group,
-                tasks: group.tasks.filter(task => this.auth.ownsWorkspacePath(ctx, task.cwd)),
+                tasks: group.tasks.filter(task => owns(task.cwd)),
             }))
             .filter(group => group.tasks.length > 0);
     }

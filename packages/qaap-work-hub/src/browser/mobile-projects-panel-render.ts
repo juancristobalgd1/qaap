@@ -28,7 +28,7 @@ import {
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
-import { QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT, QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 
 export function bindAgentFinishedToastCallbacksExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.agentFinishedToast?.bindPanelCallbacks({
@@ -170,6 +170,7 @@ export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, ctx.onBootstrapPreviewOpened);
     window.removeEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, ctx.onNavigateToConversation);
     window.removeEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, ctx.onAgentSignedOut);
+    window.removeEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, ctx.onAgentModelsChanged);
     ctx.previewFailureHandoff?.dispose();
     ctx.previewFailureHandoff = undefined;
     ctx.closeHeaderOverflowMenu();

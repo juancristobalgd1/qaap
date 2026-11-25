@@ -98,6 +98,7 @@ export type MobileProjectsPanelContextMember =
     | 'mobileIdeViewPicker'
     | 'navigateHubTab'
     | 'notifyWorkspaceHubBottomBarRefresh'
+    | 'onAgentModelsChanged'
     | 'onAgentSignedOut'
     | 'previewFailureHandoff'
     | 'onBootstrapPreviewOpened'

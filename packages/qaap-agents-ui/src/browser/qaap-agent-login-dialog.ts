@@ -6,6 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { localizeAgentSettingsApiKeyLoginMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { createLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
 import {
     QAAP_AGENT_LOGIN_CALLBACK_CHANNEL,
     type QaapAgentLoginCallbackMessage,
@@ -32,6 +33,8 @@ export interface QaapAgentLoginDialogOptions {
     readonly onClose: () => void;
     /** Sends a pasted authorization code to the CLI's stdin. */
     readonly onSubmitCode?: (code: string) => void;
+    /** Sends a secret the CLI asked for (Pi's API key) to its stdin; the host redacts it from kept output. */
+    readonly onSubmitSecret?: (secret: string) => void;
     readonly onRetry?: () => void;
     readonly onInstall?: () => void;
     readonly onOpenSettings?: () => void;
@@ -43,14 +46,31 @@ export interface QaapAgentLoginDialogOptions {
     /** Tooltip of the fallback "Open terminal" action (what to type once it opens). */
     readonly openTerminalHint?: string;
     /**
-     * Pi: the account providers the dialog can sign in to. Picking one calls `onSelect`, and the host
-     * restarts the sign-in for that provider.
+     * Pi: the providers the dialog can connect, shown as a horizontal strip of logos. Picking one calls
+     * `onSelect`, and the host restarts the sign-in for that provider.
      */
     readonly loginProviders?: {
-        readonly options: readonly { readonly id: string; readonly label: string }[];
+        readonly options: readonly QaapAgentLoginProviderOption[];
         readonly selectedId: string;
         readonly onSelect: (id: string) => void;
     };
+}
+
+/** One provider of the Connect dialog's strip. */
+export interface QaapAgentLoginProviderOption {
+    readonly id: string;
+    readonly label: string;
+    /** Name on the chip when `label` is too long for it; `label` stays the tooltip and the subtitle's name. */
+    readonly shortLabel?: string;
+    /** `api_key`: Pi asks for a key instead of a browser sign-in (shown as a caption under the name). */
+    readonly method?: 'account' | 'api_key';
+    /** Brand id for the logo; the provider id when unset (a monogram when there is no curated logo). */
+    readonly brand?: string;
+    /**
+     * Trusted, monochrome SVG markup of the provider's mark (`currentColor`, from a bundled constant,
+     * never from user or CLI input). Preferred over `brand`, so the strip reads alike in both themes.
+     */
+    readonly logoSvg?: string;
 }
 
 function createIcon(className: string): HTMLElement {
@@ -93,6 +113,15 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
     }
     switch (state.reason) {
         case 'timeout':
+            if (state.afterSecret) {
+                // The key was sent, but the CLI never said it was saved: "no sign-in link" would describe another step.
+                return nls.localize(
+                    'qaap/agentLogin/secretNotConfirmed',
+                    '{0} did not confirm the key within {1} seconds. Its last output is below; retry, or check the key.',
+                    agentLabel,
+                    String(Math.round((state.timeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS) / 1000)),
+                );
+            }
             if (state.terminalEchoOnly) {
                 // The terminal printed something (the typed command, the prompt) but the CLI itself did not.
                 const silent = nls.localize(
@@ -180,6 +209,109 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
     }
 }
 
+/** Runs `callback` after the next layout, on the element's own window (none in a test DOM without frames). */
+function afterLayout(element: HTMLElement, callback: () => void): void {
+    const view = element.ownerDocument.defaultView;
+    if (typeof view?.requestAnimationFrame === 'function') {
+        view.requestAnimationFrame(() => callback());
+    }
+}
+
+/**
+ * The provider picker: a horizontal, scroll-snapping strip of logo chips (a radio group). Arrow keys move
+ * the choice, Home/End jump to the ends; the chosen chip is scrolled into view.
+ */
+function createProviderStrip(
+    providers: NonNullable<QaapAgentLoginDialogOptions['loginProviders']>,
+    onChange: (id: string) => void,
+): HTMLElement {
+    const strip = document.createElement('div');
+    strip.className = 'theia-mobile-agent-login-dialog-provider-strip';
+    strip.setAttribute('role', 'radiogroup');
+    strip.setAttribute('aria-label', nls.localize('qaap/mobileProjects/agentLoginDialogProvider', 'Sign-in provider'));
+    let selectedId = providers.selectedId;
+    const chips = providers.options.map(option => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'theia-mobile-agent-login-dialog-provider-chip';
+        chip.dataset.providerId = option.id;
+        chip.setAttribute('role', 'radio');
+        chip.title = option.label;
+        const logo = document.createElement('span');
+        logo.className = 'theia-mobile-agent-login-dialog-provider-logo';
+        if (option.logoSvg) {
+            const mark = document.createElement('span');
+            mark.className = 'theia-mobile-agent-login-dialog-provider-mark';
+            mark.setAttribute('aria-hidden', 'true');
+            mark.innerHTML = option.logoSvg;
+            logo.append(mark);
+        } else {
+            const icon = createLlmProviderIcon(option.brand ?? option.id, undefined, 'md');
+            if (icon) {
+                logo.append(icon);
+            }
+        }
+        const name = document.createElement('span');
+        name.className = 'theia-mobile-agent-login-dialog-provider-name';
+        name.textContent = option.shortLabel ?? option.label;
+        chip.append(logo, name);
+        if (option.method === 'api_key') {
+            const caption = document.createElement('span');
+            caption.className = 'theia-mobile-agent-login-dialog-provider-caption';
+            caption.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogProviderApiKey', 'API key');
+            chip.append(caption);
+        }
+        return chip;
+    });
+    const paint = (): void => {
+        for (const chip of chips) {
+            const checked = chip.dataset.providerId === selectedId;
+            chip.setAttribute('aria-checked', String(checked));
+            chip.classList.toggle('theia-mod-selected', checked);
+            chip.tabIndex = checked ? 0 : -1;
+        }
+    };
+    const reveal = (chip: HTMLElement | undefined, smooth: boolean): void => {
+        chip?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: smooth ? 'smooth' : 'auto' });
+    };
+    const choose = (index: number, focus: boolean): void => {
+        const chip = chips[Math.max(0, Math.min(chips.length - 1, index))];
+        const id = chip?.dataset.providerId;
+        if (!chip || !id) {
+            return;
+        }
+        if (focus) {
+            chip.focus();
+        }
+        reveal(chip, true);
+        if (id === selectedId) {
+            return;
+        }
+        selectedId = id;
+        paint();
+        onChange(id);
+    };
+    chips.forEach((chip, index) => chip.addEventListener('click', () => choose(index, false)));
+    strip.addEventListener('keydown', event => {
+        const current = chips.findIndex(chip => chip.dataset.providerId === selectedId);
+        const next = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? current + 1
+            : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? current - 1
+                : event.key === 'Home' ? 0
+                    : event.key === 'End' ? chips.length - 1
+                        : undefined;
+        if (next === undefined) {
+            return;
+        }
+        event.preventDefault();
+        choose(next, true);
+    });
+    strip.append(...chips);
+    paint();
+    // Once laid out, bring the preselected provider into view (it may be past the first screen).
+    afterLayout(strip, () => reveal(chips.find(chip => chip.dataset.providerId === selectedId), false));
+    return strip;
+}
+
 export function createQaapAgentLoginDialog(
     options: QaapAgentLoginDialogOptions,
 ): QaapAgentLoginDialogController {
@@ -213,30 +345,19 @@ export function createQaapAgentLoginDialog(
     const subtitle = document.createElement('p');
     subtitle.className = 'theia-mobile-agent-login-dialog-subtitle';
     const providers = options.loginProviders;
-    const providerLabel = (id: string | undefined): string | undefined => providers?.options.find(option => option.id === id)?.label;
-    subtitle.textContent = resolveAgentLoginDialogSubtitle(options.agentId, providerLabel(providers?.selectedId));
+    const providerOption = (id: string | undefined): QaapAgentLoginProviderOption | undefined => providers?.options.find(option => option.id === id);
+    const subtitleFor = (id: string | undefined): string => {
+        const option = providerOption(id);
+        return resolveAgentLoginDialogSubtitle(options.agentId, option?.label, option?.method ?? 'account');
+    };
+    subtitle.textContent = subtitleFor(providers?.selectedId);
     const providerRow = document.createElement('div');
     providerRow.className = 'theia-mobile-agent-login-dialog-provider';
     if (providers) {
-        const providerSelect = document.createElement('select');
-        providerSelect.className = 'theia-select theia-mobile-agent-login-dialog-provider-select';
-        providerSelect.setAttribute('aria-label', nls.localize('qaap/mobileProjects/agentLoginDialogProvider', 'Sign-in provider'));
-        for (const option of providers.options) {
-            const choice = document.createElement('option');
-            choice.value = option.id;
-            choice.textContent = option.label;
-            choice.selected = option.id === providers.selectedId;
-            providerSelect.append(choice);
-        }
-        providerSelect.addEventListener('change', () => {
-            const label = providerLabel(providerSelect.value);
-            if (!label) {
-                return;
-            }
-            subtitle.textContent = resolveAgentLoginDialogSubtitle(options.agentId, label);
-            providers.onSelect(providerSelect.value);
-        });
-        providerRow.append(providerSelect);
+        providerRow.append(createProviderStrip(providers, id => {
+            subtitle.textContent = subtitleFor(id);
+            providers.onSelect(id);
+        }));
     }
     const body = document.createElement('div');
     body.className = 'theia-mobile-agent-login-dialog-challenge';
@@ -434,6 +555,45 @@ export function createQaapAgentLoginDialog(
         }
     };
 
+    /**
+     * The CLI asks for a secret (Pi: `Enter Groq API key`): a masked field, never echoed, and only sent
+     * through `onSubmitSecret`, which redacts it from everything the host keeps.
+     */
+    const renderSecretInput = (label: string, submitted: boolean): void => {
+        const form = document.createElement('form');
+        form.className = 'theia-mobile-agent-login-dialog-code-form theia-mobile-agent-login-dialog-secret-form';
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.className = 'theia-input theia-mobile-agent-login-dialog-code-input';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.setAttribute('autocapitalize', 'off');
+        input.setAttribute('aria-label', label);
+        input.placeholder = nls.localize('qaap/mobileProjects/agentLoginDialogSecretPlaceholder', 'Paste your {0}', label);
+        input.disabled = submitted;
+        const submit = document.createElement('button');
+        submit.type = 'submit';
+        submit.className = 'theia-button main theia-mobile-agent-login-dialog-code-submit';
+        submit.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogConnectKey', 'Connect');
+        submit.disabled = true;
+        input.addEventListener('input', () => {
+            submit.disabled = submitted || input.value.trim().length === 0;
+        });
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const value = input.value.trim();
+            if (value && !submitted && options.onSubmitSecret) {
+                input.value = '';
+                options.onSubmitSecret(value);
+            }
+        });
+        form.append(input, submit);
+        body.append(form);
+        if (!submitted) {
+            afterLayout(input, () => input.focus());
+        }
+    };
+
     /** "Open terminal" next to an in-dialog sign-in: the manual route stays one click away. */
     const appendOpenTerminalFallback = (): void => {
         if (!options.onOpenTerminal) {
@@ -468,7 +628,10 @@ export function createQaapAgentLoginDialog(
                 setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogPreparing', 'Preparing secure sign-in…'));
                 break;
             case 'waiting':
-                setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
+                // Pi's TUI takes a while to start before the dialog can drive it: say so instead of a bare "Waiting".
+                setStatus('busy', options.loginProviders
+                    ? nls.localize('qaap/mobileProjects/agentLoginDialogStartingCli', 'Starting {0}… this can take up to a minute.', agentLabel)
+                    : nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
                 appendOpenTerminalFallback();
                 break;
             case 'installing':
@@ -522,6 +685,14 @@ export function createQaapAgentLoginDialog(
             case 'code-submitted':
                 renderChallenge(state.challenge, true);
                 setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogVerifyingCode', 'Verifying the code with {0}…', agentLabel));
+                appendOpenTerminalFallback();
+                break;
+            case 'secret-input':
+            case 'secret-submitted':
+                renderSecretInput(state.label, state.phase === 'secret-submitted');
+                setStatus(state.phase === 'secret-submitted' ? 'busy' : 'none', state.phase === 'secret-submitted'
+                    ? nls.localize('qaap/mobileProjects/agentLoginDialogSavingKey', 'Saving the key in {0}…', agentLabel)
+                    : undefined);
                 appendOpenTerminalFallback();
                 break;
             case 'connected':

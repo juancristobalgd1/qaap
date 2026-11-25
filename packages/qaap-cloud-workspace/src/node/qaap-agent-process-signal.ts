@@ -119,3 +119,41 @@ export function signalAgentProcessTree(child: ChildProcess, signal: NodeJS.Signa
     const leader = signalAgentProcess(pid, signal, identity);
     return group === 'gone' ? leader : 'failed';
 }
+
+/** Whether `pid` still exists: EPERM means it does (it belongs to another uid), ESRCH that it is gone. */
+function agentProcessExists(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'EPERM';
+    }
+}
+
+/**
+ * Hangs up an interactive terminal whose shell runs as the agent uid (`setpriv` in the pty). The terminal server's
+ * own kill comes from a root backend without CAP_KILL, fails with EPERM and is swallowed by node-pty, so every
+ * hidden sign-in terminal kept its shell and the CLI it ran (Pi's TUI) alive after the dialog closed (staging,
+ * 24 Nov 2026). SIGHUP the shell (an interactive bash passes it on to its jobs) and its group as the agent uid,
+ * then SIGKILL whatever is left after `graceMs`.
+ */
+export function hangUpAgentTerminal(
+    pid: number | undefined,
+    identity: AgentProcessIdentity | undefined,
+    graceMs = 3000,
+    schedule: (run: () => void, delayMs: number) => void = (run, delayMs) => {
+        setTimeout(run, delayMs).unref?.();
+    },
+): void {
+    if (!pid || !identity || !agentProcessExists(pid)) {
+        return;
+    }
+    signalAgentProcess(pid, 'SIGHUP', identity);
+    signalAgentProcess(-pid, 'SIGHUP', identity);
+    schedule(() => {
+        if (agentProcessExists(pid)) {
+            signalAgentProcess(-pid, 'SIGKILL', identity);
+            signalAgentProcess(pid, 'SIGKILL', identity);
+        }
+    }, graceMs);
+}

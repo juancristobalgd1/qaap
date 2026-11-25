@@ -532,10 +532,30 @@ function openSealedSettings(settings: Record<string, unknown>, ownerLogin: strin
         try {
             opened[key] = cipher.decrypt(value, userSettingAad(ownerLogin, key));
         } catch (error) {
-            console.warn(`[qaap-agent-tasks] could not open sealed setting ${key}:`, error instanceof Error ? error.message : String(error));
+            warnUnreadableSealedSettingOnce(ownerLogin, key, error instanceof Error ? error.message : String(error));
         }
     }
     return opened;
+}
+
+/** `owner\0key\0reason` of each unreadable sealed setting already logged. */
+const loggedUnreadableSealedSettings = new Set<string>();
+
+/**
+ * Settings are read on every agent spawn and catalog refresh: one value sealed with another server's key
+ * logged five lines per read, 1,760 lines in 15 minutes on staging (24 Nov 2026). Logged once per owner,
+ * key and reason; the settings UI still reports it through {@link listUnreadableSealedUserSettings}.
+ */
+function warnUnreadableSealedSettingOnce(ownerLogin: string | undefined, key: string, reason: string): void {
+    const id = `${(ownerLogin ?? '').trim().toLowerCase()}\0${key}\0${reason}`;
+    if (loggedUnreadableSealedSettings.has(id)) {
+        return;
+    }
+    if (loggedUnreadableSealedSettings.size >= 512) {
+        loggedUnreadableSealedSettings.clear();
+    }
+    loggedUnreadableSealedSettings.add(id);
+    console.warn(`[qaap-agent-tasks] could not open sealed setting ${key}:`, reason);
 }
 
 /** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. Credentials are sealed at rest. */
@@ -618,7 +638,7 @@ function openOrUndefined(value: unknown, aad: string, cipher: QaapSecretCipher):
  * file already holds a different value (or an unreadable sealed one) the Theia copy stays where it is.
  * Only `ai-features.*` credential keys are moved, because the per-user file stores nothing else.
  */
-export function migrateTenantSharedCredentialSettings(ownerLogin: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): void {
+function runTenantSharedCredentialMigration(ownerLogin: string, homeDir: string, env: NodeJS.ProcessEnv): void {
     const cipher = QaapSecretCipher.fromEnvironment(env);
     if (!cipher.isEnabled()) {
         return;
@@ -673,6 +693,43 @@ export function migrateTenantSharedCredentialSettings(ownerLogin: string, homeDi
     try { fs.chmodSync(sharedPath, 0o600); } catch { /* best-effort */ }
 }
 
+/**
+ * Last shared-settings fingerprint ({@link sharedSettingsFingerprint}) that a successful migration ran against,
+ * keyed by home directory and owner. Lets every settings read skip the migration until the shared file changes.
+ */
+const tenantCredentialMigrationRuns = new Map<string, string>();
+
+/** Test seam: forget which shared settings files were already migrated in this process. */
+export function resetTenantCredentialMigrationMemoForTests(): void {
+    tenantCredentialMigrationRuns.clear();
+}
+
+/** Identity of the shared `~/.theia/settings.json` (mtime and size); `missing` when the file does not exist. */
+function sharedSettingsFingerprint(sharedPath: string): string {
+    try {
+        const stat = fs.statSync(sharedPath);
+        return `${stat.mtimeMs}:${stat.size}`;
+    } catch {
+        return 'missing';
+    }
+}
+
+/**
+ * Runs {@link runTenantSharedCredentialMigration} at most once per process per (owner, home directory) until the
+ * shared settings file changes. A failed run is not remembered, so the next read retries it.
+ */
+export function migrateTenantSharedCredentialSettings(ownerLogin: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): void {
+    const memoKey = `${homeDir}\u0000${ownerLogin}`;
+    // Fingerprint before the run: a run that rewrites the shared file leaves a changed fingerprint, so the
+    // next read runs once more (a no-op) and then settles.
+    const fingerprint = sharedSettingsFingerprint(path.join(homeDir, '.theia', 'settings.json'));
+    if (tenantCredentialMigrationRuns.get(memoKey) === fingerprint) {
+        return;
+    }
+    runTenantSharedCredentialMigration(ownerLogin, homeDir, env);
+    tenantCredentialMigrationRuns.set(memoKey, fingerprint);
+}
+
 /** Minimal preference seam: the runner passes the backend `PreferenceService`; tests may pass a stub. */
 export interface QaapOwnerPreferenceSource {
     get?(key: string): unknown;
@@ -708,11 +765,13 @@ export function preferenceReaderForOwner(ctx: QaapOwnerSettingsSource, ownerLogi
     if (usesSharedAiSettingsFallback(ownerLogin) && isQaapMultiUserBackend()) {
         return (key: string): unknown => schemaDefaultForAiSetting(preferenceService, key);
     }
-    const diskSettings = ctx.readUserSettingsFromDisk(ownerLogin);
+    // Read on the first key, then reused: one reader is one disk read, and none when no key is asked for.
+    let diskSettings: Record<string, unknown> | undefined;
+    const disk = (): Record<string, unknown> => (diskSettings ??= ctx.readUserSettingsFromDisk(ownerLogin));
     if (!usesSharedAiSettingsFallback(ownerLogin)) {
         // Authenticated tenants: their own settings.json, else the schema default — never shared/User-scope values.
         return (key: string): unknown => {
-            const value = diskSettings[key];
+            const value = disk()[key];
             // eslint-disable-next-line no-null/no-null
             return value !== undefined && value !== null ? value : schemaDefaultForAiSetting(preferenceService, key);
         };
@@ -723,8 +782,17 @@ export function preferenceReaderForOwner(ctx: QaapOwnerSettingsSource, ownerLogi
         if (fromPref !== undefined && fromPref !== null && fromPref !== '') {
             return fromPref;
         }
-        return diskSettings[key];
+        return disk()[key];
     };
+}
+
+/**
+ * A reader created on its first key and reused after: for call sites where most runs read no setting at all (a
+ * harness instance route is only looked up for `codex#2`-style ids).
+ */
+export function lazyPreferenceReader(create: () => QaapPreferenceReader): QaapPreferenceReader {
+    let reader: QaapPreferenceReader | undefined;
+    return (key: string): unknown => (reader ??= create())(key);
 }
 
 // ─── Provider env stripping ──────────────────────────────────────────────────

@@ -69,7 +69,8 @@ export const QAAP_PI_TUI_LOGIN_COMMAND = 'pi --tui-mode regular --no-session --n
  * 80-column TUI wraps mid-URL. `PI_HYPERLINKS=1` makes Pi emit the whole sign-in URL as an OSC-8
  * target, which the dialog collects whatever the wrapping.
  */
-export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPERLINKS: '1' };
+// The sign-in terminal also skips Pi's npm version check and telemetry: network round trips before the TUI is ready.
+export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPERLINKS: '1', PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0' };
 /**
  * The TUI is drawn and owns stdin: its startup header (version, `/ commands` hint, onboarding line),
  * the editor's horizontal rules (a quiet `quietStartup` header still draws them) or the no-models
@@ -78,20 +79,37 @@ export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPE
 const PI_READY_PATTERN = '\\bv\\d+\\.\\d+\\.\\d+\\b|\\bcommands\\b|Pi can explain|No models available|─{20,}';
 /** `Select authentication method for OpenRouter:` (Sign in with OpenRouter / with an API key). */
 const PI_AUTH_METHOD_PICKER_PATTERN = 'Select authentication method';
+/** Cursor-down: moves Pi's method picker from "Sign in with <Provider>" to "Sign in with an API key". */
+const PI_DOWN_KEY = '\x1b[B';
+
 /**
- * Keystrokes that take Pi from its editor to the provider's browser sign-in (OpenRouter verified
- * against Pi 1.4.0 in a PTY): `/login <provider>` + Enter shows the autocomplete row, a second Enter
- * opens the method picker, a third picks its default "Sign in with <Provider>" entry. Providers with
- * an extra login screen (Anthropic's method choice, GitHub Copilot's enterprise domain) get one more
- * Enter for it. Pi then prints the authorization URL, or the device code.
+ * Keystrokes that take Pi from its editor to the provider's sign-in (verified against Pi 1.4.0 and
+ * 1.5.2 in a PTY): `/login <provider>` + Enter accepts the autocomplete row, a second Enter runs it.
+ * - Account sign-in: Pi opens the method picker, a third Enter picks its default "Sign in with
+ *   <Provider>" entry. Providers with an extra login screen (Anthropic's method choice, GitHub Copilot's
+ *   enterprise domain) get one more Enter for it. Pi then prints the authorization URL or device code.
+ * - API key: Pi asks `Enter <provider> API key` right away; a provider that also has an account
+ *   sign-in shows the method picker first, where Down + Enter picks "Sign in with an API key". The
+ *   key itself is typed later, by the dialog, once the user pastes it.
  */
 export function resolvePiTuiLoginInput(provider: string): readonly QaapAgentLoginInputStep[] {
-    const loginScreenPattern = resolvePiLoginProvider(provider)?.loginScreenPattern;
-    return [
-        // One Ctrl-C closes a provider selector a stale Enter opened and clears a stale editor line
-        // (a second one within 500 ms would exit Pi, so the reset is a single key).
-        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 8_000, resetText: '\x03' },
+    const resolved = resolvePiLoginProvider(provider);
+    // One Ctrl-C closes a provider selector a stale Enter opened and clears a stale editor line
+    // (a second one within 500 ms would exit Pi, so the reset is a single key).
+    const open: readonly QaapAgentLoginInputStep[] = [
+        // Pi draws its TUI 12-23 s after start on a 1-CPU tenant (staging, 24 Nov 2026): falling back sooner types
+        // into a CLI that is not reading yet (the driver then retypes once the ready pattern shows).
+        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 30_000, resetText: '\x03' },
         { text: '\r' },
+    ];
+    if (resolved?.method === 'api_key') {
+        return resolved.hasAccountMethod
+            ? [...open, { text: '\r', skipWhen: PI_AUTH_METHOD_PICKER_PATTERN }, { text: PI_DOWN_KEY, waitFor: PI_AUTH_METHOD_PICKER_PATTERN }, { text: '\r' }]
+            : [...open, { text: '\r' }];
+    }
+    const loginScreenPattern = resolved?.loginScreenPattern;
+    return [
+        ...open,
         { text: '\r', skipWhen: PI_AUTH_METHOD_PICKER_PATTERN },
         { text: '\r', waitFor: PI_AUTH_METHOD_PICKER_PATTERN },
         ...(loginScreenPattern ? [{ text: '\r', waitFor: loginScreenPattern, fallbackMs: 8_000 }] : []),

@@ -56,7 +56,7 @@ export interface MobileProjectsStickyComposerAgentsHost {
     activeTasks?: MobileProjectsActiveTasks;
     readPreference?: (key: string) => unknown;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot>;
+    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<QaapAgentTaskListSnapshot>;
     resolveConversationAgentLabel(agentId: string | undefined): string;
     projectRowsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
 }
@@ -272,6 +272,9 @@ export class MobileProjectsStickyComposerAgentsUi {
                 catalog = [];
             }
         }
+        if (catalog.length > 0) {
+            this.rememberModelLabels(catalog);
+        }
         if (cwd) {
             return ensureStoredAgentModel(cwd, agentId, catalog);
         }
@@ -312,13 +315,9 @@ export class MobileProjectsStickyComposerAgentsUi {
             seen.add(key);
             candidates.push(agentId);
         }
-        // Start every harness's model catalog at once. The loop below consumes them in picker order, so the
-        // first usable harness still wins, but a slow or hung catalog no longer delays the ones behind it.
-        for (const agentId of candidates) {
-            if (agentId.toLowerCase() !== 'qaiq') {
-                void fetchAgentModelsForAgent(agentId).catch(() => undefined);
-            }
-        }
+        // Candidates are asked one at a time, in picker order: the current harness first, and the next one only when
+        // the one before has no usable model. Prefetching every catalog at once made each open fire one fetch per
+        // harness, several of them slow on a cold tenant.
         for (const agentId of candidates) {
             const key = agentId.toLowerCase();
             const model = await this.ensureStickyComposerAgentModel(
@@ -364,21 +363,26 @@ export class MobileProjectsStickyComposerAgentsUi {
     /** Last catalog request per cwd: re-renders inside the window reuse the loaded catalog. */
     protected lastStickyCatalogRefresh: { readonly cwd: string; readonly at: number } | undefined;
 
-    async refreshStickyComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
+    async refreshStickyComposerAgents(
+        project: MobileProjectEntry,
+        options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string; readonly revalidate?: boolean },
+    ): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         // The composer re-renders on every transcript tick; without this each render hit
         // GET /agent-tasks/all. Skip only when the catalog is already loaded for this cwd.
         const cwdKey = cwd ?? '';
         const now = Date.now();
-        if (!options?.forceRefresh && this.host.stickyComposerBackendAgents.length > 0
+        if (!options?.forceRefresh && !options?.revalidate && this.host.stickyComposerBackendAgents.length > 0
             && this.lastStickyCatalogRefresh?.cwd === cwdKey
             && now - this.lastStickyCatalogRefresh.at < STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS) {
             return true;
         }
         this.lastStickyCatalogRefresh = { cwd: cwdKey, at: now };
         try {
-            const snapshot = await this.host.loadBackendAgentSnapshot(options);
+            const snapshot = await this.host.loadBackendAgentSnapshot(
+                options ? { forceRefresh: options.forceRefresh, refreshAgent: options.refreshAgent } : undefined,
+            );
             let pickerAgents = this.getComposerAgentPickerAgents(snapshot.agents);
             let filteredAgents = this.filterSelectableComposerAgents(pickerAgents);
             // The backend answer is authoritative once the live task stream has reported agents; the
@@ -480,6 +484,14 @@ export class MobileProjectsStickyComposerAgentsUi {
         return agent?.session === 'signed-out' && agent.available !== true;
     }
 
+    /**
+     * Whether a harness may still be signed in: everything except a catalog that reads it as signed out. Unlike
+     * {@link isAgentConnected}, a probe that is still `unknown` (a fresh backend restart) counts as not signed out.
+     */
+    isAgentNotSignedOut(agentId: string | undefined): boolean {
+        return !this.isAgentDisconnected(agentId);
+    }
+
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {
         renderAgentPickerSkeleton(chrome.list);
     }
@@ -543,7 +555,11 @@ export class MobileProjectsStickyComposerAgentsUi {
         options?: { force?: boolean },
     ): Promise<readonly QaapAgentTaskAgentOption[]> {
         if (options?.force || this.host.stickyComposerBackendAgents.length === 0) {
-            const loaded = await this.refreshStickyComposerAgents(project, { forceRefresh: !!options?.force });
+            // Opening the picker asks for the list again, but never with `refresh=1`: that re-detected every CLI and
+            // re-probed all seven harnesses (a fork each from a large backend, ~0.45 s apiece on a 1-CPU tenant),
+            // an 8 s event-loop stall per open on staging (CPU profile, 24 Nov 2026). Stale sign-in states are
+            // re-probed by the backend on its own; the Connect dialog still forces the one harness it signed in.
+            const loaded = await this.refreshStickyComposerAgents(project, { revalidate: !!options?.force });
             if (!loaded) {
                 throw new Error('Agent catalog unavailable');
             }

@@ -27,12 +27,12 @@ interface Sent {
  * Replays output through the driver with the product's timings: a tick every 250 ms, output fed at
  * its time. `redrawEveryMs` repeats the editor frame after the last chunk (the TUI keeps redrawing).
  */
-function replay(chunks: readonly Chunk[], endMs: number, redrawEveryMs?: number): { readonly sent: Sent[]; readonly restarts: number[]; readonly driver: QaapAgentLoginInputDriver } {
+function replay(chunks: readonly Chunk[], endMs: number, redrawEveryMs?: number, provider = 'openrouter'): { readonly sent: Sent[]; readonly restarts: number[]; readonly driver: QaapAgentLoginInputDriver } {
     const sent: Sent[] = [];
     const restarts: number[] = [];
     let clock = 0;
     const driver = new QaapAgentLoginInputDriver({
-        steps: resolvePiTuiLoginInput('openrouter'),
+        steps: resolvePiTuiLoginInput(provider),
         now: 0,
         send: text => sent.push({ at: clock, text }),
         onRestart: now => restarts.push(now),
@@ -55,8 +55,8 @@ function replay(chunks: readonly Chunk[], endMs: number, redrawEveryMs?: number)
     return { sent, restarts, driver };
 }
 
-function loginTypings(sent: readonly Sent[]): number[] {
-    return sent.filter(entry => entry.text === '/login openrouter').map(entry => entry.at);
+function loginTypings(sent: readonly Sent[], provider = 'openrouter'): number[] {
+    return sent.filter(entry => entry.text === `/login ${provider}`).map(entry => entry.at);
 }
 
 describe('QaapAgentLoginInputDriver restart after a fallback send', () => {
@@ -68,48 +68,68 @@ describe('QaapAgentLoginInputDriver restart after a fallback send', () => {
     });
 
     it('case C: no header, rule rows at 0.3 s: step 1 follows the rules without waiting for the fallback', () => {
-        const { sent, restarts } = replay([{ atMs: 300, text: NO_MODELS + EDITOR_FRAME }], 12_000, 100);
+        const { sent, restarts } = replay([{ atMs: 300, text: NO_MODELS + EDITOR_FRAME }], 34_000, 100);
         const typed = loginTypings(sent);
         expect(typed).to.have.length(1);
-        // Redraws every 100 ms keep the output from settling: the 1.5 s match grace applies, not the 8 s fallback.
+        // Redraws every 100 ms keep the output from settling: the 1.5 s match grace applies, not the 30 s fallback.
         expect(typed[0]).to.be.lessThan(2_500);
         expect(restarts).to.deep.equal([]);
     });
 
-    it('case D: Pi draws its UI only at 9 s after the 8 s fallback: step 1 is typed again once, after the rules', () => {
-        const { sent, restarts } = replay([{ atMs: 9_000, text: NO_MODELS + EDITOR_FRAME }], 14_000);
+    it('case D: Pi draws its UI only at 31 s after the 30 s fallback: step 1 is typed again once, after the rules', () => {
+        const { sent, restarts } = replay([{ atMs: 31_000, text: NO_MODELS + EDITOR_FRAME }], 36_000);
         const typed = loginTypings(sent);
         expect(typed).to.have.length(2);
-        expect(typed[0]).to.equal(8_000);
-        expect(typed[1]).to.be.greaterThan(9_000).and.lessThan(10_000);
+        expect(typed[0]).to.equal(30_000);
+        expect(typed[1]).to.be.greaterThan(31_000).and.lessThan(32_000);
         expect(restarts).to.have.length(1);
-        expect(restarts[0]).to.equal(9_000);
+        expect(restarts[0]).to.equal(31_000);
         // The reset (one Ctrl-C) goes out once, at the restart, before the sequence is typed again.
         const resets = sent.filter(entry => entry.text === '\x03');
         expect(resets).to.have.length(1);
-        expect(resets[0].at).to.equal(9_000);
+        expect(resets[0].at).to.equal(31_000);
     });
 
     it('case E: same cold start while the TUI keeps redrawing every 100 ms: still one restart', () => {
-        const { sent, restarts } = replay([{ atMs: 9_000, text: NO_MODELS + EDITOR_FRAME }], 14_000, 100);
+        const { sent, restarts } = replay([{ atMs: 31_000, text: NO_MODELS + EDITOR_FRAME }], 36_000, 100);
         expect(loginTypings(sent)).to.have.length(2);
         expect(restarts).to.have.length(1);
     });
 
-    it('quiet forever: the fallback sends step 1 once at 8 s and never restarts', () => {
-        const { sent, restarts } = replay([], 20_000);
-        expect(loginTypings(sent)).to.deep.equal([8_000]);
+    it('quiet forever: the fallback sends step 1 once at 30 s and never restarts', () => {
+        const { sent, restarts } = replay([], 45_000);
+        expect(loginTypings(sent)).to.deep.equal([30_000]);
         expect(restarts).to.deep.equal([]);
     });
 
     it('restarts at most once: a later ready signal does not type the sequence a third time', () => {
         const { sent, restarts } = replay([
-            { atMs: 9_000, text: NO_MODELS + EDITOR_FRAME },
-            { atMs: 15_000, text: NO_MODELS + EDITOR_FRAME },
-            { atMs: 20_000, text: NO_MODELS + EDITOR_FRAME },
-        ], 24_000, 100);
+            { atMs: 31_000, text: NO_MODELS + EDITOR_FRAME },
+            { atMs: 37_000, text: NO_MODELS + EDITOR_FRAME },
+            { atMs: 42_000, text: NO_MODELS + EDITOR_FRAME },
+        ], 46_000, 100);
         expect(loginTypings(sent)).to.have.length(2);
         expect(restarts).to.have.length(1);
+    });
+
+    it('Groq on staging: the whole API-key sequence went out by fallback before Pi drew its TUI: still retyped once', () => {
+        // Was: the driver counted as done once its three steps were typed, stopped reading output, and the
+        // banner Pi drew afterwards never triggered the restart, so the key prompt never came (QA, 24 Nov 2026).
+        const { sent, restarts, driver } = replay([{ atMs: 40_000, text: NO_MODELS + EDITOR_FRAME }], 50_000, undefined, 'groq');
+        const typed = loginTypings(sent, 'groq');
+        expect(typed).to.have.length(2);
+        expect(typed[0]).to.equal(30_000);
+        expect(typed[1]).to.be.greaterThan(40_000);
+        expect(restarts).to.deep.equal([40_000]);
+        expect(driver.done).to.equal(true);
+    });
+
+    it('stays live after a fallback-typed sequence until the restart it still allows', () => {
+        const { driver } = replay([], 45_000, undefined, 'groq');
+        expect(driver.position).to.equal(resolvePiTuiLoginInput('groq').length);
+        expect(driver.done).to.equal(false);
+        driver.stop();
+        expect(driver.done).to.equal(true);
     });
 });
 

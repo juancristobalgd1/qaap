@@ -131,6 +131,8 @@ export class MobileProjectsAgentsHubInlineUi {
     constructor(protected readonly host: MobileProjectsAgentsHubInlineHost) { }
 
     protected agentsHubExecutionHeaderProjectId: string | undefined;
+    /** Conversation the inline tab strip was built for (the idle shell's summary when none is open). */
+    protected agentsHubExecutionHeaderSummaryId: string | undefined;
     /** Last streaming conversation the hub shell rendered — kept on screen if its run is cancelled. */
     protected lastShellStreamingConversationId: string | undefined;
     /** Runs that were live when the user tapped "New task": the idle shell must not adopt them again. */
@@ -594,9 +596,11 @@ export class MobileProjectsAgentsHubInlineUi {
         const projectChanged = this.agentsHubExecutionHeaderProjectId !== project.id;
         this.agentsHubExecutionHeaderProjectId = project.id;
         const existingStrip = this.host.agentsHubInlineTabStrip;
+        // Reused while it was built for this project and conversation. Was: compared with transcriptOpenSummaryId,
+        // which is unset on the hub's idle shell, so every list render rebuilt the tabs (they flashed).
         if (existingStrip?.isConnected
             && !projectChanged
-            && this.host.transcriptOpenSummaryId === summary.id) {
+            && this.agentsHubExecutionHeaderSummaryId === summary.id) {
             this.host.executionSurfaceTabsUi.refreshExecutionSurfaceTabStripState(existingStrip, activeTab);
             this.host.executionSurfaceTabsUi.restoreActiveExecutionSurface(project, summary);
             this.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
@@ -606,6 +610,7 @@ export class MobileProjectsAgentsHubInlineUi {
             return;
         }
         const tabStrip = this.host.executionSurfaceTabsUi.buildTranscriptTabStrip(project, summary);
+        this.agentsHubExecutionHeaderSummaryId = summary.id;
         this.host.headerExecutionTabsHost.hidden = false;
         this.host.headerExecutionTabsHost.replaceChildren(tabStrip);
         this.host.agentsHubInlineTabStrip = tabStrip;
@@ -635,6 +640,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptReviewHost = undefined;
         this.host.transcriptPreviewHost = undefined;
         this.agentsHubExecutionHeaderProjectId = undefined;
+        this.agentsHubExecutionHeaderSummaryId = undefined;
         this.host.disposeTranscriptEmbeddedPreview();
         this.host.transcriptFilesHost = undefined;
         this.host.transcriptTerminalHost = undefined;
@@ -667,6 +673,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptFilesHost = undefined;
         this.host.transcriptTerminalHost = undefined;
         this.agentsHubExecutionHeaderProjectId = undefined;
+        this.agentsHubExecutionHeaderSummaryId = undefined;
     }
 
     protected isSameInlineTranscriptOpen(

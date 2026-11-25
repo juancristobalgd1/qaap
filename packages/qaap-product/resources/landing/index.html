@@ -1112,6 +1112,32 @@ footer { border-top: 1px solid var(--line); }
     </div>
 </footer>
 
+<script>
+/*
+ * The login gate sends a visitor here when the browser has no "signed in" flag in localStorage, without asking the
+ * server (the session is an HttpOnly cookie, so the gate cannot see it). A flag cleared while the cookie stayed valid
+ * (another tab, cleared site data, the PR inbox's old session-clear loop) left a signed-in user on this page. Ask the
+ * server once; when it says signed in, go back to the app (`?signin=1` makes the gate check the session and load it).
+ */
+(function () {
+    try {
+        if (new URLSearchParams(window.location.search).has('landing') || !window.fetch) {
+            return;
+        }
+        var controller = typeof AbortController === 'function' ? new AbortController() : undefined;
+        var timer = controller ? setTimeout(function () { controller.abort(); }, 4000) : undefined;
+        fetch('/qaap/api/auth/session', { credentials: 'include', cache: 'no-store', signal: controller && controller.signal })
+            .then(function (response) { return response.ok ? response.json() : undefined; })
+            .then(function (session) {
+                if (session && session.signedIn === true) {
+                    window.location.replace('/?signin=1');
+                }
+            })
+            .catch(function () { /* stay on the landing page */ })
+            .then(function () { if (timer) { clearTimeout(timer); } });
+    } catch (e) { /* stay on the landing page */ }
+})();
+</script>
 <script src="/landing/qaap-desktop-download.js"></script>
 <script>
 (function () {

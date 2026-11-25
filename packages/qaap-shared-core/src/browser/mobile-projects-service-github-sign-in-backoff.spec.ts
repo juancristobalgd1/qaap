@@ -8,6 +8,7 @@ import * as sinon from 'sinon';
 import * as qaapAuthSession from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import * as qaapGithubAuthClient from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { QAAP_GITHUB_SIGN_IN_REQUIRED_CODE } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { QaapUserFacingError } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { loadGithubProjectsExtracted, resetGithubSignInRequiredBackoffForTests } from './mobile-projects-service-timeline';
 import type { MobileProjectsServiceContext } from './mobile-projects-service-context';
 
@@ -53,6 +54,16 @@ describe('mobile-projects-service-timeline: GitHub sign-in required backoff', ()
         expect(warn.callCount).to.equal(0);
     });
 
+    it('backs off the same way when the stored GitHub token expired (session_expired)', async () => {
+        fetchRepositories.rejects(new QaapUserFacingError('Your GitHub session expired. Please sign in again.', 401, 'session_expired'));
+        for (let call = 0; call < 5; call++) {
+            expect(await loadGithubProjectsExtracted(ctx, new Map(), false)).to.deep.equal([]);
+        }
+        expect(fetchRepositories.callCount).to.equal(1);
+        expect(info.callCount).to.equal(1);
+        expect(warn.callCount).to.equal(0);
+    });
+
     it('retries once the backoff has elapsed', async () => {
         await loadGithubProjectsExtracted(ctx, new Map(), false);
         clock.tick(59_000);
@@ -73,6 +84,18 @@ describe('mobile-projects-service-timeline: GitHub sign-in required backoff', ()
         }
         expect(thrown).to.be.instanceOf(qaapGithubAuthClient.QaapApiRequestError);
         expect(fetchRepositories.callCount).to.equal(2);
+    });
+
+    it('hands an expired GitHub token to the import dialog instead of an empty list', async () => {
+        fetchRepositories.rejects(new QaapUserFacingError('Your GitHub session expired. Please sign in again.', 401, 'session_expired'));
+        let thrown: unknown;
+        try {
+            await loadGithubProjectsExtracted(ctx, new Map(), true, true);
+        } catch (err) {
+            thrown = err;
+        }
+        // Was: an empty list, so the dialog said "Sign in with GitHub" under "Connected as <login>".
+        expect((thrown as { code?: string } | undefined)?.code).to.equal('session_expired');
     });
 
     it('stops backing off after a local sign-out and logs again on the next episode', async () => {

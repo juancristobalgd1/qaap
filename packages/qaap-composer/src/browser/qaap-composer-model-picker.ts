@@ -45,6 +45,8 @@ export interface QaapComposerModelPickerProps {
     readonly onClose: () => void;
     /** Connection strip above the list when the selected harness needs a sign-in or an API key. */
     readonly connect?: { readonly message: string; readonly actionLabel: string; readonly onAction: () => void };
+    /** Secondary action under the list: adds another provider to a harness that is already connected. */
+    readonly connectAnother?: { readonly label: string; readonly onAction: () => void };
 }
 
 interface PickerHostState {
@@ -376,6 +378,9 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     const models = QaapComposerModelPickerModel.visibleModels(props.state);
     const favorites = new Set(props.state.favorites);
     const compact = !props.isMobile;
+    // Pi lists the models of every provider connected in Pi: the provider is named on each row only when they mix.
+    const piVendors = new Set(props.state.models.filter(model => model.agentId === 'pi' && model.vendor).map(model => model.vendor));
+    const showPiProvider = piVendors.size > 1;
     models.forEach((model, index) => {
         const key = QaapComposerModelPickerModel.favoriteKey(model.agentId, model.modelId);
         const isCurrent = model.agentId === props.state.currentAgentId && model.modelId === props.state.currentModelId;
@@ -415,6 +420,12 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         label.className = 'qaap-model-picker-row-label';
         label.textContent = model.label;
         row.append(label);
+        if (showPiProvider && model.agentId === 'pi' && model.providerLabel) {
+            const provider = document.createElement('span');
+            provider.className = 'qaap-model-picker-row-provider';
+            provider.textContent = model.providerLabel;
+            row.append(provider);
+        }
         if (model.tier) {
             const tier = document.createElement('span');
             tier.className = 'qaap-model-picker-row-paid';
@@ -469,6 +480,17 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         rows.append(empty);
     }
     section.append(search, rows);
+    if (props.connectAnother) {
+        const another = document.createElement('button');
+        another.type = 'button';
+        another.className = 'qaap-model-picker-connect-another';
+        another.textContent = props.connectAnother.label;
+        another.addEventListener('click', ev => {
+            ev.preventDefault();
+            props.connectAnother?.onAction();
+        });
+        section.append(another);
+    }
     return section;
 }
 

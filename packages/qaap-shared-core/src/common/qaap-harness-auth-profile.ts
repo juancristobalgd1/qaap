@@ -132,7 +132,9 @@ const HARNESS_AUTH_BLUEPRINTS: Readonly<Record<string, QaapHarnessLoginProfileBl
     pi: {
         login: {
             validationKind: 'tui-driven',
-            challengeTimeoutMs: 30_000,
+            // Pi 1.5 takes 12-23 s to draw its TUI on a 1-CPU tenant and then asks for an API key or prints a link
+            // (measured on staging, 24 Nov 2026: Groq's key prompt came at ~30 s, right on the old 30 s deadline).
+            challengeTimeoutMs: 75_000,
         },
     },
     cursor: {

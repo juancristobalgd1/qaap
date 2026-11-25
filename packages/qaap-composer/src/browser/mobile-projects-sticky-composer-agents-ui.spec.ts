@@ -140,7 +140,7 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         });
     });
 
-    it('forwards forceRefresh to the backend even inside the catalog throttle window', async () => {
+    it('asks the backend again on a forced ensure inside the throttle window, without forcing a re-probe of every harness', async () => {
         const requests: ({ readonly forceRefresh?: boolean } | undefined)[] = [];
         const host = createHost();
         host.stickyComposerRenderUi = {
@@ -164,7 +164,8 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
 
         expect(requests).to.have.length(2);
         expect(requests[0]?.forceRefresh).to.not.equal(true);
-        expect(requests[1]?.forceRefresh).to.equal(true);
+        // Was `true`: every picker open re-detected every CLI and re-probed all harnesses (an 8 s stall on staging).
+        expect(requests[1]?.forceRefresh).to.not.equal(true);
     });
 
     it('flags only signed-out harnesses as disconnected, not ones still being probed', () => {
@@ -207,6 +208,21 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         expect(ui.isAgentConnected('codex')).to.equal(true);
         expect(ui.isAgentConnected('opencode')).to.equal(false);
         expect(ui.isAgentConnected('missing')).to.equal(false);
+    });
+
+    it('treats a harness whose probe has not answered after a restart as not signed out, but a signed-out one as signed out', () => {
+        const host = createHost();
+        host.stickyComposerBackendAgents = [
+            { id: 'pi', label: 'Pi', available: true, connectionState: 'unknown', session: 'unknown' },
+            { id: 'claude', label: 'Claude Code', available: true, connectionState: 'connected', session: 'signed-in' },
+            { id: 'opencode', label: 'OpenCode', available: false, connectionState: 'disconnected', session: 'signed-out' },
+        ];
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        expect(ui.isAgentConnected('pi')).to.equal(false);
+        expect(ui.isAgentNotSignedOut('pi')).to.equal(true);
+        expect(ui.isAgentNotSignedOut('claude')).to.equal(true);
+        expect(ui.isAgentNotSignedOut('opencode')).to.equal(false);
     });
 
     it('does not report a harness whose auth probe has not answered yet as connected', () => {

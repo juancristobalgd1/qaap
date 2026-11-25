@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { execFileKillingGroup } from './qaap-exec-file-group';
 import { type ChildProcess, execFile, spawn as spawnChild } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -38,14 +39,249 @@ interface NativeModelCacheEntry {
 const cache = new Map<string, NativeModelCacheEntry>();
 /** A live CLI catalog is served for this long before a background refresh runs. */
 export const NATIVE_MODEL_CACHE_TTL_MS = 6 * 60 * 60_000;
+/**
+ * Pi's catalog follows the providers connected inside Pi (its own auth.json), which can change outside Qaap's
+ * Connect dialog: a key removed in a terminal, `/logout`. The live list is still served at once; it is just relisted
+ * behind the request this often instead of every 6 hours, so a removed provider leaves the picker within minutes.
+ */
+export const PI_NATIVE_MODEL_CACHE_TTL_MS = 10 * 60_000;
+
+/** How long a freshly listed catalog of `agentId` is served before a background refresh. */
+function nativeModelCacheTtlMs(agentId: string): number {
+    return agentId === 'pi' ? PI_NATIVE_MODEL_CACHE_TTL_MS : NATIVE_MODEL_CACHE_TTL_MS;
+}
+
 /** A curated fallback (CLI missing, signed out, listing failed) is retried after this long. */
 export const NATIVE_MODEL_FALLBACK_RETRY_MS = 60_000;
 
 function isNativeModelEntryStale(entry: NativeModelCacheEntry, now: number = Date.now()): boolean {
     return now >= entry.refreshAt;
 }
+/** File, in the backend's `~/.qaap` directory, that keeps the last live catalogs across restarts. */
+const NATIVE_MODEL_CATALOG_FILE_NAME = 'native-model-catalogs.json';
+/** Most catalogs kept on disk; the entry with the oldest `savedAt` is dropped first. */
+const NATIVE_MODEL_CATALOG_STORE_MAX_ENTRIES = 64;
+/** A catalog saved longer ago than this is not restored after a restart. */
+const NATIVE_MODEL_CATALOG_STORE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+
+/** One live catalog as kept on disk, by cache key. */
+interface PersistedNativeModelCatalog {
+    readonly models: QaapQaiqModelOption[];
+    readonly savedAt: number;
+}
+
+/** Test override of the directory holding the catalog file; `undefined` uses `~/.qaap`. */
+let nativeModelCatalogStoreDir: string | undefined;
+/** Persisted catalogs by cache key, read from disk once, lazily. */
+let persistedNativeModelCatalogs: Map<string, PersistedNativeModelCatalog> | undefined;
+
+/**
+ * Points the persisted catalog store at another directory and forgets what was loaded from the previous one.
+ * Tests only: production always uses `~/.qaap`, which survives backend restarts.
+ */
+export function setNativeModelCatalogStoreDirForTests(dir: string | undefined): void {
+    nativeModelCatalogStoreDir = dir;
+    persistedNativeModelCatalogs = undefined;
+}
+
+/**
+ * Drops the in-memory catalogs and the loaded copy of the store, as a backend restart does; the file is kept.
+ * Tests only.
+ */
+export function forgetNativeModelMemoryForTests(): void {
+    cache.clear();
+    discoveries.clear();
+    persistedNativeModelCatalogs = undefined;
+}
+
+/** Path of the persisted catalog file. */
+function nativeModelCatalogFilePath(): string {
+    return path.join(nativeModelCatalogStoreDir ?? path.join(os.homedir(), '.qaap'), NATIVE_MODEL_CATALOG_FILE_NAME);
+}
+
+/** A persisted model row must at least carry its id; anything else is dropped as corrupt. */
+function isPersistedNativeModelOption(value: unknown): value is QaapQaiqModelOption {
+    return typeof value === 'object' && value !== null && typeof (value as { modelId?: unknown }).modelId === 'string';
+}
+
+/** One stored catalog, or undefined when its shape is not a catalog with at least one model. */
+function parsePersistedNativeModelCatalog(value: unknown): PersistedNativeModelCatalog | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const { models, savedAt } = value as { models?: unknown; savedAt?: unknown };
+    if (!Array.isArray(models) || typeof savedAt !== 'number' || !Number.isFinite(savedAt)) {
+        return undefined;
+    }
+    const valid = models.filter(isPersistedNativeModelOption);
+    return valid.length > 0 ? { models: valid, savedAt } : undefined;
+}
+
+/**
+ * The persisted catalogs, read from disk on first use. A missing, unreadable or corrupt file yields an empty store.
+ */
+function loadPersistedNativeModelCatalogs(): Map<string, PersistedNativeModelCatalog> {
+    if (persistedNativeModelCatalogs) {
+        return persistedNativeModelCatalogs;
+    }
+    const loaded = new Map<string, PersistedNativeModelCatalog>();
+    try {
+        const parsed: unknown = JSON.parse(fs.readFileSync(nativeModelCatalogFilePath(), 'utf8'));
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            for (const [key, value] of Object.entries(parsed)) {
+                const catalog = parsePersistedNativeModelCatalog(value);
+                if (catalog) {
+                    loaded.set(key, catalog);
+                }
+            }
+        }
+    } catch {
+        // missing or corrupt: start with an empty store, the CLI listing refills it
+    }
+    persistedNativeModelCatalogs = loaded;
+    return loaded;
+}
+
+/**
+ * Writes the whole store atomically (temp file, then rename) with mode 0600. Best effort: a failed write only
+ * means one more CLI listing after the next restart.
+ */
+function writePersistedNativeModelCatalogs(store: Map<string, PersistedNativeModelCatalog>): void {
+    const file = nativeModelCatalogFilePath();
+    const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    try {
+        const body: Record<string, PersistedNativeModelCatalog> = {};
+        for (const [key, catalog] of store) {
+            body[key] = catalog;
+        }
+        fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(temp, JSON.stringify(body), { mode: 0o600 });
+        fs.renameSync(temp, file);
+    } catch {
+        try {
+            fs.rmSync(temp, { force: true });
+        } catch {
+            // best effort: a leftover temp file is harmless
+        }
+    }
+}
+
+/**
+ * Saves one live CLI catalog and keeps the store within its size cap by dropping the oldest entries.
+ * Called once per successful discovery, never for the curated fallback.
+ */
+function persistNativeModelCatalog(key: string, models: QaapQaiqModelOption[]): void {
+    const store = loadPersistedNativeModelCatalogs();
+    store.set(key, { models, savedAt: Date.now() });
+    while (store.size > NATIVE_MODEL_CATALOG_STORE_MAX_ENTRIES) {
+        let oldestKey: string | undefined;
+        let oldestSavedAt = Number.POSITIVE_INFINITY;
+        for (const [candidate, catalog] of store) {
+            if (catalog.savedAt < oldestSavedAt) {
+                oldestSavedAt = catalog.savedAt;
+                oldestKey = candidate;
+            }
+        }
+        if (oldestKey === undefined) {
+            break;
+        }
+        store.delete(oldestKey);
+    }
+    writePersistedNativeModelCatalogs(store);
+}
+
+/**
+ * Removes the persisted catalogs whose keys match, so a sign-out or a fresh request cannot bring back an old list.
+ */
+function forgetPersistedNativeModelCatalogs(matches: (key: string) => boolean): void {
+    const store = loadPersistedNativeModelCatalogs();
+    let changed = false;
+    for (const key of [...store.keys()]) {
+        if (matches(key)) {
+            store.delete(key);
+            changed = true;
+        }
+    }
+    if (changed) {
+        writePersistedNativeModelCatalogs(store);
+    }
+}
+
+/**
+ * The persisted live catalog for a key as a cache entry that is already due for refresh: it is served at once
+ * and replaced by the background discovery. Undefined when none is stored or it is older than the maximum age.
+ */
+function restorePersistedNativeModelCatalog(key: string): NativeModelCacheEntry | undefined {
+    const catalog = loadPersistedNativeModelCatalogs().get(key);
+    if (!catalog || Date.now() - catalog.savedAt > NATIVE_MODEL_CATALOG_STORE_MAX_AGE_MS) {
+        return undefined;
+    }
+    return { models: catalog.models, live: true, refreshAt: 0 };
+}
+
+/** The cache entry for a key; on a miss, the persisted live catalog is loaded into the cache. */
+function cachedNativeModelEntry(key: string): NativeModelCacheEntry | undefined {
+    const cached = cache.get(key);
+    if (cached) {
+        return cached;
+    }
+    const restored = restorePersistedNativeModelCatalog(key);
+    if (restored) {
+        cache.set(key, restored);
+    }
+    return restored;
+}
+
 /** In-flight CLI discoveries; the event loop is shared with every other request, so never spawn synchronously. */
 const discoveries = new Map<string, Promise<QaapQaiqModelOption[]>>();
+
+/** Fired when a live CLI model listing stores a catalog that differs from the previous live one for (agent, owner). */
+export interface NativeAgentModelsChangedEvent {
+    readonly agentId: string;
+    /** Normalized owner login that owns this discovery, or `undefined` when discovery ran without an owner. */
+    readonly ownerLogin: string | undefined;
+}
+
+type NativeAgentModelsChangedListener = (event: NativeAgentModelsChangedEvent) => void;
+const nativeModelChangeListeners = new Set<NativeAgentModelsChangedListener>();
+
+/** Subscribe to live native model catalog changes. Returns a disposable teardown. */
+export function onDidChangeNativeAgentModels(listener: NativeAgentModelsChangedListener): { dispose(): void } {
+    nativeModelChangeListeners.add(listener);
+    return {
+        dispose: () => {
+            nativeModelChangeListeners.delete(listener);
+        },
+    };
+}
+
+function sameNativeModelCatalog(
+    left: readonly QaapQaiqModelOption[] | undefined,
+    right: readonly QaapQaiqModelOption[],
+): boolean {
+    if (!left || left.length !== right.length) {
+        return false;
+    }
+    return left.every((model, index) => {
+        const other = right[index];
+        return model.modelId === other.modelId
+            && model.vendor === other.vendor
+            && model.label === other.label
+            && model.provider === other.provider;
+    });
+}
+
+function emitNativeAgentModelsChanged(agentId: string, ownerLogin: string | undefined): void {
+    const normalizedOwner = ownerLogin?.trim().toLowerCase() || undefined;
+    const event: NativeAgentModelsChangedEvent = { agentId, ownerLogin: normalizedOwner };
+    for (const listener of [...nativeModelChangeListeners]) {
+        try {
+            listener(event);
+        } catch {
+            // One failing subscriber must never prevent other sockets from receiving the update.
+        }
+    }
+}
 
 /** How one CLI model listing runs: the argv, plus the cwd/env of the tenant that owns the sign-in. */
 export interface NativeModelDiscoverySpawn {
@@ -139,7 +375,7 @@ export function listNativeAgentModels(
         return listStaticNativeAgentModels(normalized, antigravityBin);
     }
     const key = nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin);
-    const entry = cache.get(key);
+    const entry = cachedNativeModelEntry(key);
     if (entry) {
         // Serve what we have at once; a stale entry is refreshed in the background.
         if (isNativeModelEntryStale(entry)) {
@@ -154,6 +390,37 @@ export function listNativeAgentModels(
     // Cold cache: answer with the curated catalog now and let the CLI discovery replace it.
     void prepareNativeAgentModels(harnessKey, { ownerLogin, antigravityBin });
     return listStaticNativeAgentModels(normalized, antigravityBin);
+}
+
+/**
+ * Whether the cache holds a live CLI catalog (not the curated fallback) for this harness, for the same owner and
+ * Antigravity bin as {@link listNativeAgentModels}. False means the picker would only get the curated list, so
+ * the endpoint waits longer for a cold discovery instead of answering with it.
+ */
+export function hasLiveNativeAgentModels(
+    agentId: string | undefined,
+    ownerLogin?: string,
+    antigravityBin?: QaapAntigravityCliBin,
+): boolean {
+    const harnessKey = agentId?.trim().toLowerCase();
+    if (!harnessKey) {
+        return false;
+    }
+    return cachedNativeModelEntry(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin))?.live === true;
+}
+
+/**
+ * Whether the cache holds any catalog for this harness (live or the curated fallback after a failed listing).
+ * The endpoint waits the long budget only on a cold cache: a harness whose listing keeps failing must not make
+ * every picker load wait for it again.
+ */
+export function hasNativeAgentModelsEntry(
+    agentId: string | undefined,
+    ownerLogin?: string,
+    antigravityBin?: QaapAntigravityCliBin,
+): boolean {
+    const harnessKey = agentId?.trim().toLowerCase();
+    return !!harnessKey && cachedNativeModelEntry(nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin)) !== undefined;
 }
 
 /**
@@ -176,7 +443,7 @@ export function prepareNativeAgentModels(
         return Promise.resolve(listStaticNativeAgentModels(normalized, bin));
     }
     const key = nativeModelCacheKey(harnessKey, options.ownerLogin, bin);
-    const entry = cache.get(key);
+    const entry = cachedNativeModelEntry(key);
     if (entry && !isNativeModelEntryStale(entry)) {
         return Promise.resolve(entry.models);
     }
@@ -185,7 +452,10 @@ export function prepareNativeAgentModels(
         // spawner). Without one, the base binary must not answer for it: serve what it has, else the curated list.
         return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
-    if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && !options.spawner) {
+    // Without a spawner a listing runs as the backend itself, never where the owner's agent runs: an owner's catalog
+    // (any harness) is only discovered through the endpoint's tenant spawner. On a tenant backend the backend's own
+    // HOME is read-only (`mkdir /home/theia/.gemini: read-only file system`, seen on staging for agy).
+    if (!options.spawner && (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) || options.ownerLogin?.trim())) {
         return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
     const inFlight = discoveries.get(key);
@@ -200,11 +470,16 @@ export function prepareNativeAgentModels(
                 return discovered.length > 0 ? discovered : (cache.get(key)?.models ?? listStaticNativeAgentModels(normalized, bin));
             }
             discoveries.delete(key);
+            const previous = cache.get(key);
             if (discovered.length > 0) {
-                cache.set(key, { models: discovered, live: true, refreshAt: Date.now() + NATIVE_MODEL_CACHE_TTL_MS });
+                const changed = !previous?.live || !sameNativeModelCatalog(previous.models, discovered);
+                cache.set(key, { models: discovered, live: true, refreshAt: Date.now() + nativeModelCacheTtlMs(normalized) });
+                persistNativeModelCatalog(key, discovered);
+                if (changed) {
+                    emitNativeAgentModelsChanged(harnessKey, options.ownerLogin);
+                }
                 return discovered;
             }
-            const previous = cache.get(key);
             if (previous?.live) {
                 // Never replace a good list with an empty or failed result; retry soon.
                 cache.set(key, { ...previous, refreshAt: Date.now() + NATIVE_MODEL_FALLBACK_RETRY_MS });
@@ -218,10 +493,31 @@ export function prepareNativeAgentModels(
     return discovery;
 }
 
-/** Forget every cached and in-flight native catalog. Called when the agent catalog is refreshed. */
+/**
+ * Forget every cached and in-flight native catalog in memory. Called when the agent catalog is refreshed, which the
+ * composer asks for on every page load (`agent-tasks/all?refresh=1`): the persisted live lists are kept, since they
+ * come back as stale entries (served at once, rediscovered in the background). Wiping them here made every reload
+ * after a backend restart fall back to the curated list (seen on staging). Per-harness invalidation (a sign-in or a
+ * fresh request) still drops that harness's persisted list.
+ */
 export function clearNativeAgentModelCache(): void {
     cache.clear();
     discoveries.clear();
+}
+
+/**
+ * Marks one owner's catalog of an agent stale and drops a listing already running (it predates the change), so the
+ * next request lists again, but keeps the entry: a new provider was just connected, yet if that listing fails or
+ * runs past its deadline (Pi on a cold 1-CPU tenant) the picker keeps the last good catalog rather than falling back
+ * to the curated list. Was: `fresh=1` invalidated it outright and lost NVIDIA's 22 models on staging (24 Nov 2026).
+ */
+export function expireNativeAgentModels(agentId: string, ownerLogin?: string, antigravityBin?: QaapAntigravityCliBin): void {
+    const key = nativeModelCacheKey(agentId.trim().toLowerCase(), ownerLogin, antigravityBin);
+    discoveries.delete(key);
+    const entry = cachedNativeModelEntry(key);
+    if (entry) {
+        cache.set(key, { ...entry, refreshAt: 0 });
+    }
 }
 
 /**
@@ -242,6 +538,10 @@ export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string
         cache.delete(key);
         discoveries.delete(key);
     }
+    // The persisted copy of the same keys goes too, so a sign-out cannot resurrect the old list after a restart.
+    const persistedKeys = new Set(keys);
+    forgetPersistedNativeModelCatalogs(key => persistedKeys.has(key)
+        || (wildcard && key.startsWith(`${harnessKey}:`)));
 }
 
 /**
@@ -250,7 +550,17 @@ export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string
  * EROFS diagnostic. Those two directories are therefore pointed at a fresh writable temp dir, while
  * `XDG_DATA_HOME` (where the owner's sign-in lives) is left alone so paid models stay listed.
  */
-function openCodeListingEnv(): { readonly env: NodeJS.ProcessEnv; readonly cleanup: () => void } {
+function openCodeListingEnv(agentHome?: string): { readonly env: NodeJS.ProcessEnv; readonly cleanup: () => void } {
+    if (agentHome) {
+        // A dropped process: keep the listing's cache and state in its own (writable) HOME.
+        return {
+            env: {
+                XDG_CACHE_HOME: path.posix.join(agentHome, '.cache', 'qaap-opencode-listing'),
+                XDG_STATE_HOME: path.posix.join(agentHome, '.local', 'state', 'qaap-opencode-listing'),
+            },
+            cleanup: () => undefined,
+        };
+    }
     try {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-opencode-models-'));
         return {
@@ -268,10 +578,16 @@ function openCodeListingEnv(): { readonly env: NodeJS.ProcessEnv; readonly clean
     }
 }
 
+/** Pi's switches for a non-interactive run that must not wait on the network for anything but the providers. */
+const PI_QUIET_ENV: NodeJS.ProcessEnv = { PI_SKIP_VERSION_CHECK: '1', PI_TELEMETRY: '0' };
+
 async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelDiscoverySpawner): Promise<QaapQaiqModelOption[]> {
     switch (agentId) {
         case 'opencode': {
-            const listing = openCodeListingEnv();
+            // Run as the agent uid (tenant backend), OpenCode cannot write a temp dir the backend created (0700,
+            // root): EACCES on `cache/opencode/bin` and an empty catalog. Its own HOME is writable.
+            const agentHome = spawner?.('opencode', ['models'])?.env?.HOME?.trim();
+            const listing = openCodeListingEnv(agentHome);
             try {
                 return await discoverFromCommand('opencode', ['models'], agentId, spawner, listing.env);
             } finally {
@@ -281,7 +597,8 @@ async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelD
         case 'pi':
             // `pi --list-models` prints a `provider model context ...` table of every model the
             // CLI can reach with its configured providers.
-            return discoverFromCommand('pi', ['--list-models'], agentId, spawner);
+            // No npm version check or telemetry on the way: they are network round trips (0.5-4 s on a tenant).
+            return discoverFromCommand('pi', ['--list-models'], agentId, spawner, PI_QUIET_ENV);
         case 'codex': {
             // The CLI's own cache of the account's models (same JSON as `codex debug models`), read as the
             // agent identity; with a spawner the live listing runs in the owner's HOME when the cache is empty.
@@ -361,15 +678,33 @@ const PROBE_CHILD_KILL_ESCALATION_MS = 2_000;
  * Ends a one-shot probe child: closes its stdin, sends SIGTERM and, if it is still alive after
  * {@link PROBE_CHILD_KILL_ESCALATION_MS}, SIGKILL. A CLI that ignores SIGTERM must not outlive the probe.
  */
+function signalProbeGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+    if (process.platform !== 'win32' && child.pid) {
+        try {
+            process.kill(-child.pid, signal);
+            return;
+        } catch {
+            // Not a group leader, or already gone: signal the child itself.
+        }
+    }
+    try {
+        child.kill(signal);
+    } catch {
+        // Already gone.
+    }
+}
+
 function stopProbeChild(child: ChildProcess): void {
     child.stdin?.end();
-    child.kill('SIGTERM');
+    // The probe leads its own process group (POSIX): signal the group, so the CLI behind a wrapper
+    // (npm shim, `setpriv`) stops too instead of outliving it.
+    signalProbeGroup(child, 'SIGTERM');
     if (child.exitCode !== null || child.signalCode !== null) {
         return;
     }
     const escalation = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) {
-            child.kill('SIGKILL');
+            signalProbeGroup(child, 'SIGKILL');
         }
     }, PROBE_CHILD_KILL_ESCALATION_MS);
     // The escalation timer must never keep the backend alive on its own.
@@ -401,6 +736,7 @@ function askClaudeCliForModels(spawner: NativeModelDiscoverySpawner | undefined,
                 stdio: ['pipe', 'pipe', 'ignore'],
                 shell: windowsShim,
                 windowsHide: true,
+                detached: process.platform !== 'win32',
             });
         } catch {
             resolve([]);
@@ -475,9 +811,9 @@ function listClaudeBundleModels(spawner: NativeModelDiscoverySpawner | undefined
         return Promise.resolve([]);
     }
     return new Promise<QaapQaiqModelOption[]>(resolve => {
-        execFile(command.file, [...command.args], {
-            encoding: 'utf8',
-            timeout: timeoutMs,
+        execFileKillingGroup(command.file, [...command.args], {
+            timeoutMs,
+            lowPriority: true,
             maxBuffer: 16 * 1024 * 1024,
             ...(command.cwd ? { cwd: command.cwd } : {}),
             env: childProcessEnv({ ...(command.env ?? process.env) }),
@@ -588,6 +924,32 @@ export async function discoverCodexAccountModels(
     }
 }
 
+const loggedNativeListingFailures = new Set<string>();
+
+/**
+ * One server-log line per agent and reason when a CLI model listing gives nothing: the picker then falls back
+ * to the curated catalog, and without this a provider the user just connected silently never appeared.
+ */
+function noteNativeListingFailure(agentId: string, reason: string): void {
+    const key = `${agentId}:${reason}`;
+    if (loggedNativeListingFailures.has(key)) {
+        return;
+    }
+    loggedNativeListingFailures.add(key);
+    console.warn(`[qaap-native-models] ${agentId} model listing gave no models (${reason.slice(0, 240)})`);
+}
+
+function firstLine(text: string | undefined): string {
+    return (text ?? '').split('\n').map(line => line.trim()).find(line => line.length > 0) ?? '';
+}
+
+/**
+ * Deadline of a CLI model listing. A guard against a hung CLI rather than a latency target: the picker keeps the
+ * last good catalog meanwhile. `pi --list-models` takes 2-4 s once warm but ran past the old 15 s on a cold 1-CPU
+ * tenant (staging, 24 Nov 2026). The runner's own `timeout` wrapper sits a little above it.
+ */
+export const NATIVE_MODEL_LISTING_TIMEOUT_MS = 40_000;
+
 function discoverFromCommand(
     bin: string,
     args: string[],
@@ -609,21 +971,26 @@ function discoverFromCommand(
             const unwrapped = (spawn?.file ?? bin) === bin;
             const windowsShim = unwrapped && process.platform === 'win32';
             const executable = windowsShim ? `${bin}.cmd` : spawn?.file ?? bin;
-            execFile(executable, spawn ? [...spawn.args] : args, {
-                encoding: 'utf8',
-                timeout: 15_000,
+            // The deadline kills the listing's whole process tree (`agy models` outlived its wrapper).
+            execFileKillingGroup(executable, spawn ? [...spawn.args] : args, {
+                timeoutMs: NATIVE_MODEL_LISTING_TIMEOUT_MS,
+                lowPriority: true,
                 shell: windowsShim,
                 ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
                 // Never inherit the backend env by omission; a spawner env is stripped too.
                 env: childProcessEnv({ ...(spawn?.env ?? process.env), ...extraEnv }),
-            }, (error, stdout) => {
+            }, (error, stdout, stderr) => {
                 // stderr is diagnostic output, never a model catalog. A failed run or an
                 // unparsable answer is "no answer" (empty), so the caller keeps its catalog.
                 if (error) {
+                    noteNativeListingFailure(agentId, `${error.killed ? 'deadline' : error.signal ?? `exit ${String(error.code)}`}: ${firstLine(stderr)}`);
                     resolve([]);
                     return;
                 }
                 const models = parseNativeModelOutput(agentId, String(stdout ?? ''));
+                if (models.length === 0) {
+                    noteNativeListingFailure(agentId, `no models parsed: ${firstLine(stdout) || firstLine(stderr)}`);
+                }
                 // Picker rows belong to the agent that lists them (Pi keeps provider as vendor).
                 resolve(agentId === 'pi' ? models : models.map(model => ({ ...model, vendor: agentId })));
             });

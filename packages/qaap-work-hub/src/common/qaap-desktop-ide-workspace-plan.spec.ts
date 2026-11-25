@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { planDesktopIdeWorkspaceOpen } from './qaap-desktop-ide-workspace-plan';
+import { isDesktopIdeProjectAlreadyOpen, planDesktopIdeWorkspaceOpen } from './qaap-desktop-ide-workspace-plan';
 
 describe('planDesktopIdeWorkspaceOpen', () => {
     it('opens the sole hub project when only one exists', () => {
@@ -106,5 +106,20 @@ describe('planDesktopIdeWorkspaceOpen', () => {
             [{ id: 'a', cwd: 'C:\\ws\\a' }, { id: 'b', cwd: 'C:\\ws\\b' }],
             'C:/ws/b/',
         )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
+    });
+});
+
+describe('isDesktopIdeProjectAlreadyOpen', () => {
+    it('keeps the IDE in place only when a workspace is open and it matches the project', () => {
+        expect(isDesktopIdeProjectAlreadyOpen(true, true)).to.equal(true);
+    });
+
+    it('does not treat a remembered workspace as open on a page with no folder (kalea: empty IDE, status bar still named it)', () => {
+        expect(isDesktopIdeProjectAlreadyOpen(false, true)).to.equal(false);
+    });
+
+    it('opens the project when a different workspace is open', () => {
+        expect(isDesktopIdeProjectAlreadyOpen(true, false)).to.equal(false);
+        expect(isDesktopIdeProjectAlreadyOpen(false, false)).to.equal(false);
     });
 });

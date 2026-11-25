@@ -3713,6 +3713,15 @@ body>.theia-mobile-transcript-files-menu {
   flex: 0 0 auto;
 }
 
+/*
+ * Once a message is sent the welcome (logo + daily phrase) goes away at once. The transcript is not
+ * always re-rendered before the turn shows up (a pending dirty-tree confirmation, an unchanged-tail
+ * skip), so the welcome is hidden as soon as the agent's live status row is present, whatever the DOM.
+ */
+.theia-mobile-agent-transcript-real-chat.theia-mod-has-real-chat-live-status .theia-mobile-agent-transcript-empty-welcome {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .theia-mobile-agent-transcript.theia-mod-empty-chat {
     padding: clamp(18px, 6vh, 52px) 16px 82px;

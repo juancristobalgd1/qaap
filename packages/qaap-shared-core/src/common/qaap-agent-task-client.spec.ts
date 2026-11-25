@@ -406,6 +406,22 @@ describe('qaap-agent-task-client request caches', () => {
         expect(requestUrls).to.have.length(2);
     });
 
+    it('a fresh catalog request skips the cache, asks the backend to wait for the CLI, and refreshes the cache', async () => {
+        await fetchAgentModelsForAgent('pi');
+        await fetchAgentModelsForAgent('pi', { fresh: true });
+        expect(requestUrls).to.have.length(2);
+        expect(requestUrls[1]).to.contain('agent=pi&fresh=1');
+        await fetchAgentModelsForAgent('pi');
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('a per-harness forced refresh asks the backend to re-probe only that harness', async () => {
+        await fetchAgentTaskListAll({ forceRefresh: true, refreshAgent: 'Pi' });
+        expect(requestUrls[0]).to.contain('refresh=1&agent=pi');
+        await fetchAgentTaskListAll({ forceRefresh: true });
+        expect(requestUrls[1]).to.match(/refresh=1$/);
+    });
+
     it('never asks for the catalog of an empty agent id', async () => {
         expect(await fetchAgentModelsForAgent('')).to.deep.equal([]);
         expect(await fetchAgentModelsForAgent('  ')).to.deep.equal([]);

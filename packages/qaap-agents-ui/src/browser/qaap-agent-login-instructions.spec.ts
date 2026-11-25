@@ -29,4 +29,10 @@ describe('Qaap agent login instructions', () => {
             .to.contain('Not connected on this workspace');
         expect(resolveAgentLoginDialogSubtitle('hermes')).to.contain('own subscription');
     });
+
+    it('asks Pi for an API key, not a browser sign-in, for an API-key provider', () => {
+        expect(resolveAgentLoginDialogSubtitle('pi', 'Groq', 'api_key')).to.contain('API key');
+        expect(resolveAgentLoginDialogSubtitle('pi', 'Groq', 'api_key')).to.contain('Groq');
+        expect(resolveAgentLoginDialogSubtitle('pi', 'OpenRouter')).to.contain('OpenRouter account');
+    });
 });

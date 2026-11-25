@@ -4,18 +4,23 @@
 // ****************************************************************************
 
 import { expect } from 'chai';
+import * as os from 'os';
+import * as path from 'path';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { NATIVE_MODEL_PICKER_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { bindingFromQaiqModelSelection } from '../common/qaap-qaiq-model-binding';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
 import { applyTemplate } from './qaap-agent-task-runner-utils';
-import { clearNativeAgentModelCache, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { clearNativeAgentModelCache, listNativeAgentModels, prepareNativeAgentModels, setNativeModelCatalogStoreDirForTests } from './qaap-agent-native-models';
 import {
     buildTemplateVarsExtracted,
     resolveAgentBindingForTaskExtracted,
 } from './qaap-agent-task-runner-streaming2';
 import { listModelsForAgentExtracted } from './qaap-agent-task-runner-render2';
 import { sharedQaapAgentModelUnavailableRegistry } from './qaap-agent-model-unavailable-registry';
+
+// Persisted catalogs of the discoveries in this spec go to a temp dir, never to the real ~/.qaap.
+setNativeModelCatalogStoreDirForTests(path.join(os.tmpdir(), `qaap-runner-catalog-store-${process.pid}`));
 
 describe('QAIQ/OpenClaude model routing', () => {
     it('does not inject QAIQ Settings flags into an unpinned OpenClaude task', () => {

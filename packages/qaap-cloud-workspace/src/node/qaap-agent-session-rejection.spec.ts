@@ -140,4 +140,21 @@ describe('QaapAgentTaskRunner session rejection after an auth failure', () => {
         expect(runner.listAgents('alice').find(agent => agent.id === 'pi')).to.include({ connectionState: 'disconnected', available: false });
         expect(session(runner, 'pi', 'bob')).to.equal('signed-in');
     });
+
+    it('a per-harness refresh (the Connect dialog poll) lifts only that harness and re-detects nothing', async () => {
+        const runner = runnerWith(CODEX_401);
+        await runner.recordLastTurnForTest(failedTask('codex'));
+        await runner.recordLastTurnForTest(failedTask('cursor', {}));
+        let detections = 0;
+        (runner as unknown as { detectAgents: () => void }).detectAgents = () => {
+            detections++;
+        };
+        runner.refreshAgentCatalog('alice', 'codex');
+        expect(detections).to.equal(0);
+        expect(session(runner, 'codex')).to.not.equal('signed-out');
+        expect(session(runner, 'cursor')).to.equal('signed-out');
+
+        runner.refreshAgentCatalog('alice');
+        expect(detections).to.equal(1);
+    });
 });

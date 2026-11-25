@@ -89,9 +89,9 @@ describe('QaapAgentLoginInputDriver (Pi /login)', () => {
     it('starts typing after the readiness fallback when Pi prints no header (quiet startup)', () => {
         const { driver, sent } = createDriver();
         driver.feed(SHELL_ECHO, 10);
-        driver.tick(7_900);
+        driver.tick(29_900);
         expect(sent).to.deep.equal([]);
-        driver.tick(8_000);
+        driver.tick(30_000);
         expect(sent).to.deep.equal(['/login openrouter']);
     });
 

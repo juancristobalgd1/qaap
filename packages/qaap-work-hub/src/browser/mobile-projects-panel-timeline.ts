@@ -350,7 +350,7 @@ export async function refreshAfterAgentSignIn(
     // The sign-in changed the backend's agent state: drop the cached catalogs before reloading them.
     invalidateAgentTaskListAllCache();
     invalidateAgentModelsCache();
-    const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
+    const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true, refreshAgent: agentId });
     // An open conversation draws its composer from its own catalog; the forced probe above
     // already refreshed the backend state, so a plain reload is enough here.
     await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);

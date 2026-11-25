@@ -17,6 +17,13 @@ interface QaapProjectSwitcherPick extends QuickPickItem {
 @injectable()
 export class QaapProjectSwitcherService {
 
+    /**
+     * How long the picker waits for a fresh repository list (session sync over the network) before
+     * it opens with the cached list. Without it a slow or failing load left the status bar click
+     * with no visible result.
+     */
+    protected pickerLoadTimeoutMs = 1500;
+
     @inject(MobileProjectsService)
     protected readonly projectsService: MobileProjectsService;
 
@@ -27,8 +34,25 @@ export class QaapProjectSwitcherService {
         return this.projectsService.getCurrentWorkspaceDisplayName();
     }
 
+    /** Fresh list when it arrives in time, otherwise (or on failure) the cached list. */
+    protected async loadPickerProjects(): Promise<MobileProjectEntry[]> {
+        const cached = this.projectsService.peekCachedProjects();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = new Promise<MobileProjectEntry[]>(resolve => {
+            timer = setTimeout(() => resolve(cached), this.pickerLoadTimeoutMs);
+        });
+        try {
+            return await Promise.race([this.projectsService.loadProjects(), timedOut]);
+        } catch (error) {
+            console.warn('[qaap-project-switcher] could not load the repositories', error);
+            return cached;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
     async showProjectPicker(): Promise<void> {
-        const projects = await this.projectsService.loadProjects();
+        const projects = await this.loadPickerProjects();
         const items: Array<QaapProjectSwitcherPick | QuickPickSeparator> = [
             {
                 label: nls.localize('qaap/projectSwitcher/addRepository', 'Add repository'),

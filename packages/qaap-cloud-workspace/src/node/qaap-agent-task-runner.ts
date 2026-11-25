@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import { withSelfEnforcedDeadline } from './qaap-exec-file-group';
 import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { Emitter, Event } from '@theia/core/lib/common/event';
@@ -63,7 +64,7 @@ type QaapAgentDelegationTaskFields = Pick<QaapAgentTask, 'id' | 'ownerLogin' | '
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
-import { antigravityBinFor, clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
+import { antigravityBinFor, clearNativeAgentModelCache, expireNativeAgentModels, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -79,8 +80,9 @@ import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
+import { QaapAgentProbeQueue } from './qaap-agent-probe-queue';
 import {
-    readCodexHelp as readCodexHelpHelper,
+    QaapCodexHelpProbe,
     isQaiqRunner as isQaiqRunnerHelper,
     isOnPath as isOnPathHelper,
     applyTemplateVars as applyTemplateVarsHelper,
@@ -212,10 +214,21 @@ import {
 import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { qaapGitReadEnv } from './qaap-child-process-env';
 
+/**
+ * Upper bound for a CLI model listing run as the agent uid (`opencode models`, `agy models`, `pi --list-models`):
+ * a little above NATIVE_MODEL_LISTING_TIMEOUT_MS (40 s), enforced by `timeout` as that uid.
+ */
+const NATIVE_MODEL_DISCOVERY_DEADLINE_MS = 45_000;
+
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
 /** How long the picker catalog waits for stale auth probes before answering with last known states. */
 export const QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS = 1_200;
+/**
+ * A full catalog refresh keeps the connection states answered within this window. Clearing every state made the
+ * next listing re-probe all harnesses at once (one fork each), an 8.3 s event-loop stall on staging (24 Nov 2026).
+ */
+export const QAAP_AGENT_CATALOG_REFRESH_KEEP_MS = 30_000;
 /**
  * How long an explicit catalog refresh (`/all?refresh=1`, polled by the Connect dialog) waits for
  * the auth probes. It must outlast a probe: answering `unknown` early made the dialog guess.
@@ -402,6 +415,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }>();
     /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
     protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
+    /** Starts auth probes one per event-loop turn, at most two at a time (see QaapAgentProbeQueue). */
+    protected agentProbeQueueInstance: QaapAgentProbeQueue | undefined;
+
+    protected get agentProbeQueue(): QaapAgentProbeQueue {
+        return this.agentProbeQueueInstance ??= new QaapAgentProbeQueue();
+    }
     /**
      * Sessions a turn proved unusable (the harness failed with an auth error), keyed like
      * {@link agentConnectionStates}. They read as `disconnected` whatever the probe says, because the
@@ -507,9 +526,17 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         detectCodexAgentExtracted(this);
     }
 
+    /** Help text of the trusted codex, probed off the event loop and kept per binary (see QaapCodexHelpProbe). */
+    protected readonly codexHelpProbe = new QaapCodexHelpProbe();
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public readCodexHelp(): string {
-        return readCodexHelpHelper(this.agentDetectionEnv());
+    public cachedCodexHelp(): string | undefined {
+        return this.codexHelpProbe.cached(this.agentDetectionEnv());
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public probeCodexHelp(): Promise<string> {
+        return this.codexHelpProbe.probe(this.agentDetectionEnv());
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -660,14 +687,36 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * refreshing owner's rejected sessions are lifted ({@link rejectedAgentSessions}): another user's
      * refresh must not unlock a session a failed turn of this user proved unusable.
      */
-    refreshAgentCatalog(ownerLogin?: string): void {
-        this.agentConnectionStates.clear();
+    refreshAgentCatalog(ownerLogin?: string, agentId?: string): void {
+        const onlyAgent = agentId?.trim().toLowerCase();
+        if (onlyAgent && this.detectedAgents.has(resolveQaapHarnessBaseId(onlyAgent))) {
+            // One harness after its sign-in: drop only its state, probe and catalog for this owner. Re-detecting
+            // every CLI (synchronous) and re-running every probe on each 2.5 s poll of the Connect dialog
+            // saturated a small backend until the sign-in terminal could not even start.
+            const cacheKey = this.agentConnectionCacheKey(onlyAgent, ownerLogin);
+            this.agentConnectionStates.delete(cacheKey);
+            this.agentConnectionProbes.delete(cacheKey);
+            this.rejectedAgentSessions.delete(cacheKey);
+            // After a sign-in: list again, but keep the last good catalog if that listing fails.
+            expireNativeAgentModels(onlyAgent, ownerLogin);
+            return;
+        }
+        // Keep what was answered within the last 30 s: those harnesses are not probed again (one fork each).
+        // In-flight probes are still superseded, so a sign-in finished meanwhile is not read from an older probe.
+        const keepAfter = Date.now() - QAAP_AGENT_CATALOG_REFRESH_KEEP_MS;
+        for (const [key, cached] of [...this.agentConnectionStates]) {
+            if (cached.at < keepAfter) {
+                this.agentConnectionStates.delete(key);
+            }
+        }
         this.agentConnectionProbes.clear();
         // Keys are `${agentId}:${owner}` (agentConnectionCacheKey); neither part contains a colon.
         const owner = ownerLogin?.trim().toLowerCase() ?? '';
         for (const key of [...this.rejectedAgentSessions]) {
             if (key.slice(key.indexOf(':') + 1) === owner) {
                 this.rejectedAgentSessions.delete(key);
+                // The `disconnected` a rejection recorded is not a probe answer: probe the lifted session again.
+                this.agentConnectionStates.delete(key);
             }
         }
         // Harness settings or the CLI may have changed: the next model request runs discovery again.
@@ -881,7 +930,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         this.rejectedAgentSessions.delete(this.agentConnectionCacheKey(normalized, ownerLogin));
         // Same as a probe that turns connected: the catalog discovered while signed out is stale.
-        invalidateNativeAgentModels(normalized, ownerLogin);
+        expireNativeAgentModels(normalized, ownerLogin);
         return true;
     }
 
@@ -950,7 +999,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             launch = await resolveQaapHarnessLaunchEnvironment(
                 normalizedKey,
-                key => this.preferenceReaderForOwner(owner)(key),
+                this.preferenceReaderForOwner(owner),
                 this.harnessEnvSecrets,
             );
         } catch (error) {
@@ -972,6 +1021,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
             return undefined;
         }
+        // The CLI runs as the dropped uid over its harness state: wait for the tenant access sweeps first (optional call: partial test doubles).
+        await this.tenantSpawn.whenTenantAgentAccessReady?.(tenantCwd);
         const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
         const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
             ...process.env,
@@ -1071,7 +1122,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (inFlight) {
             return inFlight;
         }
-        const probe = this.probeAgentConnectionState(normalized, sources.probeBin, ownerLogin)
+        const probeBin = sources.probeBin;
+        const probe: Promise<QaapAgentDescriptor['connectionState']> = this.agentProbeQueue.run(() =>
+            // A probe a catalog refresh superseded while it waited would only be discarded: do not spawn it.
+            this.agentConnectionProbes.get(cacheKey) === probe
+                ? this.probeAgentConnectionState(normalized, probeBin, ownerLogin)
+                : Promise.resolve('unknown' as const))
             .then(
                 state => ({ state, probeFailed: false }),
                 // An error is not a pending answer: the chip keeps `unknown`, but default selection
@@ -1085,11 +1141,15 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     this.agentConnectionProbes.delete(cacheKey);
                     const previous = this.agentConnectionStates.get(cacheKey)?.state;
                     this.agentConnectionStates.set(cacheKey, { state, at: Date.now(), probeFailed });
-                    if (state === 'connected' && previous !== 'connected') {
+                    if (state === 'connected' && previous !== undefined && previous !== 'connected') {
                         // A fresh sign-in unlocks the account's models (Pi `/login`, Cursor): the
                         // catalog discovered while signed out is stale. Rediscover right away so the
-                        // picker the user comes back to already lists the signed-in providers.
-                        invalidateNativeAgentModels(normalized, ownerLogin);
+                        // picker the user comes back to already lists the signed-in providers. Only a
+                        // transition seen by this process counts: the first probe after a restart has
+                        // no previous state, and treating it as a sign-in wiped the persisted catalog,
+                        // so the picker served the curated list until a cold listing finished (staging,
+                        // 24 Nov 2026). Expired rather than forgotten: a failed listing keeps the last list.
+                        expireNativeAgentModels(normalized, ownerLogin);
                         void this.discoverNativeModelsAfterSignIn(normalized, ownerLogin);
                     }
                 }
@@ -1125,7 +1185,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             launch = await resolveQaapHarnessLaunchEnvironment(
                 harnessKey,
-                key => this.preferenceReaderForOwner(ownerLogin)(key),
+                this.preferenceReaderForOwner(ownerLogin),
                 this.harnessEnvSecrets,
             );
         } catch (error) {
@@ -1172,7 +1232,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             try {
                 launch = await resolveQaapHarnessLaunchEnvironment(
                     harnessKey,
-                    key => this.preferenceReaderForOwner(ownerLogin)(key),
+                    this.preferenceReaderForOwner(ownerLogin),
                     this.harnessEnvSecrets,
                 );
             } catch (error) {
@@ -1204,7 +1264,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             throw new Error(`No tenant workspace for ${safeUserIdSegment(owner)} yet; the auth probe cannot run without its tenant cwd.`);
         }
         try {
-            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
+            // A probe before the harness-state sweep ends could read a root-owned sign-in as signed out (optional call: partial test doubles).
+            await this.tenantSpawn.whenTenantAgentAccessReady?.(tenantCwd);
+            // The deadline is enforced as the agent uid: the backend cannot signal that uid (no CAP_KILL).
+            const deadline = withSelfEnforcedDeadline(probe.file, probe.args, resolveAgentConnectionProbeTimeoutMs(agentId));
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, deadline.file, deadline.args);
             // An inherited OPENAI_API_KEY makes `codex login status` report the key, not the sign-in.
             const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
                 ...process.env,
@@ -1249,7 +1313,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
             }
-            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
+            // Listings run as the agent uid, which the backend cannot signal: `timeout` enforces their deadline.
+            const deadline = withSelfEnforcedDeadline(bin, args, NATIVE_MODEL_DISCOVERY_DEADLINE_MS);
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, deadline.file, deadline.args);
             return { file: wrapped.file, args: wrapped.args, cwd: existingTenantCwd(tenantCwd), env };
         };
     }
@@ -1316,7 +1382,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 // QAIQ is ready only when the provider its turns route to has a key for this owner (an
                 // OpenAI key does not run an OpenRouter model): the same check that gates its spawn.
                 ? !checkQaiqProviderCredentialForOwnerExtracted(this, ownerLogin)
-                : hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
+                : hasAgentSettingsCredentialsHelper(normalized, this.preferenceReaderForOwner(ownerLogin)),
             probeBin: resolveAgentConnectionProbeHelper(normalized, bin) ? bin : undefined,
         };
     }

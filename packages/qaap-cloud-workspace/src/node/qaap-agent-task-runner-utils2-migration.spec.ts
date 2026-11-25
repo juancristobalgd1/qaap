@@ -9,7 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveUserSettingsFilePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
-import { readUserSettingsFromDisk, writeUserSettingsToDisk } from './qaap-agent-task-runner-utils2';
+import { readUserSettingsFromDisk, resetTenantCredentialMigrationMemoForTests, writeUserSettingsToDisk } from './qaap-agent-task-runner-utils2';
 
 const KEY_1 = Buffer.alloc(32, 6).toString('base64');
 const KEY_2 = Buffer.alloc(32, 7).toString('base64');
@@ -28,6 +28,7 @@ describe('tenant credential migration (utils2)', () => {
     const userPath = (): string => resolveUserSettingsFilePath('alice', home);
 
     beforeEach(() => {
+        resetTenantCredentialMigrationMemoForTests();
         home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-migration-'));
         fs.mkdirSync(path.dirname(sharedPath()), { recursive: true });
     });

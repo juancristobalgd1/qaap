@@ -5,6 +5,8 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import { listQaapComposerPickerAgents } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 
@@ -62,6 +64,84 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         expect(chrome.list.querySelectorAll('.qaap-model-picker-row')).to.have.length(1);
         expect(chrome.header.style.display).to.equal('none');
         expect(chrome.sheet.classList.contains('theia-mod-model-picker')).to.equal(true);
+    });
+
+    it('names each Pi row by its provider (catalog name, raw vendor id when the catalog does not know it)', async () => {
+        const ctx = {
+            resolveModelsForAgentPickerSafe: async (agentId: string) => ({
+                models: agentId === 'pi'
+                    ? [
+                        { provider: 'openai' as const, vendor: 'groq', modelId: 'groq/llama-3.1-8b-instant', label: 'llama-3.1-8b-instant' },
+                        { provider: 'openai' as const, vendor: 'nvidia', modelId: 'nvidia/llama-3.1-70b', label: 'llama-3.1-70b' },
+                        { provider: 'openai' as const, vendor: 'acme-unknown', modelId: 'acme-unknown/x', label: 'x' },
+                    ]
+                    : [{ provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'opus-4-6', label: 'Opus 4.6' }],
+                loadFailed: false,
+            }),
+        };
+        await renderStickyComposerModelPicker(ctx, chrome, {
+            cwd: undefined,
+            agents: [{ id: 'pi', label: 'Pi', available: true }, { id: 'claude', label: 'Claude Code', available: true }],
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me',
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        });
+        const providers = Array.from(chrome.list.querySelectorAll('.qaap-model-picker-row-provider')).map(element => element.textContent);
+        expect(providers).to.deep.equal(['Groq', 'NVIDIA', 'acme-unknown']);
+    });
+
+    describe('connect another provider (Pi rail)', () => {
+        const piAgents = [{ id: 'pi', label: 'Pi', available: true }];
+        const piOptions = {
+            cwd: undefined,
+            agents: piAgents,
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: true,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me' as const,
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        };
+        const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }) };
+
+        it('shows the action on the Pi rail when Pi is not reported signed out, and runs the Pi sign-in on click', async () => {
+            const logins: string[] = [];
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                onProactiveLogin: agentId => logins.push(agentId),
+                isAgentNotSignedOut: agentId => agentId === 'pi',
+            });
+            const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-another');
+            expect(action?.textContent).to.equal('Connect another provider');
+            action?.click();
+            expect(logins).to.deep.equal(['pi']);
+        });
+
+        it('hides the action when Pi reads signed out, when no sign-in is wired, or when the option is absent', async () => {
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                onProactiveLogin: () => undefined,
+                isAgentNotSignedOut: () => false,
+            });
+            expect(chrome.list.querySelector('.qaap-model-picker-connect-another')).to.equal(null);
+
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                isAgentNotSignedOut: () => true,
+            });
+            expect(chrome.list.querySelector('.qaap-model-picker-connect-another')).to.equal(null);
+
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                ...piOptions,
+                onProactiveLogin: () => undefined,
+            });
+            expect(chrome.list.querySelector('.qaap-model-picker-connect-another')).to.equal(null);
+        });
     });
 
     it('has no Sign in button: picking a signed-out model opens the sign-in, then selects that model', async () => {
@@ -141,9 +221,97 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
             .find(button => button.title === 'Codex');
         expect(codexRail).to.not.equal(undefined);
         codexRail?.click();
+        // Codex is asked for when its rail entry is selected, so its rows arrive after that answer.
+        await new Promise(resolve => setTimeout(resolve, 0));
         const row = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-row');
         row?.click();
         expect(picked).to.deep.equal([{ agentId: 'codex', modelId: 'gpt-5-6-sol' }]);
+    });
+
+    describe('asks harnesses for their models on demand', () => {
+        const agents = [
+            { id: 'pi', label: 'Pi', available: true },
+            { id: 'claude', label: 'Claude Code', available: true },
+            { id: 'codex', label: 'Codex', available: true },
+        ];
+        const options = {
+            cwd: undefined,
+            agents,
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me' as const,
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        };
+        const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+        const waitUntil = async (done: () => boolean, timeoutMs = 2_000): Promise<void> => {
+            const deadline = Date.now() + timeoutMs;
+            while (!done() && Date.now() < deadline) {
+                await wait(10);
+            }
+        };
+        const railItem = (title: string): HTMLButtonElement | undefined => Array.from(
+            chrome.list.querySelectorAll<HTMLButtonElement>('.qaap-model-picker-rail-item'),
+        ).find(button => button.title === title);
+
+        /** A model source that records each request and how many are in flight at once. */
+        function recordingCatalog(): {
+            asked: string[];
+            usage: { maxInFlight: number; inFlight: number };
+            ctx: { resolveModelsForAgentPickerSafe: (agentId: string) => Promise<{ models: []; loadFailed: boolean }> };
+        } {
+            const asked: string[] = [];
+            const usage = { maxInFlight: 0, inFlight: 0 };
+            const ctx = {
+                resolveModelsForAgentPickerSafe: async (agentId: string): Promise<{ models: []; loadFailed: boolean }> => {
+                    asked.push(agentId);
+                    usage.inFlight++;
+                    usage.maxInFlight = Math.max(usage.maxInFlight, usage.inFlight);
+                    await wait(5);
+                    usage.inFlight--;
+                    return { models: [], loadFailed: false };
+                },
+            };
+            return { asked, usage, ctx };
+        }
+
+        it('asks only the selected harness when the picker opens', async () => {
+            const catalog = recordingCatalog();
+            await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
+            await waitUntil(() => catalog.asked.length >= 1 && catalog.usage.inFlight === 0);
+            await wait(25);
+            expect(catalog.asked).to.deep.equal(['pi']);
+        });
+
+        it('asks a harness when its rail entry is selected, and never again within the same open', async () => {
+            const catalog = recordingCatalog();
+            await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
+            railItem('Claude Code')?.click();
+            await waitUntil(() => catalog.asked.length >= 2 && catalog.usage.inFlight === 0);
+            railItem('Pi')?.click();
+            railItem('Claude Code')?.click();
+            await wait(25);
+            expect(catalog.asked).to.deep.equal(['pi', 'claude']);
+        });
+
+        it('asks the other harnesses one at a time when a search runs', async () => {
+            const catalog = recordingCatalog();
+            await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
+            const search = chrome.list.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
+            if (search) {
+                search.value = 'gpt';
+                search.dispatchEvent(new window.Event('input'));
+            }
+            // The picker lists every known harness, not only the ones passed in. The selected one was asked on open;
+            // the search asks each of the others once, in picker order.
+            const others = listQaapComposerPickerAgents(agents, []).map(agent => agent.id).filter(agentId => agentId !== 'pi');
+            const expected = ['pi', ...others];
+            await waitUntil(() => catalog.asked.length >= expected.length && catalog.usage.inFlight === 0);
+            expect(catalog.asked).to.deep.equal(expected);
+            expect(catalog.usage.maxInFlight).to.equal(1);
+        });
     });
 
     it('refreshes the composer when the picker is removed and paints again on reopen', async () => {
@@ -169,5 +337,59 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         document.body.append(chrome.sheet);
         await renderStickyComposerModelPicker(ctx, chrome, options);
         expect(chrome.list.querySelector('.qaap-model-picker')).to.not.equal(null);
+    });
+
+    it('repaints an open picker when qaap-agent-models-changed pushes a new catalog, and ignores no-op or post-close events', async () => {
+        const nvidia = { provider: 'openai' as const, vendor: 'nvidia', modelId: 'nvidia/llama-3.1-70b', label: 'llama-3.1-70b' };
+        const groq = { provider: 'openai' as const, vendor: 'groq', modelId: 'groq/llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile' };
+        let currentModels = [nvidia];
+        let fetchCount = 0;
+        const ctx = {
+            resolveModelsForAgentPickerSafe: async (agentId: string) => {
+                if (agentId === 'pi') {
+                    fetchCount++;
+                    return { models: currentModels, loadFailed: false };
+                }
+                return { models: [], loadFailed: false };
+            },
+        };
+        await renderStickyComposerModelPicker(ctx, chrome, {
+            cwd: undefined,
+            agents: [{ id: 'pi', label: 'Pi', available: true }, { id: 'claude', label: 'Claude Code', available: true }],
+            selectedAgentId: 'pi',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me',
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(1);
+        expect(chrome.list.querySelectorAll('.qaap-model-picker-row')).to.have.length(1);
+        const firstPickerRoot = chrome.list.querySelector('.qaap-model-picker');
+
+        // Pushing when the catalog has not changed refetches once but skips rebuilding the open DOM.
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId: 'pi' } }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(2);
+        expect(chrome.list.querySelector('.qaap-model-picker')).to.equal(firstPickerRoot);
+
+        // Once Groq arrives in the live catalog, pushing repaints the open picker with both providers.
+        currentModels = [nvidia, groq];
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId: 'pi' } }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(3);
+        const rows = Array.from(chrome.list.querySelectorAll<HTMLElement>('.qaap-model-picker-row')).map(row => row.dataset.modelId);
+        expect(rows).to.deep.equal(['nvidia/llama-3.1-70b', 'groq/llama-3.3-70b-versatile']);
+        const providers = Array.from(chrome.list.querySelectorAll('.qaap-model-picker-row-provider')).map(el => el.textContent);
+        expect(providers).to.deep.equal(['NVIDIA', 'Groq']);
+
+        // Closing the picker removes the listener so later events do not trigger fetches.
+        chrome.sheet.remove();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId: 'pi' } }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(fetchCount).to.equal(3);
     });
 });

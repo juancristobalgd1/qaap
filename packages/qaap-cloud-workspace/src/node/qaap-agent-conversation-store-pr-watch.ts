@@ -56,6 +56,8 @@ export function recordPullRequestWatchExtracted(
         ctx.publishFinalizedAgentMessage(conversationId, next, tracedMessageId);
     }
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
-    void ctx.persist();
+    // Debounced like streaming updates: a PR-watch tick is not worth an immediate full write of every dirty
+    // conversation (a 1-2 s synchronous stringify on staging, repeated per watched PR).
+    ctx.schedulePersist();
     return next;
 }

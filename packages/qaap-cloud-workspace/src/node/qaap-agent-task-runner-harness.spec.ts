@@ -138,14 +138,58 @@ describe('QaapAgentTaskRunner connection probes', () => {
         return { runner, probes };
     }
 
-    it('answers listAgents without waiting for CLI auth probes', () => {
+    /** Lets the probe queue start what it holds: it starts one probe per event-loop turn. */
+    async function flushProbeQueue(turns = 6): Promise<void> {
+        for (let turn = 0; turn < turns; turn++) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+    }
+
+    it('answers listAgents without waiting for CLI auth probes', async () => {
         const { runner, probes } = createRunner(() => new Promise<ConnectionState>(() => undefined));
         const agents = runner.listAgents('alice');
         expect(agents.filter(agent => agent.id !== 'shell').map(agent => `${agent.id}:${agent.connectionState}`).sort()).to.deep.equal(['claude:unknown', 'codex:unknown']);
-        expect(probes.sort()).to.deep.equal(['claude', 'codex']);
-        // A second request joins the in-flight probes instead of spawning again.
+        // Probes start on later event-loop turns (QaapAgentProbeQueue), never inside the request.
+        expect(probes).to.deep.equal([]);
+        // A second request joins the queued probes instead of spawning again.
         runner.listAgents('alice');
+        await flushProbeQueue();
+        expect(probes.sort()).to.deep.equal(['claude', 'codex']);
+    });
+
+    it('starts at most one probe per event-loop turn and at most two at a time', async () => {
+        const { runner, probes } = createRunner(() => new Promise<ConnectionState>(() => undefined), [
+            { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex {prompt}' },
+            { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude {prompt}' },
+            { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi {prompt}' },
+        ]);
+        runner.listAgents('alice');
+        await flushProbeQueue(1);
+        expect(probes).to.have.length(1);
+        await flushProbeQueue();
+        // The third waits for a slot: the first two never answer.
         expect(probes).to.have.length(2);
+    });
+
+    it('keeps states answered within 30 s on a full catalog refresh, so those harnesses are not probed again', async () => {
+        const { runner, probes } = createRunner(async () => 'connected');
+        const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number }> }).agentConnectionStates;
+        states.set('codex:alice', { state: 'connected', at: Date.now() - 5_000 });
+        states.set('claude:alice', { state: 'connected', at: Date.now() - 60_000 });
+        runner.refreshAgentCatalog('alice');
+        expect(states.has('codex:alice')).to.equal(true);
+        expect(states.has('claude:alice')).to.equal(false);
+        runner.listAgents('alice');
+        await flushProbeQueue();
+        expect(probes).to.deep.equal(['claude']);
+    });
+
+    it('does not spawn a queued probe that a catalog refresh superseded before it started', async () => {
+        const { runner, probes } = createRunner(async () => 'connected');
+        runner.listAgents('alice');
+        runner.refreshAgentCatalog('alice');
+        await flushProbeQueue();
+        expect(probes).to.deep.equal([]);
     });
 
     it('listAgentsFresh returns settled probe results and stops waiting at the budget', async () => {
@@ -175,6 +219,7 @@ describe('QaapAgentTaskRunner connection probes', () => {
         expect(Date.now() - startedAt).to.be.lessThan(1000);
         expect(agents.find(agent => agent.id === 'codex')?.connectionState).to.equal('connected');
         // The re-probe still runs in the background and lands in the cache for the next request.
+        await flushProbeQueue();
         expect(probes).to.include('codex');
         resolveProbe('disconnected');
         await new Promise(resolve => setTimeout(resolve, 0));
@@ -201,8 +246,11 @@ describe('QaapAgentTaskRunner connection probes', () => {
         ];
         const { runner } = createRunner(agentId => agentId === 'codex'
             ? answers.shift() ?? Promise.resolve('unknown')
-            : new Promise<ConnectionState>(() => undefined));
+            // Settles, so it frees its slot (QaapAgentProbeQueue runs two at a time) for the re-probe.
+            : Promise.resolve<ConnectionState>('unknown'));
         runner.listAgents('alice');
+        // The first probe is already running (spawned) when the refresh supersedes it.
+        await flushProbeQueue();
         runner.refreshAgentCatalog();
         expect(await runner.isAgentConnectedFresh('codex', 'alice')).to.equal(true);
         resolveFirst('disconnected');

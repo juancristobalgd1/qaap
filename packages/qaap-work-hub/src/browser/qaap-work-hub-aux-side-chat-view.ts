@@ -5,7 +5,7 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { QAAP_AGENT_SIGNED_IN_EVENT } from './qaap-agent-signed-in-event';
-import { QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT, QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { nls } from '@theia/core/lib/common/nls';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileComposerAttachHandlers } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
@@ -387,6 +387,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         this.live = this.host.subscribeLive(frame => this.onLiveFrame(frame));
         this.view().addEventListener(QAAP_AGENT_SIGNED_IN_EVENT, this.onAgentSignedIn);
         this.view().addEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, this.onAgentSignedIn);
+        this.view().addEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, this.onAgentSignedIn);
         this.renderContext();
         this.loadModels();
         if (this.conversationId) {
@@ -400,6 +401,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         this.closePicker();
         this.view().removeEventListener(QAAP_AGENT_SIGNED_IN_EVENT, this.onAgentSignedIn);
         this.view().removeEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, this.onAgentSignedIn);
+        this.view().removeEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, this.onAgentSignedIn);
         this.live?.dispose();
         this.live = undefined;
         this.clearRefreshTimer();

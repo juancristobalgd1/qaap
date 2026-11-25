@@ -13,6 +13,7 @@ import {
     invalidateNativeAgentModels,
     listNativeAgentModels,
     prepareNativeAgentModels,
+    setNativeModelCatalogStoreDirForTests,
 } from './qaap-agent-native-models';
 
 describe('qaap-agent-native-models per harness instance cache', () => {
@@ -20,8 +21,10 @@ describe('qaap-agent-native-models per harness instance cache', () => {
     let originalPath: string | undefined;
 
     beforeEach(() => {
-        clearNativeAgentModelCache();
         sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-native-instance-'));
+        // Persisted catalogs must never reach the real ~/.qaap from a test.
+        setNativeModelCatalogStoreDirForTests(path.join(sandbox, 'store'));
+        clearNativeAgentModelCache();
         originalPath = process.env.PATH;
         fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
         process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;

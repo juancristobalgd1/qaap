@@ -61,7 +61,9 @@ import {
     type QaapAgentTaskListSnapshot,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
+    QAAP_AGENT_MODELS_CHANGED_EVENT,
     QAAP_AGENT_SIGNED_OUT_EVENT,
+    type QaapAgentModelsChangedDetail,
     type QaapAgentSignedOutDetail,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { attachQaapPreviewFailureAgentHandoff } from './qaap-preview-failure-agent-handoff';
@@ -773,6 +775,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         window.addEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
         window.addEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, this.onNavigateToConversation);
         window.addEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, this.onAgentSignedOut);
+        window.addEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, this.onAgentModelsChanged);
         this.bindAgentFinishedToastCallbacks();
         // A preview that fails because of the app goes back to the open task's agent, so the task continues.
         this.previewFailureHandoff = this.projectBootstrap
@@ -811,6 +814,45 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.closeTranscriptComposerSheets();
         void this.reloadComposersAfterAgentSignOut();
     };
+
+    /**
+     * Backend pushed a live native model catalog update (for example, Pi finished listing a newly
+     * connected provider): keep the pinned composer's stored model selection and labels current.
+     */
+    public readonly onAgentModelsChanged = (event: Event): void => {
+        const agentId = (event as CustomEvent<QaapAgentModelsChangedDetail | undefined>).detail?.agentId?.trim();
+        if (!agentId) {
+            return;
+        }
+        invalidateAgentModelsCache(agentId);
+        void this.refreshStickyModelSelectionForAgent(agentId);
+    };
+
+    protected async refreshStickyModelSelectionForAgent(agentId: string): Promise<void> {
+        const pinned = this.stickyComposerPinnedAgentId?.trim();
+        if (!pinned || pinned.toLowerCase() !== agentId.toLowerCase()) {
+            return;
+        }
+        const filtered = this.hubQueryUi.applySearch(this.hubQueryUi.applyFilter(this.projects, this.filter));
+        const stickyProject = this.composerHeaderUi.resolveStickyComposerProject(filtered);
+        const cwd = stickyProject
+            ? (this.projectsService.getProjectCwd(stickyProject) ?? this.preparedCwdByProjectId.get(stickyProject.id))
+            : undefined;
+        const previous = this.stickyComposerAgentModel;
+        const resolved = await this.stickyComposerAgentsUi.ensureStickyComposerAgentModel(pinned, cwd);
+        if (this.stickyComposerPinnedAgentId?.trim().toLowerCase() !== agentId.toLowerCase()) {
+            return;
+        }
+        const changed = resolved?.modelId !== previous?.modelId
+            || resolved?.vendor !== previous?.vendor
+            || resolved?.provider !== previous?.provider;
+        if (changed) {
+            this.stickyComposerAgentModel = resolved;
+            if (this.visible) {
+                this.stickyComposerRenderUi.renderStickyComposer();
+            }
+        }
+    }
 
     protected async reloadComposersAfterAgentSignOut(): Promise<void> {
         const filtered = this.hubQueryUi.applySearch(this.hubQueryUi.applyFilter(this.projects, this.filter));
@@ -1698,7 +1740,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return shouldUseTheiaCoderExtracted(this, content, selectedAgentId, options);
     }
 
-    protected async loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
+    protected async loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<QaapAgentTaskListSnapshot> {
         return this.backgroundTaskUi.loadBackendAgentSnapshot(options);
     }
 

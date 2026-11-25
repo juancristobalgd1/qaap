@@ -5,7 +5,8 @@
 
 // Pure + DI helpers extracted from QaapAgentTaskRunner (batch 3).
 
-import { execFile, spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
+import { execFileKillingGroup, killProcessGroup } from './qaap-exec-file-group';
+import { spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
@@ -183,16 +184,19 @@ export function probeAgentBinOnce(
     if (!bin) {
         return false;
     }
+    // Diagnostic only (the answer is never used): asynchronous, so a slow CLI (`qaiq --version` boots a Node CLI in
+    // 2-3.5 s) no longer blocks the backend event loop for every request behind it.
+    probedAgentBins.add(agentId);
     try {
-        const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS });
-        if (result.error || result.status !== 0) {
-            console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${result.error?.message ?? `exit ${String(result.status)}`}`);
-        }
-        probedAgentBins.add(agentId);
-        return true;
+        execFileKillingGroup(bin, ['--version'], { timeoutMs: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS, lowPriority: true }, error => {
+            if (error) {
+                console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${error.message}`);
+            }
+        });
     } catch {
-        return false;
+        // A missing binary is reported by the regular detection; nothing to log here.
     }
+    return true;
 }
 
 /**
@@ -506,12 +510,13 @@ export function probeAgentConnectionState(
             }
         };
         try {
-            const child = execFile(options?.file ?? bin, [...args], {
+            // The deadline kills the probe's whole process tree: a wrapper (`sh -c`, npm shim) left the CLI alive.
+            const child = execFileKillingGroup(options?.file ?? bin, [...args], {
                 cwd: options?.cwd,
                 env: childProcessEnv(options?.env),
-                encoding: 'utf8',
-                timeout: timeoutMs,
+                timeoutMs,
                 windowsHide: true,
+                lowPriority: true,
             }, (error, stdout, stderr) => {
                 const output = `${stdout ?? ''}\n${stderr ?? ''}`;
                 // A non-zero exit is still a readable answer ("Not logged in" exits 1); only a
@@ -522,8 +527,8 @@ export function probeAgentConnectionState(
             });
             // Hard bound: a probe whose pipes stay open past the timeout is inconclusive, not pending.
             settleTimer = setTimeout(() => {
+                killProcessGroup(child);
                 try {
-                    child.kill('SIGKILL');
                     child.stdout?.destroy();
                     child.stderr?.destroy();
                 } catch {

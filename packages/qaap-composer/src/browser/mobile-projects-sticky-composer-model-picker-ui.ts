@@ -11,8 +11,14 @@ import {
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { resolvePiLoginProvider } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
-import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import {
+    QAAP_AGENT_MODELS_CHANGED_EVENT,
+    QAAP_AGENT_SIGNED_IN_EVENT,
+    type QaapAgentModelsChangedDetail,
+    type QaapAgentSignedInDetail,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import {
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
@@ -27,6 +33,20 @@ import { placePickerAbove } from './qaap-composer-picker-placement';
 
 /** How long a model picked before its harness sign-in waits for that sign-in to be confirmed. */
 const SELECT_AFTER_SIGN_IN_WINDOW_MS = 15 * 60_000;
+
+/** UI state of an open picker sheet, kept across its re-renders; dropped with the sheet. */
+const openPickerUiState = new WeakMap<HTMLElement, { readonly railSelection: 'favorites' | string; readonly query: string }>();
+
+/** Same model ids in the same order: an answer that brings nothing new must not rebuild the open list. */
+function sameModelIds(left: readonly QaapQaiqModelOption[] | undefined, right: readonly QaapQaiqModelOption[]): boolean {
+    if (!left || left.length !== right.length) {
+        return false;
+    }
+    return left.every((model, index) => model.modelId === right[index].modelId
+        && model.label === right[index].label
+        && model.vendor === right[index].vendor
+        && model.available === right[index].available);
+}
 
 /** The one pending «select this model once signed in»; a newer pick replaces it. */
 let pendingSelectAfterSignIn: (() => void) | undefined;
@@ -76,6 +96,11 @@ export interface StickyComposerModelPickerOptions {
     readonly onRefresh: () => void;
     /** Same handlers the previous agent sheet used for its sign-in and AI settings rows. */
     readonly onProactiveLogin?: (agentId: string) => void;
+    /**
+     * Whether a harness is not reported as signed out; on the Pi rail a Pi that is not signed out offers adding another
+     * provider. A probe still pending after a restart must not hide the action.
+     */
+    readonly isAgentNotSignedOut?: (agentId: string) => boolean;
     readonly onOpenAiFeaturesSettings?: () => void;
     /** Keeps catalog labels so the model pill shows «GPT-5.6 Sol», not the slug, after a reload. */
     readonly rememberModelLabels?: (models: readonly QaapQaiqModelOption[]) => void;
@@ -94,7 +119,19 @@ function toPickerModel(agentId: string, model: QaapQaiqModelOption): QaapPickerM
         unavailableReason: unavailable ? unavailableText(model.unavailableReason) : undefined,
         tier: model.tier,
         signInRequired: unavailable && model.unavailableReason === 'not-connected',
+        vendor: model.vendor,
+        providerLabel: agentId === 'pi' ? piProviderLabel(model.vendor) : undefined,
     };
+}
+
+/** Display name of a Pi provider (`groq` → `Groq`), falling back to the raw vendor id for an unknown one. */
+function piProviderLabel(vendor: string | undefined): string | undefined {
+    const id = vendor?.trim();
+    if (!id) {
+        return undefined;
+    }
+    const provider = resolvePiLoginProvider(id);
+    return provider?.shortName ?? provider?.name ?? id;
 }
 
 function unavailableText(reason: QaapQaiqModelOption['unavailableReason']): string {
@@ -128,6 +165,10 @@ export async function renderStickyComposerModelPicker(
     if (searchRow) {
         searchRow.style.display = 'none';
     }
+    // The same open picker is rendered again when the background agent refresh answers: keep where the user
+    // was (rail, search, scroll) instead of jumping back to the pinned harness at the top of the list.
+    const preserved = openPickerUiState.get(chrome.sheet);
+    const previousScrollTop = chrome.list.querySelector<HTMLElement>('[role="listbox"]')?.scrollTop ?? 0;
     const host = document.createElement('div');
     host.className = 'qaap-composer-model-picker-host';
     chrome.list.replaceChildren(host);
@@ -147,8 +188,10 @@ export async function renderStickyComposerModelPicker(
             modelsByAgent.set(agent.id, cached);
         }
     }
-    // Harnesses whose model list has not answered yet in this open (cached lists are not pending).
-    const pendingAgentIds = new Set(agents.map(agent => agent.id).filter(agentId => !modelsByAgent.has(agentId)));
+    // Harnesses whose model list was asked for in this open and has not answered yet (cached lists are not pending).
+    const pendingAgentIds = new Set<string>();
+    // Harnesses asked for in this open: each is asked once per open, whatever the rail does afterwards.
+    const requestedAgentIds = new Map<string, Promise<void>>();
     let models: QaapPickerModel[] = [];
     let catalog = new Map<string, QaapQaiqModelOption>();
     const rebuildModels = (): void => {
@@ -164,8 +207,13 @@ export async function renderStickyComposerModelPicker(
     };
     rebuildModels();
 
-    let query = '';
-    let railSelection: 'favorites' | string = pinned;
+    let query = preserved?.query ?? '';
+    let railSelection: 'favorites' | string = preserved && (preserved.railSelection === 'favorites'
+        || harnesses.some(harness => harness.id === preserved.railSelection)) ? preserved.railSelection : pinned;
+    const rememberUiState = (): void => {
+        openPickerUiState.set(chrome.sheet, { railSelection, query });
+    };
+    rememberUiState();
     let favorites = QaapComposerModelPickerModel.readFavorites(window.localStorage);
     let approvalCurrent: QaapAgentApprovalPolicyId = options.approval;
     const close = (): void => { chrome.onClose(); };
@@ -175,8 +223,10 @@ export async function renderStickyComposerModelPicker(
             return;
         }
         observer.disconnect();
+        openPickerUiState.delete(chrome.sheet);
         disposeQaapComposerModelPicker(host);
         window.removeEventListener('resize', onResize);
+        window.removeEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onModelsChanged);
         chrome.list.replaceChildren();
         options.onRefresh();
     });
@@ -184,7 +234,34 @@ export async function renderStickyComposerModelPicker(
     const onResize = (): void => placePickerAbove(chrome.sheet, options.anchor);
     window.addEventListener('resize', onResize);
 
+    /**
+     * The "Connect another provider" action of the Pi rail once Pi is connected. Pi's Connect dialog adds a provider
+     * to the existing sign-in (`/login` in the same terminal), so the action reuses the sign-in path as it is.
+     */
+    const connectAnotherProviderAction = (selection: 'favorites' | string): { label: string; onAction: () => void } | undefined => {
+        if (selection !== 'pi' || !options.onProactiveLogin || !options.isAgentNotSignedOut?.('pi')) {
+            return undefined;
+        }
+        return {
+            label: nls.localize('qaap/composer/modelPicker/connectAnotherPiProvider', 'Connect another provider'),
+            onAction: () => {
+                close();
+                options.onProactiveLogin?.('pi');
+            },
+        };
+    };
+
     const repaint = (): void => {
+        // A repaint rebuilds the list: keep where the user had scrolled to.
+        const scrolled = host.querySelector<HTMLElement>('[role="listbox"]');
+        const scrollTop = scrolled?.scrollTop ?? 0;
+        paint();
+        const list = host.querySelector<HTMLElement>('[role="listbox"]');
+        if (list && scrollTop > 0) {
+            list.scrollTop = scrollTop;
+        }
+    };
+    const paint = (): void => {
         const state: QaapPickerState = {
             harnesses,
             models,
@@ -207,6 +284,7 @@ export async function renderStickyComposerModelPicker(
                 current: resolveComposerEffortLevel(options.cwd, effortAgentId, effortModelId),
             },
             approval: { current: approvalCurrent },
+            connectAnother: connectAnotherProviderAction(railSelection),
             isMobile: options.isMobile,
             onSelectModel: (agentId, modelId) => {
                 const model = catalog.get(QaapComposerModelPickerModel.favoriteKey(agentId, modelId));
@@ -233,10 +311,17 @@ export async function renderStickyComposerModelPicker(
             },
             onQuery: value => {
                 query = value;
+                rememberUiState();
+                if (query.trim()) {
+                    requestSearchCatalogs();
+                }
                 repaint();
             },
             onRail: selection => {
                 railSelection = selection;
+                rememberUiState();
+                // Asked before the repaint so the list shows its loading line instead of "No models match.".
+                void requestAgentModelsInOrder(harnessIdsFor(selection));
                 repaint();
             },
             onClose: close,
@@ -254,18 +339,109 @@ export async function renderStickyComposerModelPicker(
         });
         placePickerAbove(chrome.sheet, options.anchor);
     };
-    repaint();
-    // Background refresh of every harness: each answer repaints, so the list never waits for the slowest one.
-    for (const agent of agents) {
-        void ctx.resolveModelsForAgentPickerSafe(agent.id).then(resolved => {
-            pendingAgentIds.delete(agent.id);
+    /** A harness whose list is not on screen yet is loading from the moment it is asked for. */
+    const markPending = (agentId: string): void => {
+        if (!modelsByAgent.has(agentId)) {
+            pendingAgentIds.add(agentId);
+        }
+    };
+    /**
+     * Asks one harness for its model list, once per open. The answer repaints only when it changes what is on screen:
+     * a list that came back the same, or for a harness not in view, must not rebuild the open list.
+     */
+    const requestAgentModels = (agentId: string): Promise<void> => {
+        const running = requestedAgentIds.get(agentId);
+        if (running) {
+            return running;
+        }
+        markPending(agentId);
+        const request = ctx.resolveModelsForAgentPickerSafe(agentId).then(resolved => {
+            const endedLoading = pendingAgentIds.delete(agentId);
             if (!chrome.sheet.isConnected) {
                 return;
             }
-            chrome.modelsByAgent.set(agent.id, resolved.models);
-            modelsByAgent.set(agent.id, resolved.models);
-            rebuildModels();
-            repaint();
+            chrome.modelsByAgent.set(agentId, resolved.models);
+            const changed = !sameModelIds(modelsByAgent.get(agentId), resolved.models);
+            if (changed) {
+                modelsByAgent.set(agentId, resolved.models);
+                rebuildModels();
+            }
+            const visible = railSelection === agentId || railSelection === 'favorites' || query.trim().length > 0;
+            if (visible && (changed || endedLoading)) {
+                repaint();
+            }
         });
+        requestedAgentIds.set(agentId, request);
+        return request;
+    };
+    /**
+     * Asks the harnesses one after another, never two at once; each is marked loading as soon as it is queued, so the
+     * list shows the loading line for all of them. A failed answer does not stop the ones queued behind it.
+     */
+    const requestAgentModelsInOrder = (agentIds: readonly string[]): Promise<void> => {
+        agentIds.forEach(markPending);
+        // Harnesses already asked (in flight or answered) go first: the queue waits for them before it asks the rest.
+        const ordered = [
+            ...agentIds.filter(agentId => requestedAgentIds.has(agentId)),
+            ...agentIds.filter(agentId => !requestedAgentIds.has(agentId)),
+        ];
+        // The first request starts at once (its answer lands as it did before the queue); the rest wait their turn.
+        let queue: Promise<void> | undefined;
+        for (const agentId of ordered) {
+            queue = queue
+                ? queue.then(() => requestAgentModels(agentId)).catch(() => undefined)
+                : requestAgentModels(agentId).catch(() => undefined);
+        }
+        return queue ?? Promise.resolve();
+    };
+    /** The harnesses a rail selection needs: the harness itself, or for the star rail the ones holding a favorite. */
+    const harnessIdsFor = (selection: 'favorites' | string): string[] => {
+        if (selection !== 'favorites') {
+            return [selection];
+        }
+        return agents.map(agent => agent.id).filter(agentId => favorites.some(key => key.startsWith(`${agentId}::`)));
+    };
+    // A search matches every harness, so the first search asks the rest, one at a time.
+    let searchCatalogsRequested = false;
+    const requestSearchCatalogs = (): void => {
+        if (searchCatalogsRequested) {
+            return;
+        }
+        searchCatalogsRequested = true;
+        void requestAgentModelsInOrder(agents.map(agent => agent.id));
+    };
+    // On open only the selected harness (or the harnesses holding a favorite) is asked; a search asks them all.
+    if (query.trim()) {
+        requestSearchCatalogs();
+    } else {
+        void requestAgentModelsInOrder(harnessIdsFor(railSelection));
+    }
+    /** Backend pushed a live catalog update for one harness: clear its in-open cache and refetch if visible or loaded. */
+    const onModelsChanged = (event: Event): void => {
+        if (!chrome.sheet.isConnected) {
+            return;
+        }
+        const changedId = (event as CustomEvent<QaapAgentModelsChangedDetail | undefined>).detail?.agentId?.trim().toLowerCase();
+        if (!changedId) {
+            return;
+        }
+        const matched = agents.find(agent => agent.id.trim().toLowerCase() === changedId);
+        if (!matched) {
+            return;
+        }
+        chrome.modelsByAgent.delete(matched.id);
+        requestedAgentIds.delete(matched.id);
+        const visible = railSelection === matched.id || railSelection === 'favorites' || query.trim().length > 0;
+        if (visible || modelsByAgent.has(matched.id)) {
+            void requestAgentModels(matched.id);
+        }
+    };
+    window.addEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onModelsChanged);
+    repaint();
+    if (preserved && previousScrollTop > 0) {
+        const list = host.querySelector<HTMLElement>('[role="listbox"]');
+        if (list) {
+            list.scrollTop = previousScrollTop;
+        }
     }
 }

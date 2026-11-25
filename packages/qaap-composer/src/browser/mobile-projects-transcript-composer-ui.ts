@@ -86,7 +86,7 @@ export interface MobileProjectsTranscriptComposerHost {
     stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
     stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
 
-    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<{
+    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<{
         agents: QaapAgentTaskAgentOption[];
         qaiqModels: QaapQaiqModelOption[];
         defaultAgent?: string;
@@ -194,7 +194,8 @@ export class MobileProjectsTranscriptComposerUi {
         options?: { force?: boolean },
     ): Promise<readonly QaapAgentTaskAgentOption[]> {
         if (options?.force || this.host.transcriptComposerBackendAgents.length === 0) {
-            const loaded = await this.refreshTranscriptComposerAgents(project, { forceRefresh: !!options?.force });
+            // Same rule as the sticky composer: opening the picker never forces `refresh=1` (a re-probe of every harness).
+            const loaded = await this.refreshTranscriptComposerAgents(project, { forceRefresh: false });
             if (!loaded) {
                 throw new Error('Agent catalog unavailable');
             }
@@ -281,7 +282,7 @@ export class MobileProjectsTranscriptComposerUi {
         return readStoredAgentModel(cwd, agentId);
     }
 
-    async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
+    async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean; readonly refreshAgent?: string }): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.resolveCatalogCwd(project);
         try {
@@ -466,6 +467,7 @@ export class MobileProjectsTranscriptComposerUi {
                             void this.host.openAgentSignInTerminal?.(agentId, project);
                         }
                         : undefined,
+                    isAgentNotSignedOut: agentId => this.host.stickyComposerAgentsUi.isAgentNotSignedOut(agentId),
                 }),
             });
         };

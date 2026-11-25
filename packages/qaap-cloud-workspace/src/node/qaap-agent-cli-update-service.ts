@@ -18,6 +18,7 @@ import {
 } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { stripBackendOnlyEnv } from './qaap-child-process-env';
+import { withLowCpuPriority } from './qaap-exec-file-group';
 import { resolveQaapWritableHome } from './qaap-writable-home';
 import { QAAP_HARNESS_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import {
@@ -598,12 +599,20 @@ export class QaapAgentCliUpdateService {
     protected runBoundedProcess(
         file: string,
         args: readonly string[],
-        options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly shell?: boolean; readonly timeoutMs: number },
+        options: {
+            readonly cwd?: string;
+            readonly env?: NodeJS.ProcessEnv;
+            readonly shell?: boolean;
+            readonly timeoutMs: number;
+            /** A background check (not an install the user asked for): run under `nice` (see withLowCpuPriority). */
+            readonly lowPriority?: boolean;
+        },
     ): Promise<NpmInstallResult> {
         return new Promise<NpmInstallResult>(resolve => {
             let child: ChildProcess;
             try {
-                child = spawn(file, [...args], {
+                const command = options.lowPriority && !options.shell ? withLowCpuPriority(file, args) : { file, args: [...args] };
+                child = spawn(command.file, command.args, {
                     cwd: options.cwd,
                     env: options.env,
                     shell: options.shell ?? false,
@@ -959,6 +968,7 @@ export class QaapAgentCliUpdateService {
                 cwd: dropsToTarget ? '/' : target?.home,
                 env,
                 timeoutMs: CLI_VERSION_PROBE_TIMEOUT_MS,
+                lowPriority: true,
             });
             const raw = `${probe.stdout}\n${probe.stderr}`.trim();
             return { bin, version: parseCliVersion(raw) };

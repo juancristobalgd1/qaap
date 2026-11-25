@@ -12,13 +12,20 @@ import {
     clearNativeAgentModelCache,
     discoverClaudeCliModels,
     discoverCodexAccountModels,
+    forgetNativeModelMemoryForTests,
+    hasLiveNativeAgentModels,
+    expireNativeAgentModels,
+    PI_NATIVE_MODEL_CACHE_TTL_MS,
     invalidateNativeAgentModels,
     listNativeAgentModels,
     NATIVE_MODEL_CACHE_TTL_MS,
+    type NativeAgentModelsChangedEvent,
     type NativeModelDiscoverySpawner,
+    onDidChangeNativeAgentModels,
     parseCodexModelsCache,
     prepareNativeAgentModels,
     resolveCodexAgentHome,
+    setNativeModelCatalogStoreDirForTests,
 } from './qaap-agent-native-models';
 
 describe('qaap-agent-native-models', () => {
@@ -26,8 +33,10 @@ describe('qaap-agent-native-models', () => {
     let originalPath: string | undefined;
 
     beforeEach(() => {
-        clearNativeAgentModelCache();
         sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-native-models-'));
+        // Persisted catalogs go to the sandbox, never to the real ~/.qaap; set before the clear touches the store.
+        setNativeModelCatalogStoreDirForTests(path.join(sandbox, 'store'));
+        clearNativeAgentModelCache();
         originalPath = process.env.PATH;
     });
 
@@ -35,6 +44,19 @@ describe('qaap-agent-native-models', () => {
         process.env.PATH = originalPath;
         clearNativeAgentModelCache();
         fs.rmSync(sandbox, { recursive: true, force: true });
+    });
+
+    it('keeps the persisted live catalogs when the whole in-memory cache is cleared (catalog refresh on page load)', async () => {
+        const bin = path.join(sandbox, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, 'pi'), '#!/bin/sh\necho "provider  model  context"\necho "nvidia  meta/llama-3.2-90b-vision-instruct  128K"\n', { mode: 0o755 });
+        process.env.PATH = `${bin}:${originalPath}`;
+        const spawner = (file: string, args: readonly string[]) => ({ file, args, env: process.env });
+        const discovered = await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+        expect(discovered.length).to.be.greaterThan(0);
+        clearNativeAgentModelCache();
+        forgetNativeModelMemoryForTests();
+        expect(listNativeAgentModels('pi', 'alice').map(model => model.modelId)).to.deep.equal(discovered.map(model => model.modelId));
     });
 
     it('answers a cold catalog without waiting for a slow CLI, then caches the discovered list', async function (): Promise<void> {
@@ -73,6 +95,80 @@ describe('qaap-agent-native-models', () => {
         invalidateNativeAgentModels('cursor');
         const discovered = await prepareNativeAgentModels('cursor');
         expect(discovered.map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+    });
+
+    describe('persisted live catalogs across restarts', () => {
+        const storeFile = (): string => path.join(sandbox, 'store', 'native-model-catalogs.json');
+
+        it('persists a live discovery and serves it at once after a restart', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            await prepareNativeAgentModels('cursor');
+            const stored = JSON.parse(fs.readFileSync(storeFile(), 'utf8')) as Record<string, { models: { modelId: string }[] }>;
+            expect(stored.cursor.models.map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+            expect((fs.statSync(storeFile()).mode & 0o777)).to.equal(0o600);
+
+            // Restart: the in-memory cache is gone and the CLI is not reachable yet (no binary on PATH).
+            forgetNativeModelMemoryForTests();
+            process.env.PATH = sandbox;
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(true);
+            // The restored entry is due for refresh, so the failed background listing keeps the live list.
+            await prepareNativeAgentModels('cursor');
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+        });
+
+        it('drops the persisted catalog on invalidation so a restart does not bring it back', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            await prepareNativeAgentModels('cursor');
+            invalidateNativeAgentModels('cursor');
+            const stored = JSON.parse(fs.readFileSync(storeFile(), 'utf8')) as Record<string, unknown>;
+            expect(stored).to.not.have.property('cursor');
+
+            forgetNativeModelMemoryForTests();
+            process.env.PATH = sandbox;
+            expect(listNativeAgentModels('cursor')).to.deep.equal(listStaticNativeAgentModels('cursor'));
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+        });
+
+        it('ignores a corrupt catalog file and answers the curated list', async () => {
+            fs.mkdirSync(path.join(sandbox, 'store'), { recursive: true });
+            fs.writeFileSync(storeFile(), '{"cursor": {"models": [not json');
+            forgetNativeModelMemoryForTests();
+            process.env.PATH = sandbox;
+            expect(listNativeAgentModels('cursor')).to.deep.equal(listStaticNativeAgentModels('cursor'));
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+        });
+    });
+
+    describe('hasLiveNativeAgentModels', () => {
+        it('is false while the cache is empty', () => {
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+            expect(hasLiveNativeAgentModels(undefined)).to.equal(false);
+        });
+
+        it('is true once the CLI answered with a live catalog', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            await prepareNativeAgentModels('cursor');
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(true);
+        });
+
+        it('is false for the curated fallback (CLI missing)', async () => {
+            process.env.PATH = sandbox;
+            await prepareNativeAgentModels('cursor');
+            expect(hasLiveNativeAgentModels('cursor')).to.equal(false);
+        });
     });
 
     describe('Codex account catalog (models_cache.json)', () => {
@@ -269,6 +365,51 @@ describe('qaap-agent-native-models', () => {
             invalidateNativeAgentModels('pi');
             expect(listNativeAgentModels('pi', 'bob')).to.deep.equal(listStaticNativeAgentModels('pi'));
         });
+
+        it('relists Pi after 10 minutes, so a provider removed outside the Connect dialog leaves the picker', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const realNow = Date.now;
+            let now = realNow();
+            Date.now = () => now;
+            try {
+                const bin = path.join(sandbox, 'pi-ttl');
+                fs.writeFileSync(bin, piTable('groq', 'llama-4'), { mode: 0o755 });
+                const spawner = () => ({ file: bin, args: [] as string[] });
+                expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+
+                // Groq's key is removed in a terminal: Pi now lists NVIDIA only.
+                fs.writeFileSync(bin, piTable('nvidia', 'nemotron'), { mode: 0o755 });
+                now += PI_NATIVE_MODEL_CACHE_TTL_MS - 1;
+                expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+                now += 1;
+                expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('nvidia/nemotron');
+            } finally {
+                Date.now = realNow;
+            }
+        });
+
+        it('lists again after a provider is connected, and keeps the last good catalog when that listing fails', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const bin = path.join(sandbox, 'pi-fresh');
+            fs.writeFileSync(bin, piTable('nvidia', 'nemotron'), { mode: 0o755 });
+            const spawner = () => ({ file: bin, args: [] as string[] });
+            await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+
+            // Groq connected: the next request lists again and sees it.
+            fs.writeFileSync(bin, piTable('groq', 'llama-4'), { mode: 0o755 });
+            expireNativeAgentModels('pi', 'alice');
+            expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+
+            // Was: invalidated outright, so a listing that overran (cold tenant) fell back to the curated list.
+            fs.writeFileSync(bin, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+            expireNativeAgentModels('pi', 'alice');
+            expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('groq/llama-4');
+            expect(listNativeAgentModels('pi', 'alice')[0].modelId).to.equal('groq/llama-4');
+        });
     });
 
     it('serves a stale live catalog at once and refreshes it once the TTL has passed', async function (): Promise<void> {
@@ -425,6 +566,59 @@ describe('qaap-agent-native-models', () => {
             const errorAnswer = JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: 'qaap-model-list', error: 'unsupported' } });
             fs.writeFileSync(claudeBin, `#!/bin/sh\nread -r request\necho '${errorAnswer}'\nexit 0\n`, { mode: 0o755 });
             expect(await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) })).to.deep.equal(listStaticNativeAgentModels('claude'));
+        });
+    });
+
+    describe('onDidChangeNativeAgentModels notifications', () => {
+        it('emits only when a live catalog is newly stored or changes for (agent, owner)', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const bin = path.join(sandbox, 'bin');
+            fs.mkdirSync(bin);
+            const piBin = path.join(bin, 'pi');
+            const writePi = (lines: string[]): void => {
+                fs.writeFileSync(
+                    piBin,
+                    `#!/bin/sh\necho "provider  model  context"\n${lines.map(line => `echo "${line}"`).join('\n')}\n`,
+                    { mode: 0o755 },
+                );
+            };
+            const spawner: NativeModelDiscoverySpawner = (file, args) => ({
+                file: file === 'pi' ? piBin : file,
+                args: [...args],
+                env: process.env,
+            });
+            const events: NativeAgentModelsChangedEvent[] = [];
+            const subscription = onDidChangeNativeAgentModels(event => events.push(event));
+            try {
+                // First live discovery emits with normalized owner login.
+                writePi(['nvidia  meta/llama-3.2-90b  128K']);
+                await prepareNativeAgentModels('pi', { ownerLogin: 'Alice', spawner });
+                expect(events).to.deep.equal([{ agentId: 'pi', ownerLogin: 'alice' }]);
+
+                // Rediscovering the exact same catalog does not emit again.
+                expireNativeAgentModels('pi', 'alice');
+                await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+                expect(events).to.have.length(1);
+
+                // Adding a new provider (Groq) emits a change event.
+                writePi(['nvidia  meta/llama-3.2-90b  128K', 'groq  llama-3.3-70b-versatile  128K']);
+                expireNativeAgentModels('pi', 'alice');
+                await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+                expect(events).to.deep.equal([
+                    { agentId: 'pi', ownerLogin: 'alice' },
+                    { agentId: 'pi', ownerLogin: 'alice' },
+                ]);
+
+                // A failed or empty listing never emits.
+                fs.writeFileSync(piBin, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+                expireNativeAgentModels('pi', 'alice');
+                await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+                expect(events).to.have.length(2);
+            } finally {
+                subscription.dispose();
+            }
         });
     });
 });

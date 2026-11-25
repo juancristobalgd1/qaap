@@ -20,6 +20,8 @@ import { QaapPluginDeployerSecurityParticipant } from './qaap-plugin-deployer-se
 import { QaapPluginServerImpl } from './qaap-plugin-server-impl';
 import { QaapTerminalEnvironmentContribution } from './qaap-terminal-environment-contribution';
 import { bindQaapLazyPlugins } from './qaap-lazy-plugin-bindings';
+import { HostedPluginLocalizationService } from '@theia/plugin-ext/lib/hosted/node/hosted-plugin-localization-service';
+import { QaapHostedPluginLocalizationService } from './qaap-hosted-plugin-localization-service';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
@@ -48,6 +50,11 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     if (isBound(PluginServer)) {
         bind(QaapPluginServerImpl).toSelf().inSingletonScope();
         rebind(PluginServer).toService(QaapPluginServerImpl);
+    }
+    // Localizes each plugin once per version and language instead of on every IDE connection.
+    if (isBound(HostedPluginLocalizationService)) {
+        bind(QaapHostedPluginLocalizationService).toSelf().inSingletonScope();
+        rebind(HostedPluginLocalizationService).toService(QaapHostedPluginLocalizationService);
     }
     bind(QaapPluginDeployerSecurityParticipant).toSelf().inSingletonScope();
     bind(PluginDeployerParticipant).toService(QaapPluginDeployerSecurityParticipant);

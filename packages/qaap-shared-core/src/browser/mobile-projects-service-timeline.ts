@@ -309,6 +309,15 @@ function isGithubSignInRequiredError(err: unknown): boolean {
         return err instanceof QaapApiRequestError && err.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE;
 }
 
+/**
+ * The stored GitHub token expired or was revoked (401 `session_expired`). Retrying cannot fix it: only a new
+ * sign-in can. Without the backoff every project refresh asked again, about twice a second on staging,
+ * each answer a 401 plus a 502 storm on the related endpoints.
+ */
+function isGithubSessionExpiredError(err: unknown): boolean {
+        return !!err && typeof err === 'object' && (err as { code?: unknown }).code === 'session_expired';
+}
+
 export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceContext, sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean, surfaceSignInRequired = false): Promise<MobileProjectEntry[]> {
         if (!readQaapSignedIn()) {
             githubSignInRequiredSince = undefined;
@@ -340,6 +349,17 @@ export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceCont
             if (isGithubSignInRequiredError(err)) {
                 if (githubSignInRequiredSince === undefined) {
                     console.info('[qaap] GitHub repositories need a GitHub sign-in; not retrying until the session changes or a minute passes.');
+                }
+                githubSignInRequiredSince = Date.now();
+                return [];
+            }
+            if (isGithubSessionExpiredError(err)) {
+                // The import dialog offers to sign in to GitHub again; an empty list would read as "not signed in".
+                if (surfaceSignInRequired) {
+                    throw err;
+                }
+                if (githubSignInRequiredSince === undefined) {
+                    console.info('[qaap] The GitHub session expired; not retrying the repository list until the session changes or a minute passes.');
                 }
                 githubSignInRequiredSince = Date.now();
                 return [];

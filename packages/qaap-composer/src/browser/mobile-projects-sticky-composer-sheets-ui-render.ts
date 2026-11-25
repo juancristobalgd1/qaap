@@ -146,6 +146,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                             void ctx.host.openAgentSignInTerminal?.(agentId, project);
                         }
                         : undefined,
+                    isAgentNotSignedOut: agentId => ctx.host.stickyComposerAgentsUi.isAgentNotSignedOut(agentId),
                 }),
             });
         };

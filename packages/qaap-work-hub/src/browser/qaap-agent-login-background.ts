@@ -15,6 +15,7 @@ import {
 import { localizeHostedLocalhostOAuthAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { buildAgentLoginShellCommand, splitAgentLoginShellInput } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
 import {
+    fetchAgentModelsForAgent,
     attestAgentSessionSignIn,
     invalidateAgentModelsCache,
     invalidateAgentTaskListAllCache,
@@ -31,7 +32,8 @@ import {
     resolveQaapHarnessAuthProfile,
     type QaapHarnessLoginPhase,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-auth-profile';
-import { QAAP_PI_LOGIN_PROVIDERS } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
+import { QAAP_PI_API_KEY_SAVED_PATTERN, QAAP_PI_LOGIN_PROVIDERS, QAAP_PI_SECRET_PROMPT_PATTERN } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
+import { resolvePiProviderMarkSvg } from '@theia/qaap-shared-core/lib/common/qaap-pi-provider-marks';
 import {
     QAAP_DISABLED_HARNESSES_PREF,
     isQaapHarnessEnabled,
@@ -42,6 +44,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapAgentLoginFlow, stripAgentLoginTerminalControlSequences } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-flow';
+import { QAAP_AGENT_MODELS_CHANGED_EVENT, type QaapAgentModelsChangedDetail } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from './qaap-agent-signed-in-event';
 import { presentAgyLoginFailure, QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agy-login-presentation';
 import { QaapAgentLoginInputDriver } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-input-driver';
@@ -53,7 +56,73 @@ import { agentLoginUtf8ByteLength, QaapAgentLoginBufferTap } from './qaap-agent-
 
 const HARNESS_STATUS_TIMEOUT_MS = 5000;
 const CONNECTED_CLOSE_DELAY_MS = 1800;
-/** A driven TUI login starts the CLI first, then types its way to the link. */
+/** After a connect, the catalog is asked again at these delays (ms) in case the CLI listing outran the fresh request. */
+const AGENT_MODELS_AFTER_CONNECT_FOLLOW_UPS_MS: readonly number[] = [8_000, 20_000, 45_000];
+
+/**
+ * Fallback after a connect: asks for the agent's catalog again a few times in case the realtime
+ * WebSocket is disconnected when the CLI listing finishes. Stops immediately once either a push
+ * ({@link QAAP_AGENT_MODELS_CHANGED_EVENT}) arrives for this agent or the model ids change.
+ */
+function followAgentModelsAfterConnect(agentId: string, listed: readonly { readonly modelId: string }[] | undefined): void {
+    const expected = agentId.trim().toLowerCase();
+    let known = (listed ?? []).map(model => model.modelId).sort().join('\n');
+    let index = 0;
+    let timer: number | undefined;
+    let stopped = false;
+    const stop = (): void => {
+        if (stopped) {
+            return;
+        }
+        stopped = true;
+        if (timer !== undefined) {
+            window.clearTimeout(timer);
+            timer = undefined;
+        }
+        window.removeEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onPushed);
+    };
+    const onPushed = (event: Event): void => {
+        const pushed = (event as CustomEvent<QaapAgentModelsChangedDetail | undefined>).detail?.agentId?.trim().toLowerCase();
+        if (pushed === expected) {
+            stop();
+        }
+    };
+    window.addEventListener(QAAP_AGENT_MODELS_CHANGED_EVENT, onPushed);
+    const next = (): void => {
+        if (stopped) {
+            return;
+        }
+        const delay = AGENT_MODELS_AFTER_CONNECT_FOLLOW_UPS_MS[index++];
+        if (delay === undefined) {
+            stop();
+            return;
+        }
+        timer = window.setTimeout(() => {
+            timer = undefined;
+            if (stopped) {
+                return;
+            }
+            invalidateAgentModelsCache(agentId);
+            void fetchAgentModelsForAgent(agentId).then(models => {
+                if (stopped) {
+                    return;
+                }
+                const ids = models.map(model => model.modelId).sort().join('\n');
+                if (models.length > 0 && ids !== known) {
+                    known = ids;
+                    stop();
+                    window.dispatchEvent(new window.CustomEvent<QaapAgentModelsChangedDetail>(QAAP_AGENT_MODELS_CHANGED_EVENT, { detail: { agentId } }));
+                    window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
+                    return;
+                }
+                next();
+            }, () => next());
+        }, delay);
+    };
+    next();
+}
+
+/** A driven TUI login starts the CLI first, then types its way to the link (a harness auth profile may set its own). */
 const TUI_LOGIN_CHALLENGE_TIMEOUT_MS = 30_000;
 const INPUT_DRIVER_TICK_MS = 150;
 /** Output the live stream missed is read back from the terminal screen this often. */
@@ -204,8 +273,11 @@ function createDefaultConnectionProbe(ctx: any, project: MobileProjectEntry | un
     }
     return async () => {
         invalidateAgentTaskListAllCache();
-        invalidateAgentModelsCache();
-        const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
+        // No model cache is dropped here: this runs every 2.5 s while the dialog waits, and dropping every
+        // harness's catalog made each open picker refetch and repaint. The connected path loads this harness's
+        // fresh catalog (fetchAgentModelsForAgent with `fresh`) before the composer refreshes.
+        // Only this harness is re-probed: this runs every 2.5 s while the dialog waits for the sign-in.
+        const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true, refreshAgent: agentId });
         await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
         ctx.stickyComposerRenderUi?.renderStickyComposer?.();
         return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(agentId) === true;
@@ -396,7 +468,12 @@ export async function openAgentLoginDialogInBackground(
             return agyLogin || authProfile?.login.alwaysAcceptsCode === true;
         },
         get extraSuccessPatterns(): readonly string[] | undefined {
-            return authProfile?.login.extraSuccessPatterns;
+            const profile = authProfile?.login.extraSuccessPatterns;
+            // Pi stores a pasted API key at once and says so; no browser step follows.
+            return agentId === 'pi' ? [...(profile ?? []), QAAP_PI_API_KEY_SAVED_PATTERN] : profile;
+        },
+        get secretPromptPattern(): string | undefined {
+            return agentId === 'pi' ? QAAP_PI_SECRET_PROMPT_PATTERN : undefined;
         },
         get extraFailurePatterns(): readonly string[] | undefined {
             return authProfile?.login.extraFailurePatterns;
@@ -408,8 +485,12 @@ export async function openAgentLoginDialogInBackground(
             dialog.render(agyLogin && state.phase === 'failed' ? presentAgyLoginFailure(state, agentLabel) : state);
             if (state.phase === 'connected') {
                 disposeTerminal();
-                void attestSignInIfUnprobed().then(() => {
+                void attestSignInIfUnprobed().then(async () => {
+                    // The new sign-in or provider brings new models (Pi + NVIDIA): load the CLI's own listing now, so
+                    // the composer and the picker show them without a reload.
+                    const listed = await fetchAgentModelsForAgent(agentId, { fresh: true }).catch(() => undefined);
                     window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
+                    followAgentModelsAfterConnect(agentId, listed);
                     return onConnected?.();
                 }).catch(error => {
                     console.warn('[qaap] Agent login UI refresh failed:', error);
@@ -652,12 +733,24 @@ export async function openAgentLoginDialogInBackground(
         }
     };
 
-    const startCliLogin = async (command: string, input?: readonly QaapAgentLoginInputStep[]): Promise<void> => {
+    /** The harness status of the last start: a provider switch reuses it (same CLI, same install). */
+    let lastHarnessStatus: AgentLoginHarnessStatus | undefined;
+    /** Bumped by every start, so an older start still waiting on its status never runs after a newer one. */
+    let loginGeneration = 0;
+    const startCliLogin = async (
+        command: string,
+        input?: readonly QaapAgentLoginInputStep[],
+        options?: { readonly reuseStatus?: boolean },
+    ): Promise<void> => {
+        const generation = ++loginGeneration;
         flow.restart(Date.now());
-        const status = await fetchAgentLoginHarnessStatus(agentId);
-        if (closed || flow.state.phase !== 'preparing') {
+        // `harness-status` probes every harness and can take seconds on a busy backend: switching Pi's
+        // provider does not change the CLI, so it reuses the status instead of waiting on it again.
+        const status = options?.reuseStatus && lastHarnessStatus ? lastHarnessStatus : await fetchAgentLoginHarnessStatus(agentId);
+        if (closed || generation !== loginGeneration || flow.state.phase !== 'preparing') {
             return;
         }
+        lastHarnessStatus = status ?? lastHarnessStatus;
         if (status?.loginOverrideError) {
             flow.showManualInstructions(status.loginOverrideError);
             return;
@@ -752,7 +845,7 @@ export async function openAgentLoginDialogInBackground(
         }
         connectionFlow = next;
         hiddenLogin = resolveHiddenLogin(next);
-        void startCliLogin(next.command, next.input);
+        void startCliLogin(next.command, next.input, { reuseStatus: true });
     };
 
     /** Manual route: the visible terminal's command (the Pi fallback is the same for every provider). */
@@ -768,7 +861,14 @@ export async function openAgentLoginDialogInBackground(
         onClose: close,
         ...(connectionFlow.kind === 'tui-login' && connectionFlow.provider !== undefined ? {
             loginProviders: {
-                options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({ id: provider.id, label: provider.name })),
+                options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({
+                    id: provider.id,
+                    label: provider.name,
+                    ...(provider.shortName ? { shortLabel: provider.shortName } : {}),
+                    method: provider.method,
+                    ...(provider.brand ? { brand: provider.brand } : {}),
+                    ...(resolvePiProviderMarkSvg(provider.id) ? { logoSvg: resolvePiProviderMarkSvg(provider.id) } : {}),
+                })),
                 selectedId: connectionFlow.provider,
                 onSelect: selectLoginProvider,
             },
@@ -779,6 +879,14 @@ export async function openAgentLoginDialogInBackground(
             }
             surface.terminal.sendText(`${code}\r`);
             flow.codeSubmitted(Date.now());
+        },
+        onSubmitSecret: secret => {
+            if (!surface || surface.terminal.isDisposed) {
+                return;
+            }
+            // Redacted from the kept output first: the TUI echoes what it is typed.
+            flow.secretSubmitted(secret, Date.now());
+            surface.terminal.sendText(`${secret}\r`);
         },
         onRetry: () => {
             if (hiddenLogin) {
