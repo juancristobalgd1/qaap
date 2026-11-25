@@ -476,12 +476,28 @@ export function canStreamPatchAgentTextContentOnly(
     return sawTextGrowth;
 }
 
+/**
+ * The agent message just gained (or changed) its failure: the row must be rebuilt so the failure card replaces
+ * the streamed body. No in-place patch draws that card, and a content-only patch would render the failed turn's
+ * raw CLI output as the reply.
+ */
+export function agentMessageFailureChanged(
+    prev: QaapAgentMessageDTO | undefined,
+    next: QaapAgentMessageDTO | undefined,
+): boolean {
+    const nextError = next?.error?.trim() ?? '';
+    return !!nextError && nextError !== (prev?.error?.trim() ?? '');
+}
+
 /** Stdout-style agents without structured segments — plain content changed. */
 export function canStreamPatchStdoutAgentContentOnly(
     prev: QaapAgentMessageDTO | undefined,
     next: QaapAgentMessageDTO | undefined,
 ): boolean {
     if (!prev || !next || prev.id !== next.id) {
+        return false;
+    }
+    if (agentMessageFailureChanged(prev, next)) {
         return false;
     }
     if ((prev.segments?.length ?? 0) > 0 || (next.segments?.length ?? 0) > 0) {

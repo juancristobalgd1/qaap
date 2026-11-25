@@ -15,6 +15,7 @@ import {
 } from './qaap-agent-failure-message';
 import { detectAgentAuthFailureMode, extractAgentAuthLoginChallenge } from './qaap-agent-auth-login';
 import { parseAgentLogForTranscript, resolveAgentLogDisplayText } from './qaap-cli-transcript-stream';
+import { OPENCODE_MODEL_ACCESS_DISABLED_LIVE_LOG } from './test/qaap-agent-failure-log-fixtures';
 
 const WORKSPACE = 'wrk_01KFXW8JT3MNFG0P5H21F14TVD';
 const BILLING_URL = `https://opencode.ai/console/${WORKSPACE}/billing?credits=1`;
@@ -110,6 +111,22 @@ describe('provider billing failures (no credits, model access disabled)', () => 
             const body = resolveAgentLogDisplayText('opencode', OBSERVED_OPENCODE_LOG);
             expect(body).to.contain('Model access is disabled');
             expect(body).not.to.contain('"type":"error"');
+        });
+    });
+
+    describe('the live OpenCode turn (gate note first, runner stop line last)', () => {
+        const MODELS_LINK = `https://opencode.ai/console/${WORKSPACE}/models`;
+
+        it('reads as model access disabled with the OpenCode model-access link', () => {
+            expect(detectAgentFailureKind(OPENCODE_MODEL_ACCESS_DISABLED_LIVE_LOG)).to.equal('model_access_disabled');
+            expect(resolveAgentTurnFailureMessage(OPENCODE_MODEL_ACCESS_DISABLED_LIVE_LOG, { state: 'failed', exitCode: 1, agentId: 'opencode' }))
+                .to.equal(`Access to this model is disabled in your OpenCode account. Enable it at ${MODELS_LINK}, or pick another model.`);
+        });
+
+        it('has no reply text when stored as the message body and parsed again by the transcript', () => {
+            const parsed = parseAgentLogForTranscript('opencode', OPENCODE_MODEL_ACCESS_DISABLED_LIVE_LOG);
+            expect(parsed.segments).to.deep.equal([]);
+            expect(parsed.content).to.equal('');
         });
     });
 

@@ -14,6 +14,7 @@ import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-pro
 import { createTranscriptAgentFailureDialogExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import { localizeAgentFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { OPENCODE_MODEL_ACCESS_DISABLED_LIVE_LOG } from '@theia/qaap-shared-core/lib/common/test/qaap-agent-failure-log-fixtures';
 
 disableImportJSDOM();
 
@@ -155,6 +156,15 @@ describe('failure card for a provider billing failure', () => {
         expect(signInOpened).to.equal(0);
         // The raw provider lines stay available in the card's details.
         expect(card.querySelector('.theia-test-technical')?.textContent).to.contain('Model access is disabled');
+    });
+
+    it('draws the live OpenCode turn as the model-access card, its raw lines only in the details', () => {
+        const persisted = `Access to this model is disabled in your OpenCode account. Enable it at ${MODELS_URL}, or pick another model.`;
+        const card = createTranscriptAgentFailureDialogExtracted(ctx, persisted, OPENCODE_MODEL_ACCESS_DISABLED_LIVE_LOG, { agentId: 'opencode' });
+        expect(card.querySelector('.theia-test-auth-card')).to.equal(null);
+        expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('Model access disabled');
+        expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(persisted);
+        expect(card.querySelector('.theia-test-technical')?.textContent).to.contain('[qaap] OpenCode reported');
     });
 
     it('also fixes an older turn whose persisted copy wrongly asked for a sign-in', () => {

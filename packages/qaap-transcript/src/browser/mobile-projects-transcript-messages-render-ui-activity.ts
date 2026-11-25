@@ -3,7 +3,7 @@ import type { TranscriptAgentFailureDialogOptions } from './mobile-projects-tran
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
 import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
-import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, agentMessageFailureChanged } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     enhanceTranscriptCaptureDirectives,
     isTranscriptCaptureClosed,
@@ -33,6 +33,11 @@ export function tryPatchStreamingAgentTextContentExtracted(ctx: MobileProjectsTr
         resolvedSegments: QaapAgentMessageSegmentDTO[] | undefined,
         conv?: QaapAgentConversationDTO,): boolean {
         ctx.lastAgentPatchRejectReason = undefined;
+        // A turn that just failed is rebuilt (failure card, no raw CLI body as the reply), never patched in place.
+        if (agentMessageFailureChanged(prevMsg, nextMsg)) {
+            ctx.lastAgentPatchRejectReason = 'predicates';
+            return false;
+        }
         const prevComparable = prevMsg ? ctx.withDerivedTranscriptSegments(prevMsg) : undefined;
         const nextComparable = ctx.withDerivedTranscriptSegments(nextMsg);
         if (canStreamPatchStdoutAgentContentOnly(prevComparable, nextComparable)) {
