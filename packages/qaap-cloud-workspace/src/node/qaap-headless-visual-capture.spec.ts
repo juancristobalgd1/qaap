@@ -23,6 +23,7 @@ import {
     qaapLivePreviewRunsStaleServerCode,
     resolveQaapCaptureTurnStartedAt,
     qaapHeadlessPublicPreviewLeaseMs,
+    prepareHeadlessChromiumLaunchEnv,
     resolveHeadlessCaptureAppTarget,
     resolveHeadlessChromiumExecutable,
     resolveQaapHeadlessCaptureFailureMessage,
@@ -77,6 +78,22 @@ describe('qaapHeadlessPublicPreviewLeaseMs', () => {
         expect(qaapHeadlessPublicPreviewLeaseMs(undefined)).to.equal(15 * 60_000);
         expect(qaapHeadlessPublicPreviewLeaseMs('1')).to.equal(60_000);
         expect(qaapHeadlessPublicPreviewLeaseMs(String(48 * 60 * 60_000))).to.equal(24 * 60 * 60_000);
+    });
+});
+
+describe('prepareHeadlessChromiumLaunchEnv', () => {
+    it('creates writable HOME, XDG_CONFIG_HOME, and XDG_CACHE_HOME directories and cleans them up', async () => {
+        const launchEnv = await prepareHeadlessChromiumLaunchEnv({ PATH: '/usr/bin', HOME: '/home/theia' });
+        try {
+            expect(launchEnv.env.PATH).to.equal('/usr/bin');
+            expect(launchEnv.env.HOME).not.to.equal('/home/theia');
+            expect(fs.existsSync(launchEnv.env.HOME)).to.equal(true);
+            expect(fs.existsSync(launchEnv.env.XDG_CONFIG_HOME)).to.equal(true);
+            expect(fs.existsSync(launchEnv.env.XDG_CACHE_HOME)).to.equal(true);
+        } finally {
+            await launchEnv.cleanup();
+        }
+        expect(fs.existsSync(launchEnv.env.HOME)).to.equal(false);
     });
 });
 

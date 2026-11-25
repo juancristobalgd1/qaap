@@ -774,5 +774,25 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             expect(fixture.requests).to.deep.equal([]);
             expect(fixture.host.transcriptPreviewRequestPending).to.equal(true);
         });
+
+        it('does not also run kickoffTranscriptDevPreviewBootstrap when settle already relaunched via requestTranscriptPreview', async () => {
+            const fixture = settleFixture({
+                pending: true,
+                onRequest: host => { host.transcriptPreviewRequestRunning = true; },
+            });
+            fixture.host.transcriptLastConv = {
+                ...settledConv,
+                messages: [{ id: 'u1', role: 'user', content: 'levanta la app', createdAt: 1 }],
+            };
+            let kickoffCalls = 0;
+            (fixture.liveUi as unknown as { kickoffTranscriptDevPreviewBootstrap: () => void }).kickoffTranscriptDevPreviewBootstrap = () => {
+                kickoffCalls += 1;
+            };
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.requests).to.deep.equal([{ allowAgentFallback: false }]);
+            expect(kickoffCalls).to.equal(0);
+        });
     });
 });

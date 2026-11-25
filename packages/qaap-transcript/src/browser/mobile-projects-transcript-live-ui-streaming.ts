@@ -236,6 +236,10 @@ export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProject
         || !conversationShouldKickoffDevPreviewBootstrap(conv)) {
         return;
     }
+    if (ctx.host.transcriptPreviewRequestRunning) {
+        // An explicit preview launch (`requestTranscriptPreview`) already owns the bootstrap flow.
+        return;
+    }
     if (kickoffInFlightConversationIds.has(conv.id)) {
         return;
     }
@@ -335,12 +339,12 @@ export async function openReadyTranscriptPreviewUrlExtracted(ctx: MobileProjects
  * left alone; after a failed/cancelled turn or a user Stop the request is cleared instead, unless a
  * bootstrap is actively starting the app. See {@link resolveQaapSettledPreviewRequestAction}.
  */
-export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
+export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): 'none' | 'keep' | 'clear' | 'relaunch' {
     const project = ctx.host.transcriptOpenProject;
     const summary = ctx.host.transcriptOpenSummary;
     const conv = ctx.host.transcriptLastConv;
     if (!project || !summary || !conv || summary.id !== conv.id) {
-        return;
+        return 'none';
     }
     const action = resolveQaapSettledPreviewRequestAction({
         requestPending: ctx.host.transcriptPreviewRequestPending,
@@ -354,13 +358,14 @@ export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: Mobile
     });
     if (action === 'relaunch' && ctx.host.requestTranscriptPreview) {
         void ctx.host.requestTranscriptPreview(project, summary, { allowAgentFallback: false });
-        return;
+        return action;
     }
     if (action === 'clear') {
         // The turn ended (failed, cancelled, or no launcher) and nothing will resolve the request:
         // without this the "Starting preview…" chip spins forever (QA: >4 min after the turn).
         clearTranscriptPreviewRequestExtracted(ctx);
     }
+    return action;
 }
 
 /**
@@ -390,7 +395,7 @@ export function onTranscriptPreviewStartStalledExtracted(ctx: MobileProjectsTran
 }
 
 export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
-    relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx);
+    const relaunchAction = relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx);
     const conv = ctx.host.transcriptLastConv;
     if (!conv || !conversationShouldWatchDevPreview(conv, window.location.origin)) {
         return;
@@ -399,7 +404,9 @@ export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: Mobi
     // A settled turn is an event: probe right away at the base rate, then back off again.
     ctx.transcriptPreviewPollMisses = 0;
     ctx.transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
-    ctx.kickoffTranscriptDevPreviewBootstrap(conv);
+    if (relaunchAction !== 'relaunch') {
+        ctx.kickoffTranscriptDevPreviewBootstrap(conv);
+    }
     await ctx.refreshTranscriptPreviewOffer(conv);
 }
 
@@ -412,8 +419,10 @@ export function maybeActivateTranscriptDevPreviewExtracted(ctx: MobileProjectsTr
 
 export function ensureTranscriptDevPreviewWatchExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,
     options?: { readonly restartPreviewPoll?: boolean },): void {
-    // Every conversation refresh is progress for a pending chat preview request.
-    ctx.previewStartingWatchdog.progress();
+    // Only live streaming progress keeps the stall watchdog alive; a settled turn must not reset it.
+    if (conv.status === 'streaming') {
+        ctx.previewStartingWatchdog.progress();
+    }
     if (conversationRequestsDevPreview(conv) || conversationAwaitingDevPreview(conv)) {
         ctx.kickoffTranscriptDevPreviewBootstrap(conv);
     }

@@ -265,4 +265,33 @@ describe('qaap-transcript-preview-bootstrap', () => {
             globalThis.fetch = originalFetch;
         }
     });
+
+    it('returns immediately when runDevServer leaves bootstrap outside starting/installing/running', async () => {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async (): Promise<Response> => ({ ok: false } as Response)) as typeof fetch;
+        let runDevServerCalls = 0;
+        const bootstrap = {
+            refreshFromProjectRoot: async (): Promise<void> => undefined,
+            bindPreviewConversation: (conversationId: string): string => conversationId,
+            runDevServer: async (): Promise<void> => { runDevServerCalls += 1; },
+            getStateSnapshot: () => ({
+                phase: 'dismissed',
+                descriptor: { name: 'kalea', nodeModulesPresent: true },
+            }),
+            onStateChange: () => { throw new Error('must not wait 180 s when no launch is active'); },
+        } as unknown as QaapProjectBootstrapService;
+
+        try {
+            const result = await ensureTranscriptDevPreview(bootstrap, {
+                conversationId: 'conv-idle',
+                workspaceRoot: '/workspace/repos/kalea',
+                projectId: 'github:owner/kalea',
+                skipConversationPortProbe: true,
+            });
+            expect(result).to.equal(undefined);
+            expect(runDevServerCalls).to.equal(1);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
 });

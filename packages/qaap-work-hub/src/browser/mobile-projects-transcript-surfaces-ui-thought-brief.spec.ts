@@ -79,4 +79,15 @@ describe('syncTranscriptPreviewFromConversationExtracted — request chip flags'
 
         expect(refreshComposer.callCount).to.equal(0);
     });
+
+    it('preserves Pending on an idle turn without a resolved URL so post-settle relaunch can start the preview', async () => {
+        const { ctx, refreshComposer, host } = buildContext({ pending: true, running: false });
+        (ctx as unknown as { resolveTranscriptPreviewUrl: () => undefined }).resolveTranscriptPreviewUrl = () => undefined;
+        const idleConversation = { id: 'conversation-1', status: 'idle', messages: [] } as unknown as QaapAgentConversationDTO;
+
+        await syncTranscriptPreviewFromConversationExtracted(ctx, project, summary, idleConversation);
+
+        expect(host.transcriptPreviewRequestPending).to.equal(true);
+        expect(refreshComposer.callCount).to.equal(0);
+    });
 });

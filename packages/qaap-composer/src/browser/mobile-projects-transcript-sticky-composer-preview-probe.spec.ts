@@ -166,4 +166,31 @@ describe('mobile-projects-transcript-sticky-composer preview probe gating', () =
         expect(probeCalls).to.have.length(1);
         expect(harness.ctx.composerPreviewVisibilityDispose).to.equal(undefined);
     });
+
+    it('rejects a bare-port probe claimed by another root/worktree instead of polling it every 5 s', async () => {
+        const harness = createHarness('idle');
+        harness.ctx.host.transcriptComposerSummary = {
+            id: 'conv-kalea',
+            cwd: '/workspace/repos/users/alice/alice/kalea',
+        } as unknown as typeof harness.ctx.host.transcriptComposerSummary;
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+            probeCalls.push(String(input));
+            return {
+                ok: true,
+                json: async () => ({
+                    ready: true,
+                    previewId: 'u-alice-w-tmp-other-worktree',
+                    previewUrl: 'https://other.qaaq-preview.duckdns.org/',
+                    conversationId: 'conv-other-worktree',
+                    root: '/tmp/qaap-worktrees/alice/ff61881d',
+                }),
+            } as Response;
+        }) as typeof fetch;
+
+        await sync(harness);
+
+        expect(harness.ctx.verifiedComposerPreview).to.equal(undefined);
+        expect(harness.scheduled).to.deep.equal([]);
+        expect(harness.ctx.composerPreviewProbeFailures).to.equal(1);
+    });
 });

@@ -160,6 +160,11 @@ function waitForBootstrapPreviewUrl(
     if (snapshot.previewUrl && snapshot.phase === 'running') {
         return Promise.resolve(snapshot.previewUrl);
     }
+    if (snapshot.phase !== 'starting' && snapshot.phase !== 'installing' && snapshot.phase !== 'running') {
+        // Nothing is booting (the run failed immediately or had no runnable plan): do not hold the
+        // caller on "Starting preview…" for the three-minute outer timeout.
+        return Promise.resolve(undefined);
+    }
     return new Promise(resolve => {
         const toDispose = new DisposableCollection();
         const finish = (url: string | undefined): void => {
