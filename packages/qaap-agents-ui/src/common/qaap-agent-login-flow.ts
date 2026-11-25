@@ -220,6 +220,22 @@ export function resolveAgentLoginOutputTail(output: string, limit = TAIL_LINES):
 }
 
 /**
+ * Terminal lines that end at the CLI's own failure report. A TUI that rejects the sign-in (Pi:
+ * `Error: Failed to login to OpenRouter: Login cancelled`) redraws its editor right after the error, so
+ * the plain tail is only the prompt and rule lines; the failure line is the one the user needs.
+ * Falls back to the plain tail when no line matches.
+ */
+export function resolveAgentLoginFailureTail(output: string, isFailureLine: (line: string) => boolean, limit = TAIL_LINES): string[] {
+    const lines = resolveAgentLoginOutputTail(output, Number.MAX_SAFE_INTEGER);
+    for (let index = lines.length - 1; index >= 0; index--) {
+        if (isFailureLine(lines[index])) {
+            return lines.slice(Math.max(0, index + 1 - limit), index + 1);
+        }
+    }
+    return lines.slice(-limit);
+}
+
+/**
  * Connect-dialog state machine, independent of the DOM and of the terminal so it can be specced.
  * The host feeds it terminal output, process exit and clock ticks; it never waits forever.
  */
@@ -335,7 +351,7 @@ export class QaapAgentLoginFlow {
         }
         const visible = stripAgentLoginShellEcho(this.output);
         if (this.isFailureOutput(visible)) {
-            this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginOutputTail(this.output) });
+            this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginFailureTail(this.output, line => this.isFailureOutput(line)) });
             return;
         }
         if (this.isSuccessOutput(visible)) {
@@ -387,7 +403,7 @@ export class QaapAgentLoginFlow {
         if (code === 0) {
             const visible = stripAgentLoginShellEcho(this.output);
             if (this.isFailureOutput(visible)) {
-                this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginOutputTail(this.output) });
+                this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginFailureTail(this.output, line => this.isFailureOutput(line)) });
                 return;
             }
             this.connected();

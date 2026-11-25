@@ -133,6 +133,25 @@ describe('QaapAgentLoginFlow', () => {
         }
     });
 
+    it('keeps the Pi failure line in the tail although the TUI redraws its editor right after it', () => {
+        const { flow } = createFlow('pi');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.appendRawOutput(piRawLoginOutput());
+        // Pi 1.4.0 in a tenant PTY (25 Nov 2026): the error, then the editor box, cwd and footer in the same chunk.
+        const rule = '─'.repeat(80);
+        flow.appendRawOutput(`\r Error: Failed to login to OpenRouter: This operation was aborted\r\r\n\r\r\n${rule}\r\r\n \r\r\n${rule}\r\r\n`
+            + '~\r\r\n0.0%/0 (auto)                                                            unknown\r\r\n' + '\r\r\n'.repeat(10)
+            // Later repaints of the box (the Connect dialog screenshot showed only rule rows below the prompt).
+            + `${rule}\r\r\n`.repeat(8));
+        const state = flow.state;
+        expect(state.phase).to.equal('failed');
+        if (state.phase === 'failed') {
+            expect(state.reason).to.equal('rejected');
+            expect(state.tail[state.tail.length - 1]).to.contain('Failed to login to OpenRouter: This operation was aborted');
+        }
+    });
+
     it('gives a driven TUI login its own link deadline and reports it', () => {
         const states: QaapAgentLoginFlowState[] = [];
         const flow = new QaapAgentLoginFlow({ agentId: 'pi', challengeTimeoutMs: 30_000, onDidChange: state => states.push(state) });
