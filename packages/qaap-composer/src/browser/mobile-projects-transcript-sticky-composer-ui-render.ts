@@ -32,6 +32,8 @@ import {
 import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import { extractTranscriptPreviewId } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-content-ui';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import { resolveThreadPreviewRoot } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
+import { transcriptPreviewProbeBelongsToScope } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
     composerPreviewProbeBackoffMs,
     isComposerPreviewStartupActive,
@@ -210,8 +212,19 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
             const currentProject = ctx.host.transcriptComposerProject;
             const stillCurrent = currentProject?.id === project.id
                 && resolveComposerPreviewCandidate(ctx.resolveComposerPreviewRuntime(currentProject));
+            const summary = ctx.host.transcriptComposerSummary;
+            const projectCwd = ctx.host.projectsService?.getProjectCwd?.(project) ?? summary?.cwd;
+            const threadRoot = resolveThreadPreviewRoot(summary, projectCwd);
+            // A bare-port probe (e.g. from "port 8080" in agent text) can answer ready for another
+            // project or worktree on the same port. Verify the claim belongs to this scope so we
+            // never adopt a foreign preview or poll it every 5 s.
+            const probeReady = probe.ready
+                && (port === undefined || transcriptPreviewProbeBelongsToScope(probe, {
+                    conversationId: summary?.id,
+                    root: threadRoot,
+                }));
             let adopted = false;
-            if (!probe.ready && stillCurrent) {
+            if (!probeReady && stillCurrent) {
                 // The candidate claim may have been superseded by a newer run (retry, second
                 // tab, backend restart) — its identity probe then 403s although the project has
                 // a live preview. Adopting the successor refreshes `bootstrap.previewUrl`, so
@@ -227,7 +240,7 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
                     }, 0);
                 }
             }
-            const next = probe.ready && stillCurrent
+            const next = probeReady && stillCurrent
                 ? { projectId: project.id, url: probe.previewUrl, candidate, verifiedAt: Date.now() }
                 : undefined;
             const turnSince = ctx.composerPreviewFreshAfter ?? ctx.composerAgentWorkingSince;
@@ -241,7 +254,7 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
                 || becameFreshForTurn;
             ctx.verifiedComposerPreview = next;
             if (ctx.composerPreviewProbeCandidate === candidate) {
-                if (probe.ready || adopted) {
+                if (probeReady || adopted) {
                     // An adopted successor claim is re-verified immediately by the refresh above.
                     ctx.composerPreviewProbeFailures = 0;
                     ctx.composerPreviewNextProbeAt = 0;
@@ -258,7 +271,7 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
                     agentWorking: ctx.isTranscriptStickyComposerAgentWorking(),
                 },
             );
-            if (stillCurrent && probe.ready) {
+            if (stillCurrent && probeReady) {
                 ctx.scheduleComposerPreviewHealthCheck(project.id);
             } else if (stillCurrent && startupActive) {
                 // A preview is coming up: keep checking, backing off 2 s → 30 s while it is not ready.

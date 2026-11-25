@@ -148,4 +148,29 @@ describe('QaapProjectBootstrapService refresh churn', () => {
         expect(client.resets).to.deep.equal(['refreshFromRoot']);
         expect(client.phases).to.deep.equal(['idle']);
     });
+
+    it('coalesces concurrent same-root refreshes so neither caller resolves before detection populates _descriptor', async () => {
+        const client = fakeClient('idle');
+        client.ctx._descriptor = undefined;
+        let detectCalls = 0;
+        let finishDetect!: (value: unknown) => void;
+        (client.ctx as unknown as { detector: { detect: () => Promise<unknown> } }).detector = {
+            detect: () => {
+                detectCalls += 1;
+                return new Promise(resolve => { finishDetect = resolve; });
+            },
+        };
+
+        const first = streaming.refreshFromRootExtracted(client.ctx, ROOT);
+        const second = streaming.refreshFromRootExtracted(client.ctx, ROOT);
+
+        expect(detectCalls).to.equal(1);
+        expect(client.resets).to.deep.equal(['refreshFromRoot']);
+
+        finishDetect(DESCRIPTOR);
+        await Promise.all([first, second]);
+
+        expect(client.ctx._descriptor).to.equal(DESCRIPTOR);
+        expect(client.ctx._phase).to.equal('ready-to-run');
+    });
 });

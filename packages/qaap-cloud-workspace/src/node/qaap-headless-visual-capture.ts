@@ -1157,12 +1157,15 @@ export class QaapHeadlessVisualCaptureService {
         previewUrl?: string,
     ): Promise<boolean> {
         const { chromium } = loadPlaywrightCore();
-        const browser = await chromium.launch({
-            executablePath: resolveHeadlessChromiumExecutable(),
-            headless: true,
-            args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-        });
+        const launchEnv = await prepareHeadlessChromiumLaunchEnv();
+        let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
         try {
+            browser = await chromium.launch({
+                executablePath: resolveHeadlessChromiumExecutable(),
+                headless: true,
+                args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+                env: launchEnv.env,
+            });
             const context = await browser.newContext({ viewport: { ...CAPTURE_VIEWPORT } });
             const page = await context.newPage();
             const steps = deriveVisualFlowSteps(conv);
@@ -1215,7 +1218,8 @@ export class QaapHeadlessVisualCaptureService {
                 previewUrl,
             )) !== undefined;
         } finally {
-            await browser.close().catch(() => undefined);
+            await browser?.close().catch(() => undefined);
+            await launchEnv.cleanup();
         }
     }
 
@@ -1233,15 +1237,18 @@ export class QaapHeadlessVisualCaptureService {
     ): Promise<boolean> {
         const { chromium } = loadPlaywrightCore();
         const videoDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'qaap-visual-video-'));
-        const browser = await chromium.launch({
-            executablePath: resolveHeadlessChromiumExecutable(),
-            headless: true,
-            args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-        });
+        const launchEnv = await prepareHeadlessChromiumLaunchEnv();
+        let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
         let videoPath: string | undefined;
         const stepResults: { label: string; result: QaapPreviewVisualValidationResult }[] = [];
         const skipped: string[] = [];
         try {
+            browser = await chromium.launch({
+                executablePath: resolveHeadlessChromiumExecutable(),
+                headless: true,
+                args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+                env: launchEnv.env,
+            });
             const context = await browser.newContext({
                 viewport: { ...CAPTURE_VIEWPORT },
                 recordVideo: { dir: videoDir, size: { ...CAPTURE_VIEWPORT } },
@@ -1272,7 +1279,8 @@ export class QaapHeadlessVisualCaptureService {
             await context.close();
             videoPath = video ? await video.path() : undefined;
         } finally {
-            await browser.close().catch(() => undefined);
+            await browser?.close().catch(() => undefined);
+            await launchEnv.cleanup();
         }
         try {
             if (stepResults.length === 0 || !videoPath) {
@@ -1322,4 +1330,43 @@ export class QaapHeadlessVisualCaptureService {
             await fsp.rm(videoDir, { recursive: true, force: true }).catch(() => undefined);
         }
     }
+}
+
+export interface QaapHeadlessChromiumLaunchEnv {
+    readonly env: Record<string, string>;
+    readonly cleanup: () => Promise<void>;
+}
+
+/**
+ * Chromium's crashpad handler initializes its database under `XDG_CONFIG_HOME`/`HOME` and aborts
+ * (`--database is required` / SIGTRAP) on read-only tenant root filesystems where `HOME=/home/theia`
+ * cannot be written. Point `HOME`, `XDG_CONFIG_HOME`, and `XDG_CACHE_HOME` at a fresh writable
+ * directory under `tmpRoot` and remove it once the browser exits.
+ */
+export async function prepareHeadlessChromiumLaunchEnv(
+    baseEnv: NodeJS.ProcessEnv = process.env,
+    tmpRoot: string = os.tmpdir(),
+): Promise<QaapHeadlessChromiumLaunchEnv> {
+    const homeDir = await fsp.mkdtemp(path.join(tmpRoot, 'qaap-chromium-home-'));
+    const configDir = path.join(homeDir, 'config');
+    const cacheDir = path.join(homeDir, 'cache');
+    await Promise.all([
+        fsp.mkdir(configDir, { recursive: true }),
+        fsp.mkdir(cacheDir, { recursive: true }),
+    ]);
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(baseEnv)) {
+        if (typeof value === 'string') {
+            env[key] = value;
+        }
+    }
+    env.HOME = homeDir;
+    env.XDG_CONFIG_HOME = configDir;
+    env.XDG_CACHE_HOME = cacheDir;
+    return {
+        env,
+        cleanup: async () => {
+            await fsp.rm(homeDir, { recursive: true, force: true }).catch(() => undefined);
+        },
+    };
 }

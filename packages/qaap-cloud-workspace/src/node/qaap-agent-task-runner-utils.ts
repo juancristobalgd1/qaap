@@ -60,10 +60,12 @@ const runCodexHelpCommand: QaapCodexHelpCommandRunner = (file, args, env) => new
             windowsHide: true,
             env: childProcessEnv(env),
         }, (error, stdout, stderr) => {
-            // `nice` could not start codex: no help text, as when the spawn itself failed.
+            // `nice` (POSIX) or direct spawn (Windows) could not start codex: answer empty, never `"\n"`.
             const status = (error as { code?: unknown } | null)?.code;
             const notStarted = command.file !== file && (status === NICE_COMMAND_NOT_FOUND || status === NICE_COMMAND_NOT_EXECUTABLE);
-            resolve(notStarted ? '' : `${stdout || ''}\n${stderr || ''}`);
+            const out = stdout || '';
+            const err = stderr || '';
+            resolve(notStarted || (!out && !err) ? '' : `${out}\n${err}`);
         });
     } catch {
         resolve('');

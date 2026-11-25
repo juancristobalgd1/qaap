@@ -78,7 +78,10 @@ export async function syncTranscriptPreviewFromConversationExtracted(ctx: Mobile
             return;
         }
         const latestProject = await ctx.refreshTranscriptPreviewProject(project, summary);
-        if (ctx.resolveTranscriptPreviewUrl(latestProject, conv) || conv.status !== 'streaming') {
+        // Only a resolved preview URL releases the request flags here. Clearing on `conv.status !== 'streaming'`
+        // wiped `transcriptPreviewRequestPending` before turn-settle relaunch could start the server (for
+        // example after the agent wrote `.qaap/preview.json`) and cleared `Running` under an active launch.
+        if (ctx.resolveTranscriptPreviewUrl(latestProject, conv)) {
             const releasedRequestFlags = ctx.host.transcriptPreviewRequestPending || ctx.host.transcriptPreviewRequestRunning;
             ctx.host.transcriptPreviewRequestPending = false;
             ctx.host.transcriptPreviewRequestRunning = false;

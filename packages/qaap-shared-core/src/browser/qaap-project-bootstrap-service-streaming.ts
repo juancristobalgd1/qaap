@@ -554,6 +554,16 @@ function isSameRootWithLiveDevRunExtracted(ctx: QaapProjectBootstrapServiceConte
         return false;
 }
 
+/**
+ * Coalesces concurrent same-root refreshes so overlapping callers (e.g. a submit kickoff and a
+ * workspace refresh, or a settle relaunch and a poll kickoff) share one detection pass instead of
+ * bumping `refreshGeneration` under each other and resolving with an unpopulated `_descriptor`.
+ */
+const inFlightRefreshByCtx = new WeakMap<QaapProjectBootstrapServiceContext, {
+    readonly rootKey: string;
+    readonly promise: Promise<void>;
+}>();
+
 export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceContext, resource: URI | undefined): Promise<void> {
         const nextRootKey = resource?.toString() ?? '';
         const currentRootKey = ctx._descriptor?.rootUri.toString() ?? '';
@@ -572,79 +582,93 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
             // dev terminal, so the live server is released and restarted on every poll tick.
             return;
         }
-        const refreshId = ++ctx.refreshGeneration;
-        // This refresh reads the descriptor afresh, so a replay postponed by an earlier run is moot.
-        ctx.deferredWorkspaceRefresh = undefined;
-        ctx.resetBootstrapSessionForWorkspace('refreshFromRoot', resource?.toString() ?? ctx._descriptor?.rootUri.toString());
-        ctx.clearForwardedPorts();
-        if (!resource) {
-            ctx._descriptor = undefined;
-            ctx._previewUrl = undefined;
-            ctx._selectedApp = undefined;
-            ctx.setPhase('idle');
-            return;
+        const existing = inFlightRefreshByCtx.get(ctx);
+        if (existing && existing.rootKey === nextRootKey) {
+            return existing.promise;
         }
-        const devRunGeneration = ctx.devRunGeneration;
-        const installGeneration = ctx.installGeneration;
-        const descriptor = await ctx.detector.detect(resource);
-        if (refreshId !== ctx.refreshGeneration) {
-            // A newer refresh started while `detect` was in flight, possibly for another root.
-            // It owns the session now; applying this older snapshot would overwrite it.
-            return;
-        }
-        if ((devRunGeneration !== ctx.devRunGeneration || installGeneration !== ctx.installGeneration)
-            && ctx._descriptor?.rootUri.toString() === nextRootKey) {
-            // A run/install for this same root started while `detect` was in flight. Applying this
-            // older snapshot would flip `starting` back to `ready-to-run` under the live process:
-            // its "Local: http://…" line is then ignored, the preview never stages, and the server
-            // is orphaned on its port. Replay the refresh once the run is at rest instead, so real
-            // descriptor changes (package.json, .qaap/preview.json, node_modules) still land.
-            deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
-            return;
-        }
-        ctx._descriptor = descriptor;
-        ctx._previewUrl = undefined;
-        ctx._error = undefined;
-        ctx._selectedApp = undefined;
-        ctx._lastPort = undefined;
-        ctx._portConflictDetected = false;
-        ctx._portConflictPort = undefined;
-        if (!descriptor) {
-            const hint = await ctx.getMissingDescriptorHint(resource);
-            if (refreshId !== ctx.refreshGeneration) {
+        const promise = (async (): Promise<void> => {
+            const refreshId = ++ctx.refreshGeneration;
+            // This refresh reads the descriptor afresh, so a replay postponed by an earlier run is moot.
+            ctx.deferredWorkspaceRefresh = undefined;
+            ctx.resetBootstrapSessionForWorkspace('refreshFromRoot', resource?.toString() ?? ctx._descriptor?.rootUri.toString());
+            ctx.clearForwardedPorts();
+            if (!resource) {
+                ctx._descriptor = undefined;
+                ctx._previewUrl = undefined;
+                ctx._selectedApp = undefined;
+                ctx.setPhase('idle');
                 return;
             }
-            ctx._missingDescriptorHint = hint;
-            ctx.setPhase('idle');
-            return;
-        }
-        ctx._missingDescriptorHint = undefined;
-        const persisted = ctx.readPersisted(descriptor.rootUri.toString());
-        // Restore the previously selected monorepo app when it still exists; this avoids the user
-        // having to repick after a reload.
-        if (persisted?.selectedAppPath) {
-            ctx._selectedApp = descriptor.apps.find(app => app.relativePath === persisted.selectedAppPath);
-        }
-        if (persisted?.lastPort !== undefined) {
-            ctx._lastPort = isReservedIdePort(persisted.lastPort)
-                ? undefined
-                : persisted.lastPort;
-        }
-        if (!ctx._selectedApp && descriptor.apps.length === 1) {
-            // Only one runnable app — pick it implicitly so the user gets one-tap "Run & Preview".
-            ctx._selectedApp = descriptor.apps[0];
-        }
-        if (persisted && persisted.name === descriptor.name) {
-            // Transient phases (`running`, `starting`, `installing`) are not real after a reload:
-            // the spawned terminal is gone, the dev URL no longer responds, and the user is back
-            // at "ready to launch". Downgrade them so the banner reappears with a `Run & Preview`
-            // (or `Install`) action instead of silently restoring a dead `running` state.
-            const restored = normalizePersistedBootstrapPhase(persisted.phase, descriptor.nodeModulesPresent);
-            ctx.setPhase(restored);
+            const devRunGeneration = ctx.devRunGeneration;
+            const installGeneration = ctx.installGeneration;
+            const descriptor = await ctx.detector.detect(resource);
+            if (refreshId !== ctx.refreshGeneration) {
+                // A newer refresh started while `detect` was in flight, possibly for another root.
+                // It owns the session now; applying this older snapshot would overwrite it.
+                return;
+            }
+            if ((devRunGeneration !== ctx.devRunGeneration || installGeneration !== ctx.installGeneration)
+                && ctx._descriptor?.rootUri.toString() === nextRootKey) {
+                // A run/install for this same root started while `detect` was in flight. Applying this
+                // older snapshot would flip `starting` back to `ready-to-run` under the live process:
+                // its "Local: http://…" line is then ignored, the preview never stages, and the server
+                // is orphaned on its port. Replay the refresh once the run is at rest instead, so real
+                // descriptor changes (package.json, .qaap/preview.json, node_modules) still land.
+                deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
+                return;
+            }
+            ctx._descriptor = descriptor;
+            ctx._previewUrl = undefined;
+            ctx._error = undefined;
+            ctx._selectedApp = undefined;
+            ctx._lastPort = undefined;
+            ctx._portConflictDetected = false;
+            ctx._portConflictPort = undefined;
+            if (!descriptor) {
+                const hint = await ctx.getMissingDescriptorHint(resource);
+                if (refreshId !== ctx.refreshGeneration) {
+                    return;
+                }
+                ctx._missingDescriptorHint = hint;
+                ctx.setPhase('idle');
+                return;
+            }
+            ctx._missingDescriptorHint = undefined;
+            const persisted = ctx.readPersisted(descriptor.rootUri.toString());
+            // Restore the previously selected monorepo app when it still exists; this avoids the user
+            // having to repick after a reload.
+            if (persisted?.selectedAppPath) {
+                ctx._selectedApp = descriptor.apps.find(app => app.relativePath === persisted.selectedAppPath);
+            }
+            if (persisted?.lastPort !== undefined) {
+                ctx._lastPort = isReservedIdePort(persisted.lastPort)
+                    ? undefined
+                    : persisted.lastPort;
+            }
+            if (!ctx._selectedApp && descriptor.apps.length === 1) {
+                // Only one runnable app — pick it implicitly so the user gets one-tap "Run & Preview".
+                ctx._selectedApp = descriptor.apps[0];
+            }
+            if (persisted && persisted.name === descriptor.name) {
+                // Transient phases (`running`, `starting`, `installing`) are not real after a reload:
+                // the spawned terminal is gone, the dev URL no longer responds, and the user is back
+                // at "ready to launch". Downgrade them so the banner reappears with a `Run & Preview`
+                // (or `Install`) action instead of silently restoring a dead `running` state.
+                const restored = normalizePersistedBootstrapPhase(persisted.phase, descriptor.nodeModulesPresent);
+                ctx.setPhase(restored);
+                ctx.scheduleDevPreviewWarmup();
+                return;
+            }
+            ctx.setPhase(descriptor.nodeModulesPresent ? 'ready-to-run' : 'detected');
             ctx.scheduleDevPreviewWarmup();
-            return;
+        })();
+        inFlightRefreshByCtx.set(ctx, { rootKey: nextRootKey, promise });
+        try {
+            await promise;
+        } finally {
+            if (inFlightRefreshByCtx.get(ctx)?.promise === promise) {
+                inFlightRefreshByCtx.delete(ctx);
+            }
         }
-        ctx.setPhase(descriptor.nodeModulesPresent ? 'ready-to-run' : 'detected');
-        ctx.scheduleDevPreviewWarmup();
 }
 
