@@ -811,18 +811,32 @@ export class QaapTenantSpawnService {
     protected async sweepAgentAccessBothTypes(uid: number, dir: string, changedSince?: string): Promise<QaapTenantAccessCommandResult> {
         const select = [dir, '-xdev', '-uid', '0', ...(changedSince ? ['-cnewer', changedSince] : [])];
         const branch = (type: 'd' | 'f', actions: readonly string[]): string[] => ['(', '-type', type, ...actions, ')'];
+        // Group the `-o` branches so `-xdev`, `-uid 0` and `-cnewer` apply to both directories and files.
+        // In POSIX/GNU `find`, implicit `-a` binds tighter than `-o`, so an ungrouped `-o` dropped `-uid 0`
+        // (and `-cnewer`) on the file branch and ran `setfacl`/`chgrp` on every agent-owned file.
+        const both = (dirActions: readonly string[], fileActions: readonly string[]): string[] => [
+            '(',
+            ...branch('d', dirActions),
+            '-o',
+            ...branch('f', fileActions),
+            ')',
+        ];
         if (this.usesAgentGroupAccess()) {
             const group = this.agentAccessGroup(uid);
-            return this.tolerateUnreadableSubtrees(await this.runTenantAccessCommandAsync('find', [...select,
-                ...branch('d', ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwxs', '{}', '+']),
-                '-o',
-                ...branch('f', ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwX', '{}', '+']),
+            return this.tolerateUnreadableSubtrees(await this.runTenantAccessCommandAsync('find', [
+                ...select,
+                ...both(
+                    ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwxs', '{}', '+'],
+                    ['-exec', 'chgrp', '-h', group, '{}', '+', '-exec', 'chmod', 'g+rwX', '{}', '+'],
+                ),
             ]));
         }
-        return this.tolerateUnreadableSubtrees(await this.runTenantAccessCommandAsync('find', [...select,
-            ...branch('d', ['-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']),
-            '-o',
-            ...branch('f', ['-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']),
+        return this.tolerateUnreadableSubtrees(await this.runTenantAccessCommandAsync('find', [
+            ...select,
+            ...both(
+                ['-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+'],
+                ['-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+'],
+            ),
         ]));
     }
 
