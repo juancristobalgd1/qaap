@@ -142,6 +142,19 @@ describe('MobileProjectsPullRequestDetailUi floating comment and review popover'
         expect(scroll.querySelector<HTMLTextAreaElement>('.qaap-pr-popover-textarea')?.value).to.equal('Draft note');
     });
 
+    it('hands its navigation row to the hub header, without a chat button (the floating dock opens the chat)', () => {
+        ui.render();
+        const topbar = ui.getTopbar();
+        expect(scroll.querySelector('.qaap-pr-topbar')).to.equal(null);
+        expect(topbar.querySelector('.qaap-pr-crumb-number')?.textContent).to.equal(`#${host.pullRequestDetail?.number}`);
+        expect(topbar.querySelector('.qaap-pr-primary-action')).to.not.equal(null);
+        expect(topbar.querySelector('.codicon-comment-discussion')).to.equal(null);
+
+        host.pullRequestDetail = undefined;
+        ui.render();
+        expect(topbar.childElementCount).to.equal(0);
+    });
+
     it('opens the floating comment popover from openChat() and resets state on PR switch', () => {
         ui.render();
         ui.openChat();

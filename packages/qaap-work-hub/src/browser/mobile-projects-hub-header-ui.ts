@@ -76,6 +76,8 @@ export interface MobileProjectsHubHeaderHost {
     openPullRequestChat?(): void;
     togglePullRequestMerge?(): void;
     closePullRequestDetail?(): void;
+    /** The open pull request's navigation row, owned and kept current by the detail surface. */
+    pullRequestDetailTopbar?(): HTMLElement | undefined;
 }
 
 export class MobileProjectsHubHeaderUi {
@@ -207,6 +209,16 @@ export class MobileProjectsHubHeaderUi {
             leading.append(openSidebar);
         }
 
+        // An open pull request's own navigation row (back · owner/repo #N ↗ · merge) takes the surface title's
+        // place: one header row instead of a "Pull requests" title above a second row.
+        const topbar = pullRequest ? this.host.pullRequestDetailTopbar?.() : undefined;
+        if (topbar) {
+            leading.classList.add('theia-mod-pull-request-open');
+            leading.append(topbar);
+            header.append(leading);
+            return;
+        }
+
         const status = document.createElement('span');
         status.className = 'theia-mobile-work-hub-pull-request-header-status codicon codicon-git-pull-request';
         status.setAttribute('aria-hidden', 'true');
@@ -216,8 +228,7 @@ export class MobileProjectsHubHeaderUi {
         }
         leading.append(status);
 
-        // The open pull request carries its own header (repo · #, title, author, branches, Summary / Timeline /
-        // Code and its actions): the hub header only names the surface, as when no pull request is open.
+        // No pull request open (or a host without its row): the hub header only names the surface.
         const title = document.createElement('strong');
         title.textContent = nls.localize('qaap/pullRequests/headerTitle', 'Pull requests');
         leading.append(title);

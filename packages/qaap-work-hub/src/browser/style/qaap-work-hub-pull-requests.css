@@ -382,6 +382,16 @@
   gap: 8px;
 }
 
+.theia-mobile-work-hub-pull-request-header-leading.theia-mod-pull-request-open {
+  flex: 1 1 auto;
+}
+
+/* The open pull request's back · owner/repo #N · merge row, mounted in the hub header's top row. */
+.theia-mobile-work-hub-pull-request-header-leading.theia-mod-pull-request-open > .qaap-pr-topbar {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .theia-mobile-work-hub-pull-request-header-status {
   display: inline-flex;
   align-items: center;
@@ -1668,9 +1678,10 @@ a.qaap-pr-check:hover .qaap-pr-check-name {
 }
 
 .qaap-pr-timeline-line {
-  padding-top: 2px;
+  /* First text line centred on the 22px marker: a 22px first line box, the text's own leading below it. */
+  padding-top: 0;
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 22px;
   overflow-wrap: anywhere;
 }
 
