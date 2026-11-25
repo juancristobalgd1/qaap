@@ -14,6 +14,8 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     conversationShouldWatchDevPreview,
+    findTranscriptPreviewPortHint,
+    retireTranscriptPreviewPortHint,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import { pickScopedPreviewClaim } from '@theia/qaap-shared-core/lib/browser/qaap-preview-claim-scope';
@@ -73,6 +75,9 @@ export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProj
         const readyUrl = normalizePreviewUrlForSameOrigin(probe.previewUrl);
         if (!await ctx.previewUrlMatchesProject(readyUrl, latestProject)) {
             const reconciled = await ctx.reconcileSupersededProjectPreviewUrl(latestProject, readyUrl);
+            if (reconciled) {
+                retireSupersededConversationPortHint(ctx, candidateUrl);
+            }
             if (reconciled && ctx.transcriptPreviewProjectId === project.id && host.isConnected) {
                 const adopted = ctx.adoptReconciledProjectPreviewUrl(latestProject, reconciled);
                 void ctx.tryMountProjectScopedPreview(host, project, summary, adopted, reconciled);
@@ -166,12 +171,21 @@ export function transcriptPreviewTabProbeModeExtracted(ctx: MobileProjectsTransc
             return undefined;
         }
         const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
+        const streamingWatch = conv.status === 'streaming'
+            && (conversationShouldWatchDevPreview(conv, window.location.origin)
+                || ctx.host.transcriptPreviewRequestPending);
+        if (transcriptPreviewShowsMountedPage(ctx, summary)
+            && !ctx.host.transcriptPreviewRequestPending
+            && !ctx.host.transcriptPreviewRequestRunning) {
+            // A page is already mounted for this section (its health monitor / identity watch own
+            // liveness): sweeping every 900 ms for the rest of the turn only re-finds it. Back off
+            // while the turn may still move the dev server; stop once it ended.
+            return streamingWatch ? 'idle' : undefined;
+        }
         if (previewTabActive && ctx.isTranscriptPreviewWaiting(conv, project)) {
             return 'fast';
         }
-        if (conv.status === 'streaming'
-            && (conversationShouldWatchDevPreview(conv, window.location.origin)
-                || ctx.host.transcriptPreviewRequestPending)) {
+        if (streamingWatch) {
             return 'fast';
         }
         return previewTabActive
@@ -186,6 +200,28 @@ export function shouldKeepTranscriptPreviewTabProbeExtracted(ctx: MobileProjects
         summary: QaapAgentConversationSummaryDTO,
         conv: QaapAgentConversationDTO,): boolean {
         return transcriptPreviewTabProbeModeExtracted(ctx, project, summary, conv) !== undefined;
+}
+
+/**
+ * The project's live claim serves elsewhere, so a port-proxy URL that did not match it is stale. When
+ * that port is what the open conversation named (an agent's ad-hoc test server, a quoted failure log),
+ * stop treating it as the conversation's preview hint: otherwise it outranks the adopted claim and is
+ * probed, fetched and reconciled again on every tab-probe tick.
+ */
+export function retireSupersededConversationPortHint(ctx: MobileProjectsTranscriptSurfacesUiContext, staleUrl: string): void {
+        const conv = ctx.host.transcriptLastConv;
+        const port = extractDevPreviewPortFromUrl(staleUrl);
+        if (conv && port !== undefined && findTranscriptPreviewPortHint(conv) === port) {
+            retireTranscriptPreviewPortHint(conv, port);
+        }
+}
+
+/** The embedded Preview shows a page this section mounted (not the empty state). */
+function transcriptPreviewShowsMountedPage(ctx: MobileProjectsTranscriptSurfacesUiContext, summary: QaapAgentConversationSummaryDTO): boolean {
+        const root = ctx.host.transcriptEmbeddedPreview?.root;
+        return !!root?.isConnected
+            && !root.classList.contains('theia-mod-empty-preview')
+            && !!ctx.mountedPreviewUrl(ctx.previewScopeId(summary));
 }
 
 /** Nothing is mounted yet: the live chrome is the empty state (not a page, not a user-typed URL). */
@@ -765,6 +801,7 @@ export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsT
                 return;
             }
             if (reconciled) {
+                retireSupersededConversationPortHint(ctx, candidateUrl);
                 const adopted = ctx.adoptReconciledProjectPreviewUrl(latestProject, reconciled);
                 void ctx.tryMountProjectScopedPreview(host, project, summary, adopted, reconciled);
                 return;

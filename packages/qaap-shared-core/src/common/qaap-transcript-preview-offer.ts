@@ -79,18 +79,109 @@ function segmentText(segment: QaapAgentMessageSegmentDTO): string {
     return segment.content;
 }
 
-/** Scans the conversation for a dev preview URL or port hint from the agent. */
+/**
+ * How long a port the conversation named must stay dead and unclaimed, after the turn ended, before
+ * it stops counting as this conversation's preview hint.
+ */
+export const TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS = 30_000;
+/** Conversations whose hint state is remembered (oldest forgotten first). */
+const TRANSCRIPT_PREVIEW_HINT_STATE_LIMIT = 200;
+
+/**
+ * Per conversation: port -> index of the newest message whose mentions of that port are retired.
+ * A port the agent merely mentioned (an ad-hoc `PORT=3002 node server.js` check, a failure log
+ * quoting "running on http://localhost:3002") otherwise stays the conversation's preview hint
+ * forever: it is probed first on every tick, keeps the preview watch alive after the turn ended and
+ * outranks the saved URL, long after the live preview moved to another port. A mention in a newer
+ * message revives the hint.
+ */
+const retiredTranscriptPreviewHints = new Map<string, Map<number, number>>();
+/** Per conversation: port -> first time its hint probed dead and unclaimed (cleared when it answers). */
+const deadTranscriptPreviewHints = new Map<string, Map<number, number>>();
+
+function transcriptPreviewHintState(store: Map<string, Map<number, number>>, conversationId: string): Map<number, number> {
+    let state = store.get(conversationId);
+    if (!state) {
+        state = new Map();
+        store.set(conversationId, state);
+        const oldest = store.size > TRANSCRIPT_PREVIEW_HINT_STATE_LIMIT ? store.keys().next().value : undefined;
+        if (oldest !== undefined) {
+            store.delete(oldest);
+        }
+    }
+    return state;
+}
+
+function transcriptPreviewHintRetired(conv: QaapAgentConversationDTO, port: number, messageIndex: number): boolean {
+    const retiredThrough = retiredTranscriptPreviewHints.get(conv.id)?.get(port);
+    return retiredThrough !== undefined && messageIndex <= retiredThrough;
+}
+
+/**
+ * Stops treating `port` as this conversation's preview hint for every message so far: the live
+ * preview of the conversation is known to be elsewhere, or the port stayed dead and unclaimed.
+ */
+export function retireTranscriptPreviewPortHint(conv: QaapAgentConversationDTO, port: number): void {
+    transcriptPreviewHintState(retiredTranscriptPreviewHints, conv.id).set(port, conv.messages.length - 1);
+    deadTranscriptPreviewHints.get(conv.id)?.delete(port);
+}
+
+/**
+ * Records a probe of the conversation's hinted port. A port that answers, or that Qaap holds a
+ * claim on, is live. One that stays dead and unclaimed for {@link TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS}
+ * after the turn ended is retired; while the turn streams it is still "server not up yet".
+ * @returns true when the probe found the port dead and unclaimed.
+ */
+export function noteTranscriptPreviewHintProbe(
+    conv: QaapAgentConversationDTO,
+    port: number,
+    probe: Pick<TranscriptPreviewPortProbeResult, 'ready' | 'previewId'>,
+    now: number = Date.now(),
+): boolean {
+    if (probe.ready || probe.previewId) {
+        deadTranscriptPreviewHints.get(conv.id)?.delete(port);
+        return false;
+    }
+    const dead = transcriptPreviewHintState(deadTranscriptPreviewHints, conv.id);
+    const since = dead.get(port);
+    if (since === undefined) {
+        dead.set(port, now);
+    } else if (conv.status !== 'streaming' && now - since >= TRANSCRIPT_PREVIEW_DEAD_HINT_GRACE_MS) {
+        retireTranscriptPreviewPortHint(conv, port);
+    }
+    return true;
+}
+
+/** @internal Test hook: forgets every retired / dead hint. */
+export function resetTranscriptPreviewHintStateForTests(): void {
+    retiredTranscriptPreviewHints.clear();
+    deadTranscriptPreviewHints.clear();
+}
+
+function portOfQaapDevPreviewUrl(url: string): number | undefined {
+    return parseQaapDevPreviewPort(/\/qaap-dev\/(\d+)\//.exec(url)?.[1]);
+}
+
+/** Scans the conversation for a dev preview URL or port hint from the agent (retired hints skipped). */
 export function findTranscriptPreviewUrlFromConversation(
     conv: QaapAgentConversationDTO,
     origin?: string,
 ): string | undefined {
-    for (const message of [...conv.messages].reverse()) {
-        const fromContent = extractDevPreviewUrlFromAgentText(message.content, origin);
+    const usable = (url: string | undefined, messageIndex: number): string | undefined => {
+        if (!url) {
+            return undefined;
+        }
+        const port = portOfQaapDevPreviewUrl(url);
+        return port !== undefined && transcriptPreviewHintRetired(conv, port, messageIndex) ? undefined : url;
+    };
+    for (let index = conv.messages.length - 1; index >= 0; index--) {
+        const message = conv.messages[index];
+        const fromContent = usable(extractDevPreviewUrlFromAgentText(message.content, origin), index);
         if (fromContent) {
             return fromContent;
         }
         for (const segment of [...resolveAgentMessageSegments(message)].reverse()) {
-            const fromSegment = extractDevPreviewUrlFromAgentText(segmentText(segment), origin);
+            const fromSegment = usable(extractDevPreviewUrlFromAgentText(segmentText(segment), origin), index);
             if (fromSegment) {
                 return fromSegment;
             }
@@ -102,19 +193,19 @@ export function findTranscriptPreviewUrlFromConversation(
 export function findTranscriptPreviewPortHint(conv: QaapAgentConversationDTO): number | undefined {
     const fromUrl = findTranscriptPreviewUrlFromConversation(conv);
     if (fromUrl) {
-        const match = /\/qaap-dev\/(\d+)\//.exec(fromUrl);
-        const port = parseQaapDevPreviewPort(match?.[1]);
+        const port = portOfQaapDevPreviewUrl(fromUrl);
         if (port !== undefined) {
             return port;
         }
     }
-    for (const message of [...conv.messages].reverse()) {
+    for (let index = conv.messages.length - 1; index >= 0; index--) {
+        const message = conv.messages[index];
         const texts = [message.content, ...resolveAgentMessageSegments(message).map(segmentText)];
         for (const text of texts) {
             const direct = text?.match(DEV_URL_IN_TEXT_RE);
             const portRaw = direct?.[1] ?? text?.match(PORT_HINT_RE)?.[1];
             const port = parseQaapDevPreviewPort(portRaw);
-            if (port !== undefined) {
+            if (port !== undefined && !transcriptPreviewHintRetired(conv, port, index)) {
                 return port;
             }
         }
@@ -282,8 +373,12 @@ export async function resolveReadyTranscriptPreviewUrlFromProbe(
     }
     const scope: TranscriptPreviewProbeScope = { conversationId: conv.id, root: resolveThreadPreviewRoot(conv) };
     const hintedPort = findTranscriptPreviewPortHint(conv);
+    let hintedPortDead = false;
     for (const port of transcriptPreviewProbePorts(conv)) {
         const probe = await probePort(port);
+        if (port === hintedPort) {
+            hintedPortDead = noteTranscriptPreviewHintProbe(conv, port, probe);
+        }
         if (!probe.ready || !transcriptPreviewProbeBelongsToScope(probe, scope)) {
             continue;
         }
@@ -293,6 +388,11 @@ export async function resolveReadyTranscriptPreviewUrlFromProbe(
         // Adopt an unclaimed server only on the port this conversation named.
         if (!probe.previewId && port !== hintedPort) {
             continue;
+        }
+        if (hintedPortDead && hintedPort !== undefined && port !== hintedPort) {
+            // The named port is dead and unclaimed while this conversation's claimed preview serves
+            // on another port: the hint is stale, stop probing it first on every tick.
+            retireTranscriptPreviewPortHint(conv, hintedPort);
         }
         return probe.previewUrl;
     }
