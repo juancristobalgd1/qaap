@@ -246,22 +246,31 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
             onRefresh: () => undefined,
         };
         const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+        const waitUntil = async (done: () => boolean, timeoutMs = 2_000): Promise<void> => {
+            const deadline = Date.now() + timeoutMs;
+            while (!done() && Date.now() < deadline) {
+                await wait(10);
+            }
+        };
         const railItem = (title: string): HTMLButtonElement | undefined => Array.from(
             chrome.list.querySelectorAll<HTMLButtonElement>('.qaap-model-picker-rail-item'),
         ).find(button => button.title === title);
 
         /** A model source that records each request and how many are in flight at once. */
-        function recordingCatalog(): { asked: string[]; usage: { maxInFlight: number }; ctx: { resolveModelsForAgentPickerSafe: (agentId: string) => Promise<{ models: []; loadFailed: boolean }> } } {
+        function recordingCatalog(): {
+            asked: string[];
+            usage: { maxInFlight: number; inFlight: number };
+            ctx: { resolveModelsForAgentPickerSafe: (agentId: string) => Promise<{ models: []; loadFailed: boolean }> };
+        } {
             const asked: string[] = [];
-            const usage = { maxInFlight: 0 };
-            let inFlight = 0;
+            const usage = { maxInFlight: 0, inFlight: 0 };
             const ctx = {
                 resolveModelsForAgentPickerSafe: async (agentId: string): Promise<{ models: []; loadFailed: boolean }> => {
                     asked.push(agentId);
-                    inFlight++;
-                    usage.maxInFlight = Math.max(usage.maxInFlight, inFlight);
+                    usage.inFlight++;
+                    usage.maxInFlight = Math.max(usage.maxInFlight, usage.inFlight);
                     await wait(5);
-                    inFlight--;
+                    usage.inFlight--;
                     return { models: [], loadFailed: false };
                 },
             };
@@ -271,7 +280,8 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         it('asks only the selected harness when the picker opens', async () => {
             const catalog = recordingCatalog();
             await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
-            await wait(30);
+            await waitUntil(() => catalog.asked.length >= 1 && catalog.usage.inFlight === 0);
+            await wait(25);
             expect(catalog.asked).to.deep.equal(['pi']);
         });
 
@@ -279,10 +289,10 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
             const catalog = recordingCatalog();
             await renderStickyComposerModelPicker(catalog.ctx, chrome, options);
             railItem('Claude Code')?.click();
-            await wait(30);
+            await waitUntil(() => catalog.asked.length >= 2 && catalog.usage.inFlight === 0);
             railItem('Pi')?.click();
             railItem('Claude Code')?.click();
-            await wait(30);
+            await wait(25);
             expect(catalog.asked).to.deep.equal(['pi', 'claude']);
         });
 
@@ -294,11 +304,12 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
                 search.value = 'gpt';
                 search.dispatchEvent(new window.Event('input'));
             }
-            await wait(80);
             // The picker lists every known harness, not only the ones passed in. The selected one was asked on open;
             // the search asks each of the others once, in picker order.
             const others = listQaapComposerPickerAgents(agents, []).map(agent => agent.id).filter(agentId => agentId !== 'pi');
-            expect(catalog.asked).to.deep.equal(['pi', ...others]);
+            const expected = ['pi', ...others];
+            await waitUntil(() => catalog.asked.length >= expected.length && catalog.usage.inFlight === 0);
+            expect(catalog.asked).to.deep.equal(expected);
             expect(catalog.usage.maxInFlight).to.equal(1);
         });
     });
