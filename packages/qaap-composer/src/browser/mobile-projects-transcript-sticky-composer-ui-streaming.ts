@@ -33,6 +33,7 @@ import {
 } from './qaap-composer-preview-action';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 import { clearQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { isLastAgentTurnReviewRejected } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 
 export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
@@ -391,6 +392,21 @@ export async function runComposerCommitActionExtracted(ctx: MobileProjectsTransc
     });
     if (!allowed) {
         return;
+    }
+    const activeConv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
+    if (action === 'commit-create-pr' && isLastAgentTurnReviewRejected(activeConv)) {
+        const proceed = await new ConfirmDialog({
+            title: nls.localize('qaap/mobileProjects/createPrRejectedReviewTitle', 'Create PR despite rejected review?'),
+            msg: nls.localize(
+                'qaap/mobileProjects/createPrRejectedReviewMessage',
+                'The independent review rejected this change. Fix the flagged issues before opening a pull request, or create it anyway?',
+            ),
+            ok: nls.localize('qaap/mobileProjects/createPrAnyway', 'Create PR anyway'),
+            cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
+        }).open();
+        if (!proceed) {
+            return;
+        }
     }
     ctx.composerCommitBusy = true;
     ctx.refreshComposerActivityStack();

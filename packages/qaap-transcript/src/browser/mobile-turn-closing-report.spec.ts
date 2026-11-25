@@ -34,6 +34,17 @@ describe('parseMobileTurnClosingReport', () => {
         const parsed = parseMobileTurnClosingReport('Completed with warnings — x');
         expect(parsed.tone).to.equal('warning');
         expect(parsed.title).to.equal('Completed with warnings — x');
+        expect(parsed.reviewRejected).to.equal(false);
+    });
+
+    it('marks reviewRejected when the independent review rejected the change', () => {
+        const parsed = parseMobileTurnClosingReport([
+            'Completed with warnings — the independent review rejected the change.',
+            'Checks: passed (npm test).',
+            'Independent review: rejected by codex — path check misses trailing separator.',
+        ].join('\n'));
+        expect(parsed.tone).to.equal('warning');
+        expect(parsed.reviewRejected).to.equal(true);
     });
 
     it('reads a done headline into the done tone without details', () => {

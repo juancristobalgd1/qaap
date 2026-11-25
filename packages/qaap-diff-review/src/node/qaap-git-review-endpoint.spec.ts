@@ -586,3 +586,83 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
         await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot, registry), /project's own GitHub repository/);
     });
 });
+
+describe('qaap-git-review-endpoint commit-workflow without a remote', function (): void {
+    this.timeout(20_000);
+
+    class CommitWorkflowEndpoint extends QaapGitReviewEndpoint {
+        constructor() {
+            super();
+            Object.assign(this, {
+                auth: {
+                    assertWorkspacePathOwned: () => true,
+                    authenticate: () => ({ kind: 'skip' }),
+                } as unknown as QaapGithubAuthGuard,
+            });
+        }
+
+        async runCommitWorkflow(body: Record<string, unknown>): Promise<{ status: number; json: Record<string, unknown> }> {
+            let statusCode = 200;
+            let payload: Record<string, unknown> = {};
+            const req = { body } as unknown as Parameters<QaapGitReviewEndpoint['handleCommitWorkflow']>[0];
+            const res = {
+                status: (code: number) => {
+                    statusCode = code;
+                    return res;
+                },
+                json: (data: Record<string, unknown>) => {
+                    payload = data;
+                    return res;
+                },
+            } as unknown as Parameters<QaapGitReviewEndpoint['handleCommitWorkflow']>[1];
+            await this.handleCommitWorkflow(req, res);
+            return { status: statusCode, json: payload };
+        }
+    }
+
+    let repo: string;
+    const git = (args: string[]): string => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
+
+    beforeEach(() => {
+        repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-git-no-remote-'));
+        git(['init', '-q']);
+        git(['config', 'user.email', 'spec@qaap.test']);
+        git(['config', 'user.name', 'qaap spec']);
+        fs.writeFileSync(path.join(repo, 'index.js'), 'console.log(1);\n');
+        git(['add', 'index.js']);
+        git(['commit', '-qm', 'init']);
+        fs.writeFileSync(path.join(repo, 'index.js'), 'console.log(2);\n');
+    });
+
+    afterEach(() => {
+        fs.rmSync(repo, { recursive: true, force: true });
+    });
+
+    it('returns a clear 422 message without committing when Create PR runs on a repo with no remote', async () => {
+        const beforeHead = git(['rev-parse', 'HEAD']).trim();
+        const endpoint = new CommitWorkflowEndpoint();
+        const result = await endpoint.runCommitWorkflow({
+            root: repo,
+            action: 'commit-create-pr',
+            message: 'feat: update index',
+        });
+
+        expect(result.status).to.equal(422);
+        expect(String(result.json.error)).to.include('not connected to a GitHub remote');
+        expect(String(result.json.error)).to.not.include('does not appear to be a git repository');
+        expect(git(['rev-parse', 'HEAD']).trim()).to.equal(beforeHead);
+        expect(git(['status', '--short']).trim()).to.equal('M index.js');
+    });
+
+    it('returns a clear 422 message for commit-push when no remote is configured', async () => {
+        const endpoint = new CommitWorkflowEndpoint();
+        const result = await endpoint.runCommitWorkflow({
+            root: repo,
+            action: 'commit-push',
+            message: 'feat: update index',
+        });
+
+        expect(result.status).to.equal(422);
+        expect(String(result.json.error)).to.include('no git remote configured');
+    });
+});

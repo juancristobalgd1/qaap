@@ -203,6 +203,33 @@ export function findQaapClosingReport(message: QaapAgentMessageDTO | undefined):
     return undefined;
 }
 
+/** True when a closing report records a rejected independent review verdict. */
+export function isQaapIndependentReviewRejectedReport(report: string | undefined): boolean {
+    if (!report) {
+        return false;
+    }
+    return report.split('\n').some(line => {
+        const trimmed = line.trim();
+        return /independent review rejected/i.test(trimmed) || /^independent review:\s*rejected\b/i.test(trimmed);
+    });
+}
+
+/** True when the conversation's latest agent turn closed with a rejected independent review. */
+export function isLastAgentTurnReviewRejected(
+    conv: { readonly messages?: readonly QaapAgentMessageDTO[] } | undefined,
+): boolean {
+    const messages = conv?.messages;
+    if (!messages) {
+        return false;
+    }
+    for (let index = messages.length - 1; index >= 0; index--) {
+        if (messages[index].role === 'agent') {
+            return isQaapIndependentReviewRejectedReport(findQaapClosingReport(messages[index]));
+        }
+    }
+    return false;
+}
+
 function stripQaapTraceControlMarkers(text: string): string {
     return text.includes('@@QAAP:') ? text.replace(/@@QAAP:[A-Z0-9_]+@@[ \t]?/g, '') : text;
 }

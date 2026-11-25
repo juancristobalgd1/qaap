@@ -13,6 +13,8 @@ export interface MobileTurnResultVerdict {
     readonly tone: 'done' | 'warning';
     readonly title: string;
     readonly details: readonly string[];
+    /** True when the independent review rejected this turn's change: blocks the one-click Create PR button. */
+    readonly reviewRejected?: boolean;
 }
 
 export interface MobileTurnResultFooterModel {
@@ -51,9 +53,26 @@ export function createMobileTurnResultFooterElement(
     if (resolvePreviewState) {
         livePreviewFooters.set(footer, { state: model.state.previewState, resolve: resolvePreviewState, handlers });
     }
-    actions.append(model.state.canCreatePr
-        ? createActionButton('theia-mod-primary', 'codicon-git-pull-request', nls.localize('qaap/mobileProjects/turnResultCreatePr', 'Create PR'), handlers.onCreatePr)
-        : createActionButton('theia-mod-primary', 'codicon-arrow-right', nls.localize('qaap/mobileProjects/turnResultContinue', 'Continue'), handlers.onContinue));
+    if (model.state.canCreatePr && model.verdict?.reviewRejected) {
+        const blockedLabel = nls.localize('qaap/mobileProjects/turnResultCreatePr', 'Create PR');
+        const blockedReason = nls.localize(
+            'qaap/mobileProjects/turnResultCreatePrBlockedByReview',
+            'Blocked — fix the issues flagged by the independent review before creating a pull request.',
+        );
+        const blocked = createActionButton('theia-mod-secondary theia-mod-blocked', 'codicon-git-pull-request', blockedLabel, () => undefined);
+        blocked.disabled = true;
+        blocked.title = blockedReason;
+        blocked.setAttribute('aria-label', `${blockedLabel} (${blockedReason})`);
+        blocked.setAttribute('data-pr-blocked', 'review-rejected');
+        actions.append(
+            blocked,
+            createActionButton('theia-mod-primary', 'codicon-arrow-right', nls.localize('qaap/mobileProjects/turnResultContinue', 'Continue'), handlers.onContinue),
+        );
+    } else {
+        actions.append(model.state.canCreatePr
+            ? createActionButton('theia-mod-primary', 'codicon-git-pull-request', nls.localize('qaap/mobileProjects/turnResultCreatePr', 'Create PR'), handlers.onCreatePr)
+            : createActionButton('theia-mod-primary', 'codicon-arrow-right', nls.localize('qaap/mobileProjects/turnResultContinue', 'Continue'), handlers.onContinue));
+    }
     footer.append(actions);
     return footer;
 }

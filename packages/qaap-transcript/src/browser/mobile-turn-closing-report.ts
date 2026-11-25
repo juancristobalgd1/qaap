@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { isQaapIndependentReviewRejectedReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 /** Visual tone of a turn's closing report. */
 export type MobileTurnClosingTone = 'blocked' | 'warning' | 'failed' | 'done';
@@ -15,9 +16,15 @@ export const MOBILE_TURN_CLOSING_REPORT_CLASS = 'theia-mobile-turn-closing-repor
  * "Independent review: …", "Changes: …") into a tone, a short title and the informative details.
  * Details that say nothing ("not run", "not measured", "none", "skipped") are dropped so the row stays quiet.
  */
-export function parseMobileTurnClosingReport(report: string): { tone: MobileTurnClosingTone; title: string; details: string[] } {
+export function parseMobileTurnClosingReport(report: string): {
+    tone: MobileTurnClosingTone;
+    title: string;
+    details: string[];
+    reviewRejected: boolean;
+} {
     const [headline = '', ...rest] = report.split('\n').map(line => line.trim()).filter(Boolean);
     const details = rest.filter(line => !/^[^:]+:\s*(?:not run|not measured|none|skipped)\.?$/i.test(line)).map(line => line.replace(/\.$/, ''));
+    const reviewRejected = isQaapIndependentReviewRejectedReport(report);
     if (/^blocked\b/i.test(headline)) {
         // The question itself is the last line of the answer right above this row
         // (`stripQaapControlMarkersForDisplay` keeps it), so the row does not repeat it.
@@ -25,15 +32,16 @@ export function parseMobileTurnClosingReport(report: string): { tone: MobileTurn
             tone: 'blocked',
             title: nls.localize('qaap/transcript/closing/needsInput', 'Needs your input'),
             details,
+            reviewRejected,
         };
     }
     if (/^failed\b/i.test(headline)) {
-        return { tone: 'failed', title: stripTrailingPeriod(headline), details };
+        return { tone: 'failed', title: stripTrailingPeriod(headline), details, reviewRejected };
     }
     if (/^completed with warnings\b/i.test(headline)) {
-        return { tone: 'warning', title: stripTrailingPeriod(headline), details };
+        return { tone: 'warning', title: stripTrailingPeriod(headline), details, reviewRejected };
     }
-    return { tone: 'done', title: stripTrailingPeriod(headline), details: [] };
+    return { tone: 'done', title: stripTrailingPeriod(headline), details: [], reviewRejected };
 }
 
 function stripTrailingPeriod(text: string): string {

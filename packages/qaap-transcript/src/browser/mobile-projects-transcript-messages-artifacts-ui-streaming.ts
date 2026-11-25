@@ -208,7 +208,9 @@ function appendTurnResultFooter(
     }
     const api = ctx.host.turnResultApi;
     const state = api?.resolveTurnResultState(conv) ?? { previewState: 'none' as const, canCreatePr: false };
-    const verdict = parsed ? { tone: parsed.tone, title: parsed.title, details: parsed.details } : undefined;
+    const verdict = parsed
+        ? { tone: parsed.tone, title: parsed.title, details: parsed.details, reviewRejected: parsed.reviewRejected }
+        : undefined;
     card.append(createMobileTurnResultFooterElement({ verdict, state }, {
         onOpenPreview: () => api?.openTurnResultPreview(conv),
         onRunPreview: () => api?.runTurnResultPreview(conv),
