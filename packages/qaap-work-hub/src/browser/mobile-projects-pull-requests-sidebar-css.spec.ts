@@ -45,4 +45,54 @@ describe('pull requests sidebar scroll CSS', () => {
         expect(results).to.match(/min-height:\s*0/);
         expect(results).to.match(/overflow:\s*auto/);
     });
+
+    it('keeps pull request detail scrollport stretched and free of horizontal overflow', () => {
+        const detailScroll = declarationsFor(
+            css,
+            '.theia-mobile-projects.theia-mod-pull-request-detail > .theia-mobile-projects-scroll',
+        );
+        expect(detailScroll).to.match(/align-items:\s*stretch\s*!important/);
+        expect(detailScroll).to.match(/padding:\s*0\s*!important/);
+        expect(detailScroll).to.match(/overflow-x:\s*hidden\s*!important/);
+        expect(detailScroll).to.match(/overflow-y:\s*auto\s*!important/);
+
+        const detail = declarationsFor(css, '.qaap-pr');
+        expect(detail).to.match(/box-sizing:\s*border-box/);
+        expect(detail).to.match(/width:\s*100%/);
+        expect(detail).to.match(/min-width:\s*0/);
+    });
+
+    it('styles the floating comment trigger and popover instead of a sticky footer bar', () => {
+        expect(css).to.not.include('.theia-mobile-work-hub-pull-request-comment-row');
+        const dock = declarationsFor(css, '.qaap-pr-floating-dock');
+        expect(dock).to.match(/position:\s*sticky/);
+        expect(dock).to.match(/pointer-events:\s*none/);
+
+        const fab = declarationsFor(css, '.qaap-pr-fab');
+        expect(fab).to.match(/display:\s*inline-flex/);
+        expect(fab).to.match(/align-items:\s*center/);
+        expect(fab).to.match(/justify-content:\s*center/);
+
+        const popover = declarationsFor(css, '.qaap-pr-comment-popover');
+        expect(popover).to.match(/box-sizing:\s*border-box/);
+        expect(popover).to.match(/max-width:/);
+    });
+
+    it('centers sidebar header icon buttons symmetrically', () => {
+        const sidebarCss = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-sessions-sidebar.css'),
+            'utf8',
+        );
+        for (const selector of [
+            '.theia-mobile-work-hub-sessions-sidebar-back',
+            '.theia-mobile-work-hub-sessions-sidebar-close',
+            '.theia-mobile-work-hub-sessions-sidebar-pull-request-search',
+        ]) {
+            const decls = declarationsFor(sidebarCss, selector);
+            expect(decls, selector).to.match(/display:\s*inline-flex/);
+            expect(decls, selector).to.match(/align-items:\s*center/);
+            expect(decls, selector).to.match(/justify-content:\s*center/);
+            expect(decls, selector).to.match(/padding:\s*0/);
+        }
+    });
 });
