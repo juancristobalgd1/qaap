@@ -87,7 +87,8 @@ body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .th
 }
 
 body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header button,
-body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header input {
+body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header input,
+body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header a {
   -webkit-app-region: no-drag;
 }
 

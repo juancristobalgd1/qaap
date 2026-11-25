@@ -58,6 +58,7 @@ export class MobileProjectsPullRequestDetailUi {
     protected reviewVerdict: PullRequestReviewVerdict = 'comment';
     protected pendingCommentFocus = false;
     protected popoverListenersCleanup: (() => void) | undefined;
+    protected readonly topbarEl = document.createElement('div');
     protected renderedPullRequestKey = '';
 
     constructor(protected readonly host: MobileProjectsPullRequestDetailHost) { }
@@ -92,6 +93,7 @@ export class MobileProjectsPullRequestDetailUi {
     renderEmpty(): void {
         this.disposePopoverListeners();
         this.commentDialogOpen = false;
+        this.topbarEl.replaceChildren();
         const root = document.createElement('div');
         root.className = 'theia-mobile-work-hub-pull-request-empty-detail';
 
@@ -127,6 +129,7 @@ export class MobileProjectsPullRequestDetailUi {
         const pullRequest = this.host.pullRequestDetail;
         if (!pullRequest) {
             this.commentDialogOpen = false;
+            this.topbarEl.replaceChildren();
             this.host.scroll.replaceChildren();
             return;
         }
@@ -179,51 +182,14 @@ export class MobileProjectsPullRequestDetailUi {
     }
 
     /**
-     * Header: back · owner/repo #N ↗ · merge / more; the title; author avatar, "updated …" and a copyable
+     * Header (its back · owner/repo #N ↗ · merge row is the hub header's, see {@link getTopbar}): the title; author avatar, "updated …" and a copyable
      * `gh pr checkout N`; then base ← head with the file count and the line stats.
      */
     protected createHeader(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
         const header = document.createElement('header');
         header.className = 'qaap-pr-header';
 
-        const top = document.createElement('div');
-        top.className = 'qaap-pr-topbar';
-        const back = this.createIconButton(nls.localize('qaap/pullRequests/back', 'Back to pull requests'), 'qaap-pr-icon-button', 'codicon-arrow-left');
-        back.addEventListener('click', () => this.host.closePullRequestDetail());
-        const crumb = document.createElement('a');
-        crumb.className = 'qaap-pr-crumb';
-        crumb.href = pullRequest.htmlUrl;
-        crumb.target = '_blank';
-        crumb.rel = 'noreferrer';
-        crumb.title = nls.localize('qaap/pullRequests/openOnGithub', 'Open on GitHub');
-        const repoName = document.createElement('span');
-        repoName.className = 'qaap-pr-crumb-repo';
-        repoName.textContent = `${pullRequest.owner}/${pullRequest.repo}`;
-        const number = document.createElement('span');
-        number.className = 'qaap-pr-crumb-number';
-        number.textContent = `#${pullRequest.number}`;
-        const externalIcon = document.createElement('span');
-        externalIcon.className = 'codicon codicon-link-external qaap-pr-crumb-external';
-        externalIcon.setAttribute('aria-hidden', 'true');
-        crumb.append(repoName, number, externalIcon);
-        const spacer = document.createElement('span');
-        spacer.className = 'qaap-pr-spacer';
-        const merge = this.createIconButton(
-            this.merged ? nls.localize('qaap/pullRequests/merged', 'Merged') : nls.localize('qaap/pullRequests/merge', 'Merge'),
-            'qaap-pr-icon-button qaap-pr-primary-action',
-            this.merged ? 'codicon-git-merge' : 'codicon-git-pull-request',
-        );
-        merge.classList.toggle('theia-mod-merged', this.merged);
-        merge.disabled = this.merged || this.merging || !this.canMerge(pullRequest);
-        merge.addEventListener('click', () => {
-            if (!this.merged) {
-                this.mergeConfirming = !this.mergeConfirming;
-                this.render();
-            }
-        });
-        const chat = this.createIconButton(nls.localize('qaap/pullRequests/openChat', 'Open chat'), 'qaap-pr-icon-button', 'codicon-comment-discussion');
-        chat.addEventListener('click', () => this.openChat());
-        top.append(back, crumb, spacer, merge, chat);
+        this.renderTopbar(pullRequest);
 
         const title = document.createElement('h1');
         title.className = 'qaap-pr-title';
@@ -279,8 +245,56 @@ export class MobileProjectsPullRequestDetailUi {
         stats.append(fileIcon, files, adds, dels);
         branches.append(refs, stats);
 
-        header.append(top, title, byline, branches);
+        header.append(title, byline, branches);
         return header;
+    }
+
+    /**
+     * The open pull request's navigation row (back · owner/repo #N ↗ · merge). The hub header mounts it in
+     * its top row in place of the surface title, so the detail does not spend a second row on it. The element
+     * is kept across renders, so a merge-state render updates it wherever it is mounted.
+     */
+    getTopbar(): HTMLElement {
+        return this.topbarEl;
+    }
+
+    protected renderTopbar(pullRequest: QaapGithubPullRequestSummary): void {
+        const top = this.topbarEl;
+        top.className = 'qaap-pr-topbar';
+        const back = this.createIconButton(nls.localize('qaap/pullRequests/back', 'Back to pull requests'), 'qaap-pr-icon-button', 'codicon-arrow-left');
+        back.addEventListener('click', () => this.host.closePullRequestDetail());
+        const crumb = document.createElement('a');
+        crumb.className = 'qaap-pr-crumb';
+        crumb.href = pullRequest.htmlUrl;
+        crumb.target = '_blank';
+        crumb.rel = 'noreferrer';
+        crumb.title = nls.localize('qaap/pullRequests/openOnGithub', 'Open on GitHub');
+        const repoName = document.createElement('span');
+        repoName.className = 'qaap-pr-crumb-repo';
+        repoName.textContent = `${pullRequest.owner}/${pullRequest.repo}`;
+        const number = document.createElement('span');
+        number.className = 'qaap-pr-crumb-number';
+        number.textContent = `#${pullRequest.number}`;
+        const externalIcon = document.createElement('span');
+        externalIcon.className = 'codicon codicon-link-external qaap-pr-crumb-external';
+        externalIcon.setAttribute('aria-hidden', 'true');
+        crumb.append(repoName, number, externalIcon);
+        const spacer = document.createElement('span');
+        spacer.className = 'qaap-pr-spacer';
+        const merge = this.createIconButton(
+            this.merged ? nls.localize('qaap/pullRequests/merged', 'Merged') : nls.localize('qaap/pullRequests/merge', 'Merge'),
+            'qaap-pr-icon-button qaap-pr-primary-action',
+            this.merged ? 'codicon-git-merge' : 'codicon-git-pull-request',
+        );
+        merge.classList.toggle('theia-mod-merged', this.merged);
+        merge.disabled = this.merged || this.merging || !this.canMerge(pullRequest);
+        merge.addEventListener('click', () => {
+            if (!this.merged) {
+                this.mergeConfirming = !this.mergeConfirming;
+                this.render();
+            }
+        });
+        top.replaceChildren(back, crumb, spacer, merge);
     }
 
     /** "just now", "14m ago", "3h ago", "2d ago", then the date: short enough for the header byline. */

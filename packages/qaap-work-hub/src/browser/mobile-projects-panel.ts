@@ -1191,6 +1191,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         }
     }
 
+    protected pullRequestDetailTopbar(): HTMLElement {
+        return this.pullRequestDetailUi.getTopbar();
+    }
+
     protected openPullRequestChat(): void {
         this.pullRequestDetailUi.openChat();
     }

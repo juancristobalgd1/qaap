@@ -477,6 +477,23 @@ describe('MobileProjectsHubHeaderUi', () => {
         expect(opened).to.equal(1);
     });
 
+    it('puts the open pull request navigation row in the header top row instead of the surface title', () => {
+        const host = createHost();
+        const header = document.createElement('div');
+        const topbar = document.createElement('div');
+        topbar.className = 'qaap-pr-topbar';
+        host.pullRequestHeaderEl = header;
+        host.pullRequestDetail = { number: 570, state: 'open' } as MobileProjectsHubHeaderHost['pullRequestDetail'];
+        host.isPullRequestsSidebarOpen = () => true;
+        host.pullRequestDetailTopbar = () => topbar;
+
+        new MobileProjectsHubHeaderUi(host).renderHeader();
+
+        expect(header.querySelector('.qaap-pr-topbar')).to.equal(topbar);
+        expect(header.querySelector('strong')).to.equal(null);
+        expect(header.querySelector('.theia-mobile-work-hub-pull-request-header-status')).to.equal(null);
+    });
+
     it('shows the header overflow menu only when the chat execution surface is active', () => {
         const current = project('mockup', 'Mockup');
         const ui = new MobileProjectsHubHeaderUi(createHost({
