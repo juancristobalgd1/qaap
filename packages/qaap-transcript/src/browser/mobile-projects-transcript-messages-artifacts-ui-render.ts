@@ -49,6 +49,7 @@ import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt
 import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
 import { createMobileTurnClosingReportElement, parseMobileTurnClosingReport } from './mobile-turn-closing-report';
 import { MOBILE_TURN_RESULT_CLASS } from './mobile-turn-result-footer';
+import { createMobilePreviewToolCardElement, findLatestPreviewToolResultInSegments } from './mobile-preview-tool-card';
 import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
@@ -190,6 +191,14 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                     agentMessage: failureMessage,
                 },
             ));
+        }
+        const previewToolResult = findLatestPreviewToolResultInSegments(segments);
+        if (previewToolResult) {
+            body.append(createMobilePreviewToolCardElement(previewToolResult.state, {
+                onOpenPreview: url => {
+                    void ctx.contentUi.openTranscriptPreviewUrlFromLink(url);
+                },
+            }));
         }
         // The turn's closing report (blocked / warnings) as a quiet closing row. Clean "done" turns
         // stay quiet; failures have their own dialog above; turns with changes already carry warning

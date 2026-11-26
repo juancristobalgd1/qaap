@@ -14,8 +14,10 @@ import {
     QAAP_AGENT_PREVIEW_READ_OPERATIONS,
     QAAP_AGENT_PREVIEW_ROUTES,
     QAAP_USER_PREVIEW_API_PATH,
+    QAAP_USER_PREVIEW_CONFIG_ROUTE,
     QaapAgentPreviewError,
     isQaapAgentPreviewToolsEnabled,
+    isQaapPreviewAgentDrivenEnabled,
     isQaapPreviewServiceEnabled,
     parseQaapPreviewLogsRequest,
     parseQaapPreviewSnapshotRequest,
@@ -24,6 +26,7 @@ import {
     parseQaapPreviewStopRequest,
     type QaapAgentPreviewErrorCode,
     type QaapAgentPreviewOperation,
+    type QaapPreviewConfigResponse,
     type QaapPreviewParseResult,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import { QAAP_DEFAULT_PREVIEW_CONVERSATION_ID, normalizeQaapPreviewConversationId } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
@@ -73,6 +76,9 @@ export class QaapAgentPreviewEndpoint implements BackendApplicationContribution 
     protected readonly auth: QaapGithubAuthGuard;
 
     configure(app: Application): void {
+        app.get(`${QAAP_USER_PREVIEW_API_PATH}${QAAP_USER_PREVIEW_CONFIG_ROUTE}`, (req, res) => {
+            this.handleConfig(req, res);
+        });
         for (const operation of Object.keys(QAAP_AGENT_PREVIEW_ROUTES) as QaapAgentPreviewOperation[]) {
             const route = QAAP_AGENT_PREVIEW_ROUTES[operation];
             app.post(`${QAAP_AGENT_PREVIEW_API_PATH}${route}`, json({ limit: BODY_LIMIT }), (req, res) => {
@@ -82,6 +88,22 @@ export class QaapAgentPreviewEndpoint implements BackendApplicationContribution 
                 void this.handle(req, res, operation, () => this.userCaller(req)).catch(error => this.internal(res, error));
             });
         }
+    }
+
+    /** Exposes the backend preview feature flags to a signed-in user so the frontend can switch over cleanly. */
+    protected handleConfig(req: Request, res: Response): void {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            this.fail(res, 'unauthorized', 'Not signed in.');
+            return;
+        }
+        const env = this.env();
+        const response: QaapPreviewConfigResponse = {
+            previewService: isQaapPreviewServiceEnabled(env),
+            agentPreviewTools: isQaapAgentPreviewToolsEnabled(env),
+            agentDriven: isQaapPreviewAgentDrivenEnabled(env),
+        };
+        res.json(response);
     }
 
     protected async handle(

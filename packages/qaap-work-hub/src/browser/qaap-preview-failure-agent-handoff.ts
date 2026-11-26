@@ -7,6 +7,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { postConversationMessage, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { isQaapAgentDrivenPreviewCached } from '@theia/qaap-shared-core/lib/browser/qaap-agent-preview-client';
 import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { QaapBootstrapStateChange, QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import {
@@ -42,10 +43,15 @@ function previewFailureState(state: QaapBootstrapStateChange): QaapPreviewFailur
     };
 }
 
-async function handOff(conversation: QaapAgentConversationSummaryDTO, state: QaapPreviewFailureState): Promise<void> {
+/** Sends a preview failure report to the conversation's agent (used by the user-pressed "Ask agent to fix" button and legacy auto-handoff). */
+export async function sendQaapPreviewFailureToAgent(
+    conversation: QaapAgentConversationSummaryDTO,
+    state: QaapPreviewFailureState,
+    options: { readonly agentDriven?: boolean } = {},
+): Promise<void> {
     try {
         const agentModel = resolveStoredAgentModelForSubmit(conversation.agentId, conversation.cwd);
-        await postConversationMessage(conversation.id, buildQaapPreviewFailureReport(state), { agentModel });
+        await postConversationMessage(conversation.id, buildQaapPreviewFailureReport(state, options), { agentModel });
         MobileSnackbar.show(
             nls.localize('qaap/previewHandoff/sent', 'The app did not start. The agent is fixing it.'),
             { kind: 'default', duration: 2600 },
@@ -56,6 +62,11 @@ async function handOff(conversation: QaapAgentConversationSummaryDTO, state: Qaa
 }
 
 function onStateChange(entry: BootstrapHandoff, state: QaapBootstrapStateChange): void {
+    // Phase 3 (decision D5): in agent-driven preview mode, never auto-send a fix turn on failure;
+    // the user triggers "Ask agent to fix" explicitly from the failure card/snackbar.
+    if (isQaapAgentDrivenPreviewCached()) {
+        return;
+    }
     if (state.phase !== 'run-failed') {
         return;
     }
@@ -66,7 +77,7 @@ function onStateChange(entry: BootstrapHandoff, state: QaapBootstrapStateChange)
         const runKey = decideQaapPreviewFailureHandoff(failure, conversation, history, now);
         if (conversation && runKey) {
             recordQaapPreviewFailureHandoff(history, conversation.id, runKey, now);
-            void handOff(conversation, failure);
+            void sendQaapPreviewFailureToAgent(conversation, failure);
             return;
         }
     }

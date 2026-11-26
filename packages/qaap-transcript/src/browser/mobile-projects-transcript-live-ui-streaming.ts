@@ -39,6 +39,8 @@ import { scheduleTranscriptIdleWork } from '../common/qaap-transcript-idle-sched
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled, resolveQaapSettledPreviewRequestAction } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { fetchQaapPreviewConfig, isQaapAgentDrivenPreviewCached } from '@theia/qaap-shared-core/lib/browser/qaap-agent-preview-client';
+import { findLatestReadyPreviewToolUrl } from './mobile-preview-tool-card';
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
 
 export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, incoming: QaapAgentConversationDTO,
@@ -231,6 +233,11 @@ export function ensureBootstrapPreviewListenerExtracted(ctx: MobileProjectsTrans
 const kickoffInFlightConversationIds = new Set<string>();
 
 export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO | undefined): void {
+    void fetchQaapPreviewConfig();
+    if (isQaapAgentDrivenPreviewCached()) {
+        // Phase 3: the model owns starting the preview via preview_start; never kick off from regex.
+        return;
+    }
     const bootstrap = ctx.host.projectBootstrap;
     if (!bootstrap || !conv || !conversationRequestsDevPreview(conv)
         || !conversationShouldKickoffDevPreviewBootstrap(conv)) {
@@ -396,8 +403,20 @@ export function onTranscriptPreviewStartStalledExtracted(ctx: MobileProjectsTran
 }
 
 export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
-    const relaunchAction = relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx);
     const conv = ctx.host.transcriptLastConv;
+    if (conv) {
+        const readyToolPreview = findLatestReadyPreviewToolUrl(conv);
+        if (readyToolPreview && ctx.host.transcriptOpenSummaryId === conv.id) {
+            await ctx.openReadyTranscriptPreviewUrl(normalizePreviewUrlForSameOrigin(readyToolPreview.url), conv);
+            if (isQaapAgentDrivenPreviewCached()) {
+                return;
+            }
+        }
+    }
+    if (isQaapAgentDrivenPreviewCached()) {
+        return;
+    }
+    const relaunchAction = relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx);
     if (!conv || !conversationShouldWatchDevPreview(conv, window.location.origin)) {
         return;
     }
@@ -420,9 +439,20 @@ export function maybeActivateTranscriptDevPreviewExtracted(ctx: MobileProjectsTr
 
 export function ensureTranscriptDevPreviewWatchExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,
     options?: { readonly restartPreviewPoll?: boolean },): void {
+    void fetchQaapPreviewConfig();
     // Only live streaming progress keeps the stall watchdog alive; a settled turn must not reset it.
     if (conv.status === 'streaming') {
         ctx.previewStartingWatchdog.progress();
+    }
+    const readyToolPreview = findLatestReadyPreviewToolUrl(conv);
+    if (readyToolPreview && ctx.host.transcriptOpenSummaryId === conv.id) {
+        const normalizedUrl = normalizePreviewUrlForSameOrigin(readyToolPreview.url);
+        if (ctx.transcriptPreviewOfferAnnouncedUrl !== normalizedUrl) {
+            void ctx.openReadyTranscriptPreviewUrl(normalizedUrl, conv);
+        }
+    }
+    if (isQaapAgentDrivenPreviewCached()) {
+        return;
     }
     if (conversationRequestsDevPreview(conv) || conversationAwaitingDevPreview(conv)) {
         ctx.kickoffTranscriptDevPreviewBootstrap(conv);
@@ -442,7 +472,8 @@ export function onTranscriptUserMessageSubmittedExtracted(ctx: MobileProjectsTra
     ctx.transcriptPreviewPollMisses = 0;
     const project = ctx.host.transcriptOpenProject;
     const summary = ctx.host.transcriptOpenSummary;
-    if (messageRequestsDevPreview(content) && project && summary && !ctx.host.transcriptPreviewSuppressedByUser) {
+    if (!isQaapAgentDrivenPreviewCached()
+        && messageRequestsDevPreview(content) && project && summary && !ctx.host.transcriptPreviewSuppressedByUser) {
         ctx.host.transcriptPreviewRequestPending = true;
         ctx.host.beginTranscriptDevPreviewRequest(project, summary);
         // A chat request only waits on the agent turn; no Qaap launch runs it. `Running` would mark

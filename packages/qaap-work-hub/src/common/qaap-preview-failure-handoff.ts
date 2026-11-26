@@ -93,16 +93,22 @@ export function recordQaapPreviewFailureHandoff(history: QaapPreviewHandoffHisto
 }
 
 /** The follow-up the agent receives: what failed, the dev output, and what to do. */
-export function buildQaapPreviewFailureReport(state: QaapPreviewFailureState): string {
+export function buildQaapPreviewFailureReport(
+    state: QaapPreviewFailureState,
+    options: { readonly agentDriven?: boolean } = {},
+): string {
     const output = (state.previewLogTail ?? '').trimEnd().split('\n').slice(-REPORT_OUTPUT_LINES).join('\n').trim();
     const command = state.devCommand?.trim();
+    const guidance = options.agentDriven
+        ? 'Find the cause in the project, fix it, and call preview_start to verify the app answers HTTP 200.'
+        : 'Find the cause in the project and fix it so the dev server starts and serves the app. '
+            + 'You may run a build or type check to confirm the fix, but do not leave a dev server running: Qaap runs the preview.';
     return [
         'The app failed to start in the Qaap preview' + (command ? ` (\`${command}\`).` : '.'),
         '',
         state.error?.trim() ?? '',
         ...(output ? ['', 'Dev server output:', '```', output, '```'] : []),
         '',
-        'Find the cause in the project and fix it so the dev server starts and serves the app. '
-        + 'You may run a build or type check to confirm the fix, but do not leave a dev server running: Qaap runs the preview.',
+        guidance,
     ].join('\n').replace(/\n{3,}/g, '\n\n');
 }
