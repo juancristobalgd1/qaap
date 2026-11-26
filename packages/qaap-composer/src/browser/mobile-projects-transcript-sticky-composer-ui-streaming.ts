@@ -232,7 +232,11 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const verifiedPreviewUrl = ctx.verifiedComposerPreview?.projectId === project.id
         ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
         : undefined;
-    const previewStarting = !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending
+    // Once the live preview URL is verified, stale request flags (which only clear when the Preview
+    // surface mounts) must not trap the composer pill on "Starting preview…".
+    const previewRequestActive = (!!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending)
+        && !verifiedPreviewUrl;
+    const previewStarting = previewRequestActive
         || isComposerPreviewBootingForProject(previewRuntime, !!verifiedPreviewUrl);
     const previewChips = resolveComposerPreviewChipVisibility({
         previewStarting,
@@ -466,6 +470,8 @@ export async function runComposerCommitActionExtracted(ctx: MobileProjectsTransc
         invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
         ctx.host.diffReviewWidget?.update();
         ctx.composerActivityGitFilesByConversationId.set(summary.id, []);
+        ctx.composerChangesResolvedByConversationId.add(summary.id);
+        ctx.composerCleanTreeByConversationId.add(summary.id);
         void ctx.syncComposerGitSnapshot(project, summary)
             .then(() => ctx.refreshComposerActivityStack())
             .catch(() => undefined);

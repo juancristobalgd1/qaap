@@ -43,6 +43,9 @@ describe('qaap-composer-preview-action', () => {
         expect(isComposerPreviewBootingForProject({ ...own, phase: 'starting' }, false)).to.equal(true);
         // `running` but the first compile has not answered yet: still starting for the user.
         expect(isComposerPreviewBootingForProject({ ...own, phase: 'running' }, false)).to.equal(true);
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'running', dependenciesInstalled: true }, false)).to.equal(true);
+        // Never trap "Starting preview…" forever when dependenciesInstalled is false (no candidate to verify).
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'running', dependenciesInstalled: false }, false)).to.equal(false);
         expect(isComposerPreviewBootingForProject({ ...own, phase: 'running' }, true)).to.equal(false);
         expect(isComposerPreviewBootingForProject({ ...own, phase: 'ready-to-run' }, false)).to.equal(false);
         expect(isComposerPreviewBootingForProject({ ...own, phase: 'run-failed' }, false)).to.equal(false);

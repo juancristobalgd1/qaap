@@ -91,6 +91,10 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
     // flash of the Changes pill between the mount and the first fresh git fetch completing.
     // The latches are updated naturally by selectComposerPillChanges once the fetch returns.
     ctx.composerActivityGitFilesByConversationId.delete(summary.id);
+    // Switching tasks must verify a running preview immediately rather than waiting out an earlier
+    // task's failed-probe backoff.
+    ctx.composerPreviewProbeFailures = 0;
+    ctx.composerPreviewNextProbeAt = 0;
     ctx.host.stickyComposerContextUsageDispose.dispose();
     // Park the Working expand shell before wipe so transcript remounts cannot destroy it.
     parkWorkingControlFromAncestor(host);

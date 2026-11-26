@@ -47,7 +47,7 @@ import {
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
-import { createMobileTurnClosingReportElement } from './mobile-turn-closing-report';
+import { createMobileTurnClosingReportElement, parseMobileTurnClosingReport } from './mobile-turn-closing-report';
 import { MOBILE_TURN_RESULT_CLASS } from './mobile-turn-result-footer';
 import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
@@ -191,11 +191,13 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                 },
             ));
         }
-        // The turn's closing report (blocked / warnings / done) as a quiet closing row. A failure
-        // already has its own dialog above.
-        // The turn-result footer already carries the verdict on a successful turn with changes: no second row.
+        // The turn's closing report (blocked / warnings) as a quiet closing row. Clean "done" turns
+        // stay quiet; failures have their own dialog above; turns with changes already carry warning
+        // verdicts inside the Files Changed card.
         const closingReport = !streaming && !error ? findQaapClosingReport(options?.message) : undefined;
-        if (closingReport && !body.querySelector(`.${MOBILE_TURN_RESULT_CLASS}-verdict`)) {
+        if (closingReport
+            && parseMobileTurnClosingReport(closingReport).tone !== 'done'
+            && !body.querySelector(`.${MOBILE_TURN_RESULT_CLASS}-verdict`)) {
             body.append(createMobileTurnClosingReportElement(closingReport));
         }
         row.append(body);

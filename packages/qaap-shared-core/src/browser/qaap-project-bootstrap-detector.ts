@@ -64,6 +64,7 @@ interface PackageJsonShape {
     packageManager?: unknown;
     dependencies?: Record<string, unknown>;
     devDependencies?: Record<string, unknown>;
+    optionalDependencies?: Record<string, unknown>;
     workspaces?: unknown;
     theia?: unknown;
 }
@@ -226,9 +227,14 @@ export class QaapProjectBootstrapDetector {
             devCommand = `${this.buildRunCommand(packageManager, rootBuild.buildScript)} && ${devCommand}`;
             devCommandLabel = devCommand;
         }
-        const nodeModulesPresent = await this.resolveNodeModulesPresent(
-            rootUri, kind, packageManager, apps, workspaceRootUri, !!devCommand, rootBinary,
-        );
+        // A standalone Node project with zero declared dependencies (e.g. `node server.js`) never
+        // produces a `node_modules/` folder even after `npm install`, so dependencies are already satisfied.
+        const nodeModulesPresent = (apps.length === 0 && !enclosingWorkspaceRoot && !rootBinary
+            && kind === 'node-generic' && !this.hasDeclaredDependencies(pkg))
+            ? true
+            : await this.resolveNodeModulesPresent(
+                rootUri, kind, packageManager, apps, workspaceRootUri, !!devCommand, rootBinary,
+            );
 
         // A package.json without any dev/start script and no runnable monorepo apps cannot serve a
         // preview — but a plain index.html next to it can (hand-written sites whose package.json
@@ -1292,6 +1298,11 @@ export class QaapProjectBootstrapDetector {
             }
         }
         return 'npm';
+    }
+
+    protected hasDeclaredDependencies(pkg: PackageJsonShape): boolean {
+        const groups = [pkg.dependencies, pkg.devDependencies, pkg.optionalDependencies];
+        return groups.some(group => !!group && typeof group === 'object' && Object.keys(group).length > 0);
     }
 
     protected async resolveNodeModulesPresent(

@@ -206,17 +206,13 @@ function appendTurnResultFooter(
     if (parsed?.tone === 'blocked' || parsed?.tone === 'failed') {
         return;
     }
-    const api = ctx.host.turnResultApi;
-    const state = api?.resolveTurnResultState(conv) ?? { previewState: 'none' as const, canCreatePr: false };
-    const verdict = parsed
+    // Only the verdict: preview, review, commit and Create PR are the pills above the composer.
+    const footer = createMobileTurnResultFooterElement(parsed
         ? { tone: parsed.tone, title: parsed.title, details: parsed.details, reviewRejected: parsed.reviewRejected }
-        : undefined;
-    card.append(createMobileTurnResultFooterElement({ verdict, state }, {
-        onOpenPreview: () => api?.openTurnResultPreview(conv),
-        onRunPreview: () => api?.runTurnResultPreview(conv),
-        onCreatePr: () => api?.createTurnResultPullRequest(conv),
-        onContinue: () => api?.focusTurnResultComposer(),
-    }, () => api?.resolveTurnResultState(conv)?.previewState ?? state.previewState));
+        : undefined);
+    if (footer) {
+        card.append(footer);
+    }
 }
 
 export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segmentsBody: HTMLElement,

@@ -14,7 +14,8 @@ export const MOBILE_TURN_CLOSING_REPORT_CLASS = 'theia-mobile-turn-closing-repor
 /**
  * Reads the store's closing report ("Blocked — needs your input: …", then "Checks: …",
  * "Independent review: …", "Changes: …") into a tone, a short title and the informative details.
- * Details that say nothing ("not run", "not measured", "none", "skipped") are dropped so the row stays quiet.
+ * Details that say nothing ("not run", "not measured", "none", "skipped") and redundant "Changes: …"
+ * summaries (already shown in the Files Changed card and composer Changes pill) are dropped.
  */
 export function parseMobileTurnClosingReport(report: string): {
     tone: MobileTurnClosingTone;
@@ -23,7 +24,10 @@ export function parseMobileTurnClosingReport(report: string): {
     reviewRejected: boolean;
 } {
     const [headline = '', ...rest] = report.split('\n').map(line => line.trim()).filter(Boolean);
-    const details = rest.filter(line => !/^[^:]+:\s*(?:not run|not measured|none|skipped)\.?$/i.test(line)).map(line => line.replace(/\.$/, ''));
+    const details = rest
+        .filter(line => !/^[^:]+:\s*(?:not run|not measured|none|skipped)\.?$/i.test(line))
+        .filter(line => !/^changes\s*:/i.test(line))
+        .map(line => line.replace(/\.$/, ''));
     const reviewRejected = isQaapIndependentReviewRejectedReport(report);
     if (/^blocked\b/i.test(headline)) {
         // The question itself is the last line of the answer right above this row
