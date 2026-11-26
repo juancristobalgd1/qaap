@@ -10,14 +10,17 @@ import {
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
     detectAgentFailureKind,
+    detectAgentFailureProviderLabel,
     extractAgentBillingFailure,
     formatStoredAgentFailureMessage,
     isAgentBillingFailureKind,
     isAgentUsageLimitText,
+    isPiSignInRejectedFailure,
     isProviderKeyFailureKind,
     isQaiqProviderKeyMissingFailure,
     localizeAgentFailureShortReason,
     localizeGenericAgentFailureMessage,
+    localizePiSignInRejectedMessage,
     resolveAgentTurnFailureMessage,
     summarizeCollapsedAgentFailure,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
@@ -107,6 +110,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         const resolved = resolveAgentTurnFailureMessage(technicalContent, {
             state: 'failed',
             agentMessage: options?.agentMessage,
+            agentId: options?.agentId,
         });
         const generic = localizeGenericAgentFailureMessage('failed');
         const authSample = [error, technicalContent].filter(Boolean).join('\n');
@@ -114,18 +118,23 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         // The pre-spawn sign-in guard names the harness and the model ("Sign in to Codex to use gpt-5.5."): show that
         // concrete line instead of the generic sign-in copy. The Sign in card below stays the action.
         const guardRefusal = planLimit ? undefined : matchQaapSignInGuardRefusal(authSample);
+        const failureKind = detectAgentFailureKind(authSample);
+        // Pi signs in to its providers itself (`/login`, kept in `~/.pi/agent/auth.json`): a rejected provider key
+        // means Pi's own sign-in expired or was revoked, so show the Sign-in card instead of "Settings → Harness".
+        const isPiSignInRejected = !planLimit && !guardRefusal && isPiSignInRejectedFailure(options?.agentId, failureKind);
         const formatted = guardRefusal
             ? guardRefusal.message
             : planLimit
                 ? QaapPlanLimit.describe(planLimit)
-                : resolved && resolved !== generic
-                    ? resolved
-                    : (persisted || resolved || generic);
-        const failureKind = detectAgentFailureKind(authSample);
+                : isPiSignInRejected
+                    ? localizePiSignInRejectedMessage(detectAgentFailureProviderLabel(authSample))
+                    : resolved && resolved !== generic
+                        ? resolved
+                        : (persisted || resolved || generic);
         // Legacy QAIQ turn refused before running (no provider key). Fixed by connecting a harness, not a key.
         const isQaiqKeyMissing = isQaiqProviderKeyMissingFailure(authSample);
         // A provider key was refused by a legacy turn: the fix is to connect a harness in Settings.
-        const isProviderKeyFailure = !planLimit && !isQaiqKeyMissing && isProviderKeyFailureKind(failureKind);
+        const isProviderKeyFailure = !planLimit && !isQaiqKeyMissing && !isPiSignInRejected && isProviderKeyFailureKind(failureKind);
         // The harness's provider account is signed in but has no credits or has the model switched off: never a
         // Sign-in card. The provider's own top-up / model-access page (exact host only) backs the primary button.
         const billingFailure = !planLimit && !guardRefusal && isAgentBillingFailureKind(failureKind)
@@ -136,7 +145,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             ? undefined
             : extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
         const sessionChallenge = noSignIn ? undefined : extractedChallenge
-            ?? (guardRefusal || failureKind === 'auth' ? { mode: 'session' as const } : undefined)
+            ?? (guardRefusal || failureKind === 'auth' || isPiSignInRejected ? { mode: 'session' as const } : undefined)
             ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
                 ? { mode: 'session' as const }
                 : undefined);

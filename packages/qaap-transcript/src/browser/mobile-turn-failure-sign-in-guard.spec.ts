@@ -34,6 +34,12 @@ describe('failure card for the pre-spawn sign-in guard', () => {
             card.className = 'theia-test-auth-card';
             return card;
         },
+        createTranscriptClampedPre: (text: string) => {
+            const pre = document.createElement('pre');
+            pre.className = 'theia-test-technical';
+            pre.textContent = text;
+            return pre;
+        },
     } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
 
     const message = (card: HTMLElement): string | null | undefined => card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent;
@@ -176,5 +182,68 @@ describe('failure card for a provider billing failure', () => {
         expect(card.querySelector('.theia-test-auth-card')).to.equal(null);
         expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent)
             .to.equal(`Access to this model is disabled in your OpenCode account. Enable it at ${MODELS_URL}, or pick another model.`);
+    });
+});
+
+/**
+ * Pi signs in to its providers itself (`/login`, stored in `~/.pi/agent/auth.json`). When a provider
+ * refuses Pi's credential (e.g. OpenRouter 401 "User not found." for a revoked token), the transcript
+ * card must show the Sign-in card with Pi's sign-in-again copy — even on older turns whose body stored
+ * the anonymous "Connect a harness in Settings → Harness" sentence.
+ */
+describe('failure card for a Pi provider sign-in refusal', () => {
+
+    useSuiteJSDOM();
+
+    const ctx = {
+        appendTranscriptShellSummaryTail: () => undefined,
+        contentUi: { cleanTranscriptDisplayText: (text: string) => text },
+        createTranscriptAgentAuthLoginCard: () => {
+            const card = document.createElement('div');
+            card.className = 'theia-test-auth-card';
+            return card;
+        },
+        createTranscriptClampedPre: (text: string) => {
+            const pre = document.createElement('pre');
+            pre.className = 'theia-test-technical';
+            pre.textContent = text;
+            return pre;
+        },
+    } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
+
+    const ANON_KEY_REFUSED = 'The provider refused this turn. Connect a harness in Settings → Harness, then retry.';
+    const PI_SIGN_IN_AGAIN = 'Pi needs you to sign in again: OpenRouter refused its sign-in. Sign in from the agent chip, then retry.';
+
+    it('keeps Pi\'s sign-in card even when technicalContent stored the anonymous Settings → Harness copy', () => {
+        const card = createTranscriptAgentFailureDialogExtracted(ctx, PI_SIGN_IN_AGAIN, ANON_KEY_REFUSED, {
+            agentId: 'pi',
+            onOpenAiFeaturesSettings: () => undefined,
+        });
+        expect(card.classList.contains('theia-mod-auth-login')).to.equal(true);
+        expect(card.classList.contains('theia-mod-provider-key')).to.equal(false);
+        expect(card.querySelector('.theia-test-auth-card')).to.not.equal(null);
+        expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('Sign in required');
+        expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(PI_SIGN_IN_AGAIN);
+    });
+
+    it('recovers older Pi turns whose persisted error also used the generic OpenRouter refusal copy', () => {
+        const legacyError = 'The OpenRouter provider refused this turn. Connect a harness in Settings → Harness, then retry.';
+        const card = createTranscriptAgentFailureDialogExtracted(ctx, legacyError, ANON_KEY_REFUSED, {
+            agentId: 'pi',
+        });
+        expect(card.classList.contains('theia-mod-auth-login')).to.equal(true);
+        expect(card.classList.contains('theia-mod-provider-key')).to.equal(false);
+        expect(card.querySelector('.theia-test-auth-card')).to.not.equal(null);
+        expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(PI_SIGN_IN_AGAIN);
+    });
+
+    it('still shows the provider-key card (not Sign in) for non-Pi agents', () => {
+        const legacyError = 'The OpenRouter provider refused this turn. Connect a harness in Settings → Harness, then retry.';
+        const card = createTranscriptAgentFailureDialogExtracted(ctx, legacyError, ANON_KEY_REFUSED, {
+            agentId: 'qaiq',
+        });
+        expect(card.classList.contains('theia-mod-auth-login')).to.equal(false);
+        expect(card.classList.contains('theia-mod-provider-key')).to.equal(true);
+        expect(card.querySelector('.theia-test-auth-card')).to.equal(null);
     });
 });
