@@ -57,7 +57,7 @@ import { applyOpencodeGateEnv, opencodeGatePluginSeeded, usesOpencodeGatePlugin 
 import { resolveQaapRuntimeHarnessCapabilities } from './harness/acp/qaap-acp-bridge-launch';
 import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { isQaapAgentDelegationEnabled, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
-import { isQaapAgentPreviewToolsEnabled, type QaapAgentMcpToolset } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
+import { isQaapAgentPreviewToolsEnabled, type QaapAgentMcpToolset, type QaapAgentPreviewTransport } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import { QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS, releaseQaapDelegationMcpConfigFile, type QaapDelegationWiring } from './qaap-agent-delegation-launch';
 
 /** Task fields the delegation wiring reads. */
@@ -2468,36 +2468,71 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * Harness transports that carry the agent preview tools today (design phase 1): Claude Code, Codex and Pi. The
-     * shim and the backend are harness-agnostic; OpenCode and ACP flavors join once they are verified end to end.
+     * Harness transports that carry the agent preview tools over MCP (phases 1 + 2): Claude Code, Codex, Pi,
+     * OpenCode and ACP flavors. Harnesses without an MCP transport fall back to the `qaaq-preview` CLI.
      */
-    protected static readonly PREVIEW_TOOL_TRANSPORTS: ReadonlySet<string> = new Set(['claude-mcp-config', 'codex-config', 'pi-extension']);
+    protected static readonly PREVIEW_TOOL_TRANSPORTS: ReadonlySet<string> = new Set([
+        'claude-mcp-config',
+        'codex-config',
+        'pi-extension',
+        'opencode-config',
+        'acp-stdio',
+    ]);
 
     /**
-     * Whether turns of `agentId` get the agent preview tools when the backend can issue them (`QAAP_AGENT_PREVIEW_TOOLS`
-     * on, its harness transport carries them, the token service and helper URL exist). The prompt builder uses it to
-     * pick the `[QAAP preview tools]` block instead of the "Qaap runs the preview" one.
+     * Transport carrying agent preview tools for `agentId` (`mcp`, `cli`, or `none` when the flag is off or
+     * the backend cannot issue tokens). The prompt builder uses it to pick the MCP or CLI `[QAAP preview tools]` block.
      * @internal Used by the extracted qaap-agent-task-runner-* modules.
      */
-    agentPreviewToolsAvailable(agentId: string): boolean {
+    agentPreviewToolsTransport(agentId: string): QaapAgentPreviewTransport {
         if (!isQaapAgentPreviewToolsEnabled(process.env) || !this.toolGateTokens || !this.helperApiUrl) {
-            return false;
+            return 'none';
         }
         const transport = resolveQaapRuntimeHarnessCapabilities(agentId).delegateMcp ?? 'none';
-        return QaapAgentTaskRunner.PREVIEW_TOOL_TRANSPORTS.has(transport);
+        return QaapAgentTaskRunner.PREVIEW_TOOL_TRANSPORTS.has(transport) ? 'mcp' : 'cli';
     }
 
     /**
-     * Whether this turn gets the preview tools: {@link agentPreviewToolsAvailable} for its harness and, inside a task
-     * sandbox, the sandbox's shared directory (where the shim and its credential file are placed). Read-only turns and
-     * delegated children get them too: the backend lets them read the preview only (decisions D3, D7).
+     * Whether turns of `agentId` get the agent preview tools (MCP or CLI fallback).
+     * @internal Used by the extracted qaap-agent-task-runner-* modules.
+     */
+    agentPreviewToolsAvailable(agentId: string): boolean {
+        return this.agentPreviewToolsTransport(agentId) !== 'none';
+    }
+
+    /**
+     * Whether this turn gets the preview tools over MCP: {@link agentPreviewToolsTransport} is `'mcp'` and, inside a
+     * task sandbox, the sandbox's shared directory exists. Read-only turns and delegated children get them too: the
+     * backend lets them read the preview only (decisions D3, D7).
      */
     protected wantsAgentPreviewTools(task: QaapAgentDelegationTaskFields): boolean {
-        if (!this.agentPreviewToolsAvailable(this.resolveTaskAgentId(task as QaapAgentTask))) {
+        if (this.agentPreviewToolsTransport(this.resolveTaskAgentId(task as QaapAgentTask)) !== 'mcp') {
             return false;
         }
         const sandbox = this.agentSandboxFor(task.cwd);
         return !sandbox || !!sandbox.sharedRoot;
+    }
+
+    /**
+     * Issues a preview-only token for harnesses without an MCP transport (Cursor, native non-ACP Copilot/Antigravity,
+     * etc.) so the spawn path can stage the `qaaq-preview` CLI and its 0600 token file.
+     * @internal Used by the extracted qaap-agent-task-runner-* modules.
+     */
+    applyAgentPreviewCliEnv(env: NodeJS.ProcessEnv, task: QaapAgentDelegationTaskFields): { readonly url: string; readonly token: string } | undefined {
+        if (!this.toolGateTokens || this.agentPreviewToolsTransport(this.resolveTaskAgentId(task as QaapAgentTask)) !== 'cli') {
+            return undefined;
+        }
+        const sandbox = this.agentSandboxFor(task.cwd);
+        if (sandbox && !sandbox.sharedRoot) {
+            return undefined;
+        }
+        const origin = this.resolveAgentReachableOrigin(task.cwd);
+        const issued = origin ? this.toolGateTokens.issueAgentMcp(task.id, task.ownerLogin, task.cwd, ['preview'], 0) : undefined;
+        if (!origin || !issued) {
+            return undefined;
+        }
+        addAgentReachableNoProxy(env, origin);
+        return { url: origin, token: issued.token };
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

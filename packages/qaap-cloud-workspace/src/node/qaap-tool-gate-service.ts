@@ -43,8 +43,8 @@ export interface QaapQaiqToolGateInput {
     readonly options: QaapQaiqControlAutoOptions;
     /** Lazy: only consulted when the request is answered without queueing, like the legacy inline code. */
     readonly reservedPort?: () => number | undefined;
-    /** The turn has the agent preview tools: a dev-server denial redirects to `preview_start`. */
-    readonly previewTools?: boolean;
+    /** The turn has the agent preview tools: a dev-server denial redirects to `preview_start` or `qaaq-preview start`. */
+    readonly previewTools?: boolean | 'mcp' | 'cli';
     /**
      * The task's isolated git worktree, when it runs in one: write/edit tools may not target a path outside
      * it, and a shell command naming such a path is denied (auto-approve) or queued for the user.
@@ -92,8 +92,8 @@ export interface QaapToolGateEvaluationEnv {
      * read-only or one-shot task: they only start, wait for or stop child turns, gated under the same policy.
      */
     readonly delegationServer?: string;
-    /** The task's MCP token holds the `preview` scope: dev-server denials redirect to `preview_start`. */
-    readonly previewTools?: boolean;
+    /** The task's MCP token holds the `preview` scope: dev-server denials redirect to `preview_start` or `qaaq-preview start`. */
+    readonly previewTools?: boolean | 'mcp' | 'cli';
     /** One-shot grants: only read tools and read-only shell commands pass; every other tool kind is denied. */
     readonly strictReadOnly?: boolean;
     /** PreToolUse hooks for this task's workspace; absent for one-shot grants. */
@@ -141,7 +141,7 @@ export class QaapToolGateService {
         let reservedPort: number | undefined;
         if (action !== 'queue') {
             reservedPort = input.reservedPort?.();
-            devServerDenial = findQaiqDevServerGuardDenial(request, { reservedPort, ...(input.previewTools ? { previewTools: true } : {}) });
+            devServerDenial = findQaiqDevServerGuardDenial(request, { reservedPort, ...(input.previewTools ? { previewTools: input.previewTools } : {}) });
             destructiveDenial = findQaiqDestructiveCommandGuardDenial(request, cwd);
             denyMessage = devServerDenial
                 ?? destructiveDenial
@@ -268,7 +268,7 @@ export class QaapToolGateService {
             if (destructive) {
                 return { kind: 'deny', source: 'destructive-guard', reason: destructive };
             }
-            const devServer = findQaiqDevServerGuardDenial(guarded, env.previewTools ? { previewTools: true } : {});
+            const devServer = findQaiqDevServerGuardDenial(guarded, env.previewTools ? { previewTools: env.previewTools } : {});
             return devServer ? { kind: 'deny', source: 'dev-server-guard', reason: devServer } : undefined;
         };
         const firstDenial = denialFor(req.input);

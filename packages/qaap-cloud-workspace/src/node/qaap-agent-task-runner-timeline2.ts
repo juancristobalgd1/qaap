@@ -30,6 +30,7 @@ import {
     appendQaapDelegationLaunchArgs,
     applyQaapOpencodeDelegation,
     applyQaapPiDelegation,
+    applyQaapPreviewCli,
     buildQaapDelegationMcpConfig,
     currentQaapDelegationMcpConfigOptions,
     buildQaapAgentMcpGuidance,
@@ -607,6 +608,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let codexGateOverlay: QaapCodexGateOverlay | undefined;
         let spawnCommand = task.command;
         let delegation: QaapDelegationWiring | undefined;
+        let previewCliStaged = false;
         // ACP delegation (`acp-stdio`): the 0600 file the bridge reads its session/new MCP servers from.
         let acpMcpServersFile: string | undefined;
         // ACP mode of this harness (per-harness flag): the turn runs through the ACP bridge, which prints Claude stream-json.
@@ -655,7 +657,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
             ctx.applyToolGateEnv(childEnv, task, { acpBridge: acpFlavor !== undefined });
-            // Delegation (flag-gated, writable parent turns only): a separate token and a per-task server name.
+            // Delegation / preview MCP (flag-gated): a separate token and a per-task server name.
             delegation = ctx.applyAgentDelegationEnv?.(childEnv, task);
             let delegationPlacement: QaapDelegationPlacement | undefined;
             if (delegation) {
@@ -711,6 +713,14 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     } else {
                         delegation = undefined;
                     }
+                }
+            } else {
+                const previewCli = ctx.applyAgentPreviewCliEnv?.(childEnv, task);
+                if (previewCli) {
+                    releaseQaapDelegationMcpConfigFile(task.id);
+                    const identity = ctx.resolveAgentSpawnIdentity(task.cwd);
+                    const owner = typeof identity?.uid === 'number' ? { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } : undefined;
+                    previewCliStaged = applyQaapPreviewCli(childEnv, task.id, previewCli, owner, ctx.agentSandboxFor?.(task.cwd)) !== undefined;
                 }
             }
             // Fails closed before any Codex process: no token while the gate is wired means no gate for its tool calls.
@@ -927,12 +937,15 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     if (preToolUseHookGate.screen(event.request, line)) {
                         continue;
                     }
+                    const previewToolsMode = delegation?.toolsets?.includes('preview')
+                        ? 'mcp' as const
+                        : (previewCliStaged ? 'cli' as const : undefined);
                     const gateOutcome = (ctx.toolGate ?? DEFAULT_QAAP_TOOL_GATE_SERVICE).evaluateQaiqControlRequest({
                         command: task.command,
                         autoApprove: task.autoApprove,
                         request: event.request,
                         cwd: task.cwd,
-                        ...(delegation?.toolsets?.includes('preview') ? { previewTools: true } : {}),
+                        ...(previewToolsMode ? { previewTools: previewToolsMode } : {}),
                         options: {
                             autoApproveReadOnlyShell: readAutoApproveReadOnlyShell(),
                             allowSubagentTools: harnessAdapter.spawnQuirks.allowsSubagentTools,
@@ -992,7 +1005,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                             // The denial states the live preview's measured health, so it is answered once the probe settles.
                             void probeReservedDevPreviewStatus(reservedPort).then(previewStatus => {
                                 writeControlResponse(findQaiqDevServerGuardDenial(event.request, {
-                                    reservedPort, previewStatus, ...(delegation?.toolsets?.includes('preview') ? { previewTools: true } : {}),
+                                    reservedPort, previewStatus, ...(previewToolsMode ? { previewTools: previewToolsMode } : {}),
                                 }) ?? devServerDenial);
                             });
                             continue;
