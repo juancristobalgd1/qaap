@@ -36,6 +36,9 @@ import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 import { QaapToolGateEndpoint } from './qaap-tool-gate-endpoint';
 import { QaapAgentDelegationEndpoint } from './qaap-agent-delegation-endpoint';
+import { QaapAgentPreviewEndpoint } from './qaap-agent-preview-endpoint';
+import { QaapAgentPreviewService } from './qaap-agent-preview-service';
+import { QaapPreviewPageInspector } from './qaap-preview-page-inspector';
 import { QaapAgentDelegationService } from './qaap-agent-delegation-service';
 import { QaapAgentHookConfigLoader } from './qaap-agent-hook-config-loader';
 import { QaapAgentHookEndpoint } from './qaap-agent-hook-endpoint';
@@ -442,6 +445,13 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentDelegationService).toSelf().inSingletonScope();
     bind(QaapAgentDelegationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentDelegationEndpoint);
+    // Agent preview tools (doc/qaap-agent-preview-tools-design.md): routes answer 404 unless QAAP_PREVIEW_SERVICE /
+    // QAAP_AGENT_PREVIEW_TOOLS is on; the service only arms its idle reaper when enabled.
+    bind(QaapPreviewPageInspector).toSelf().inSingletonScope();
+    bind(QaapAgentPreviewService).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentPreviewService);
+    bind(QaapAgentPreviewEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentPreviewEndpoint);
     bind(QaapAgentApprovalEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentApprovalEndpoint);
     // Qaap-level agent lifecycle hooks + workspace trust review (doc/qaap-agent-hooks.md).

@@ -47,6 +47,8 @@ export interface QaapPreviewProcessSnapshot {
     /** Timestamps (ms) of automatic restarts within the current window. */
     readonly autoRestartAt: number[];
     readonly processId?: number;
+    /** Argv the child was started with (after package-manager resolution, before any sandbox wrapping). */
+    readonly launch?: { readonly command: string; readonly args: readonly string[] };
 }
 
 /**
@@ -86,6 +88,105 @@ export class QaapStderrRing {
         if (overflow > 0) {
             this.lines.splice(0, overflow);
         }
+    }
+}
+
+export type QaapPreviewLogStreamName = 'stdout' | 'stderr' | 'qaap';
+
+export interface QaapPreviewLogLine {
+    readonly at: number;
+    readonly stream: QaapPreviewLogStreamName;
+    readonly text: string;
+}
+
+/** Default caps of {@link QaapPreviewLogRing}: enough for a build log, bounded per preview. */
+export const QAAP_PREVIEW_LOG_MAX_LINES = 2000;
+export const QAAP_PREVIEW_LOG_MAX_BYTES = 512 * 1024;
+const QAAP_PREVIEW_LOG_MAX_LINE_CHARS = 4000;
+
+/** Strips ANSI escape sequences (colors, cursor moves) that dev servers print to terminals. */
+export function stripQaapAnsi(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g, '');
+}
+
+/**
+ * Full output of one supervised dev server: stdout and stderr lines (ANSI-stripped, timestamped, tagged), kept
+ * up to {@link QAAP_PREVIEW_LOG_MAX_LINES} lines and {@link QAAP_PREVIEW_LOG_MAX_BYTES}; older lines are dropped
+ * and counted. Partial lines are buffered per stream until their newline (or a flush).
+ */
+export class QaapPreviewLogRing {
+
+    protected readonly lines: QaapPreviewLogLine[] = [];
+    protected readonly partial: Record<QaapPreviewLogStreamName, string> = { stdout: '', stderr: '', qaap: '' };
+    protected bytes = 0;
+    protected dropped = 0;
+
+    constructor(
+        protected readonly maxLines: number = QAAP_PREVIEW_LOG_MAX_LINES,
+        protected readonly maxBytes: number = QAAP_PREVIEW_LOG_MAX_BYTES,
+        protected readonly now: () => number = Date.now,
+    ) { }
+
+    /** Appends a raw stream chunk; complete lines are stored, a trailing partial line waits for more. */
+    push(stream: QaapPreviewLogStreamName, chunk: string): void {
+        if (!chunk) {
+            return;
+        }
+        const segments = (this.partial[stream] + chunk).split('\n');
+        this.partial[stream] = segments.pop() ?? '';
+        if (this.partial[stream].length > QAAP_PREVIEW_LOG_MAX_LINE_CHARS) {
+            segments.push(this.partial[stream]);
+            this.partial[stream] = '';
+        }
+        for (const segment of segments) {
+            this.add(stream, segment);
+        }
+    }
+
+    /** Stores any buffered partial lines (call on exit so the last line before a crash is kept). */
+    flush(): void {
+        for (const stream of Object.keys(this.partial) as QaapPreviewLogStreamName[]) {
+            if (this.partial[stream]) {
+                this.add(stream, this.partial[stream]);
+                this.partial[stream] = '';
+            }
+        }
+    }
+
+    /** The newest `count` lines (optionally of one stream and/or containing `grep`, case-insensitive). */
+    tail(count: number, options: { readonly stream?: 'all' | 'stdout' | 'stderr'; readonly grep?: string } = {}): QaapPreviewLogLine[] {
+        const needle = options.grep?.toLowerCase();
+        const pending = (Object.keys(this.partial) as QaapPreviewLogStreamName[])
+            .filter(stream => this.partial[stream])
+            .map(stream => ({ at: this.now(), stream, text: this.clean(this.partial[stream]) }));
+        const all = [...this.lines, ...pending].filter(line => (!options.stream || options.stream === 'all'
+            || line.stream === options.stream || line.stream === 'qaap')
+            && (!needle || line.text.toLowerCase().includes(needle)));
+        return count > 0 ? all.slice(-count) : [];
+    }
+
+    /** Lines dropped from the front to respect the caps. */
+    droppedLines(): number {
+        return this.dropped;
+    }
+
+    protected add(stream: QaapPreviewLogStreamName, raw: string): void {
+        const text = this.clean(raw);
+        this.lines.push({ at: this.now(), stream, text });
+        this.bytes += text.length + 1;
+        while (this.lines.length > this.maxLines || (this.bytes > this.maxBytes && this.lines.length > 1)) {
+            const removed = this.lines.shift()!;
+            this.bytes -= removed.text.length + 1;
+            this.dropped++;
+        }
+    }
+
+    protected clean(raw: string): string {
+        const text = stripQaapAnsi(raw.replace(/\r$/, ''));
+        // A progress bar rewrites one line with `\r`: keep only what it last showed.
+        const lastFrame = text.includes('\r') ? text.slice(text.lastIndexOf('\r') + 1) : text;
+        return lastFrame.length > QAAP_PREVIEW_LOG_MAX_LINE_CHARS ? `${lastFrame.slice(0, QAAP_PREVIEW_LOG_MAX_LINE_CHARS)}…` : lastFrame;
     }
 }
 

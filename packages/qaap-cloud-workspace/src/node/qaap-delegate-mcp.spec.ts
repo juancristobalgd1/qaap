@@ -16,6 +16,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
 import * as protocol from '../common/qaap-agent-delegation-protocol';
+import * as previewProtocol from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import { importQaapDelegateShim, startQaapDelegateShim, type QaapShimMessage } from './test/qaap-delegate-mcp-client';
 
 const TOKEN = 'test-token-do-not-log-0123';
@@ -51,6 +52,16 @@ describe('qaap-delegate-mcp drift guard', () => {
         expect(shim.DELEGATION_WAIT_MAX_SEC).to.equal(protocol.QAAP_AGENT_DELEGATION_WAIT_MAX_SEC);
         expect(shim.DELEGATION_HEARTBEAT_SEC).to.equal(protocol.QAAP_AGENT_DELEGATION_HEARTBEAT_SEC);
         expect(typeof shim.createQaapDelegateServer, 'importing must not start the stdio loop').to.equal('function');
+    });
+
+    it('duplicated preview constants equal the preview protocol', async () => {
+        const shim = await importQaapDelegateShim();
+        expect({ ...(shim.PREVIEW_TOOLS as object) }).to.deep.equal({ ...previewProtocol.QAAP_AGENT_PREVIEW_TOOLS });
+        expect({ ...(shim.PREVIEW_ROUTES as object) }).to.deep.equal({ ...previewProtocol.QAAP_AGENT_PREVIEW_ROUTES });
+        expect(shim.PREVIEW_API_PATH).to.equal(previewProtocol.QAAP_AGENT_PREVIEW_API_PATH);
+        expect(shim.TOOLSETS_ENV).to.equal(previewProtocol.QAAP_AGENT_MCP_TOOLSETS_ENV);
+        expect(shim.PREVIEW_START_MAX_SEC).to.equal(previewProtocol.QAAP_PREVIEW_START_MAX_TIMEOUT_SEC);
+        expect(shim.PREVIEW_STATUS_MAX_SEC).to.equal(previewProtocol.QAAP_PREVIEW_STATUS_MAX_WAIT_SEC);
     });
 });
 
@@ -155,6 +166,45 @@ describe('qaap-delegate-mcp over stdio', function (): void {
                 expect(request.headers['content-type']).to.match(/application\/json/);
                 expect(request.body).to.deep.equal(args);
             }
+        } finally {
+            await shim.close();
+        }
+    });
+
+    it('lists only the toolsets in QAAP_AGENT_MCP_TOOLSETS (delegate by default)', async () => {
+        const names = async (env: Record<string, string>): Promise<string[]> => {
+            const shim = startQaapDelegateShim(env);
+            try {
+                return ((await shim.request('tools/list')).result.tools as QaapShimMessage[]).map(tool => tool.name).sort();
+            } finally {
+                await shim.close();
+            }
+        };
+        const delegate = Object.keys(protocol.QAAP_AGENT_DELEGATION_TOOLS).sort();
+        const preview = Object.keys(previewProtocol.QAAP_AGENT_PREVIEW_TOOLS).sort();
+        expect(await names({})).to.deep.equal(delegate);
+        expect(await names({ QAAP_AGENT_MCP_TOOLSETS: 'preview' })).to.deep.equal(preview);
+        expect(await names({ QAAP_AGENT_MCP_TOOLSETS: 'delegate,preview' })).to.deep.equal([...delegate, ...preview].sort());
+    });
+
+    it('forwards preview tools to the preview routes, refuses tools of an unlisted toolset, and returns screenshots as images', async () => {
+        const shim = startQaapDelegateShim(configuredEnv({ QAAP_AGENT_MCP_TOOLSETS: 'preview' }));
+        try {
+            for (const [name, route] of Object.entries(previewProtocol.QAAP_AGENT_PREVIEW_ROUTES)) {
+                handler = respondJson(200, { status: 'ready' });
+                const tool = Object.keys(previewProtocol.QAAP_AGENT_PREVIEW_TOOLS).find(candidate => previewProtocol.QAAP_AGENT_PREVIEW_TOOLS[candidate] === name)!;
+                const reply = await shim.request('tools/call', { name: tool, arguments: {} });
+                expect(reply.result.isError, tool).to.equal(undefined);
+                const request = received[received.length - 1];
+                expect(request.url).to.equal(`${previewProtocol.QAAP_AGENT_PREVIEW_API_PATH}${route}`);
+                expect(request.headers[protocol.QAAP_AGENT_DELEGATION_TOKEN_HEADER]).to.equal(TOKEN);
+            }
+            handler = respondJson(200, { url: 'http://x/', text: 'Hello', image: { data: 'iVBORw0KGgo=', mimeType: 'image/png' } });
+            const snapshot = await shim.request('tools/call', { name: 'preview_snapshot', arguments: { screenshot: true } });
+            expect(snapshot.result.content[0].type).to.equal('text');
+            expect(JSON.parse(snapshot.result.content[0].text)).to.deep.equal({ url: 'http://x/', text: 'Hello' });
+            expect(snapshot.result.content[1]).to.deep.equal({ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' });
+            expect((await shim.request('tools/call', { name: 'qaaq_delegate', arguments: { prompt: 'x' } })).error.code).to.equal(-32602);
         } finally {
             await shim.close();
         }

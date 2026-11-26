@@ -421,6 +421,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             {
                 gitAvailable,
                 userQuery,
+                ...(ctx.agentPreviewToolsAvailable?.(id) ? { previewTools: true } : {}),
             },
         );
         // Inject important project context for every agent: cross-project context from the request

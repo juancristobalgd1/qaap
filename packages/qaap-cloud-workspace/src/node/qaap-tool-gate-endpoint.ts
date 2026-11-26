@@ -154,6 +154,7 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             ...(!grant.oneShot && this.tokens.delegationServerName(grant.taskId)
                 ? { delegationServer: this.tokens.delegationServerName(grant.taskId) }
                 : {}),
+            ...(!grant.oneShot && this.tokens.hasScope(grant.taskId, 'preview') ? { previewTools: true } : {}),
             hooks: grant.oneShot || !this.runner.agentHooks ? undefined : async (toolName, toolInput, toolUseId) => {
                 const hooks = this.runner.agentHooks!;
                 const hookContext = agentHookContextForTask(this.runner, task as unknown as QaapAgentTask);

@@ -203,3 +203,26 @@ describe('QaapToolGateTokenService scopes (agent delegation)', () => {
         expect(service.authorize(delegation, 'delegate')).to.deep.equal({ ok: false, reason: 'invalid' });
     });
 });
+
+describe('QaapToolGateTokenService.issueAgentMcp', () => {
+    it('issues one MCP token with the requested scopes and a fresh server name', () => {
+        const tokens = new QaapToolGateTokenService();
+        const both = tokens.issueAgentMcp('t1', 'alice', '/w', ['delegate', 'preview'])!;
+        expect(both.mcpServerName).to.match(/^qaaq_[0-9a-f]{16}$/);
+        const granted = tokens.authorize(both.token, 'preview');
+        expect(granted.ok && granted.grant.scopes).to.deep.equal(['delegate', 'preview']);
+        expect(tokens.authorize(both.token, 'delegate').ok).to.equal(true);
+        expect(tokens.resolve(both.token), 'an MCP token never authenticates the gate').to.equal(undefined);
+    });
+
+    it('drops delegate at the max depth but keeps preview, and replaces the previous MCP token', () => {
+        const tokens = new QaapToolGateTokenService();
+        const first = tokens.issueAgentMcp('t1', 'alice', '/w', ['preview'])!;
+        const child = tokens.issueAgentMcp('t1', 'alice', '/w', ['delegate', 'preview'], 99)!;
+        expect(tokens.authorize(first.token, 'preview').ok).to.equal(false);
+        const granted = tokens.authorize(child.token, 'preview');
+        expect(granted.ok && granted.grant.scopes).to.deep.equal(['preview']);
+        expect(tokens.issueAgentMcp('t2', 'alice', '/w', ['delegate'], 99)).to.equal(undefined);
+        expect(tokens.issueAgentMcp('t2', 'alice', '/w', [])).to.equal(undefined);
+    });
+});

@@ -403,4 +403,6 @@ export interface QaapAgentTaskRunnerContext {
         env: NodeJS.ProcessEnv,
         task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'delegationRole' | 'readOnlyWorkspace'>,
     ): QaapDelegationWiring | undefined;
+    /** Whether turns of `agentId` get the agent preview tools (picks the preview prompt block). */
+    agentPreviewToolsAvailable?(agentId: string): boolean;
 }

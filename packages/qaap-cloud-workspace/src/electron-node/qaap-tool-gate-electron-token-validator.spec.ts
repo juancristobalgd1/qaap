@@ -30,6 +30,16 @@ describe('QaapToolGateElectronTokenValidator', () => {
         expect(validator.allowRequest(request('GET', '/qaap/api/tool-gate/health?x=1'))).to.equal(true);
     });
 
+    it('lets the agent preview shim reach its token-authenticated routes, not the user preview routes', () => {
+        // Desktop QA, 26 Nov 2026: every preview_* call from Pi answered 403 before reaching the endpoint.
+        const validator = new TestValidator();
+        expect(validator.allowRequest(request('POST', '/qaap/api/agent-preview/start'))).to.equal(true);
+        expect(validator.allowRequest(request('POST', '/qaap/api/agent-preview/status'))).to.equal(true);
+        expect(validator.allowRequest(request('POST', '/qaap/api/agent-preview/snapshot'))).to.equal(true);
+        expect(validator.allowRequest(request('POST', '/qaap/api/preview/start'))).to.equal(false);
+        expect(validator.allowRequest(request('POST', '/qaap/api/agent-preview/start/../../agent-tasks'))).to.equal(false);
+    });
+
     it('keeps the cookie check for every other route, method or path trick', () => {
         const validator = new TestValidator();
         for (const [method, url] of [

@@ -8,6 +8,7 @@ import { injectable } from '@theia/core/shared/inversify';
 import { ElectronTokenValidator } from '@theia/core/lib/electron-node/token/electron-token-validator';
 import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { QAAP_AGENT_DELEGATION_API_PATH, QAAP_AGENT_DELEGATION_ROUTES } from '../common/qaap-agent-delegation-protocol';
+import { QAAP_AGENT_PREVIEW_API_PATH, QAAP_AGENT_PREVIEW_ROUTES } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 
 /**
  * The tool-gate routes, matched on the raw path (no normalization, so `..` or encoded segments never
@@ -19,6 +20,9 @@ const QAAP_TOOL_GATE_ELECTRON_ROUTES: ReadonlySet<string> = new Set([
     // Agent delegation: called by the MCP shim of a parent turn's harness, authenticated by its delegation token
     // (the endpoint answers 404 while the flag is off and 401 without a live token).
     ...Object.values(QAAP_AGENT_DELEGATION_ROUTES).map(route => `${QAAP_AGENT_DELEGATION_API_PATH}${route}`),
+    // Agent preview tools: same MCP shim, authenticated by the task's preview-scoped token (404 while the flag is off).
+    // The user-session preview routes (`/qaap/api/preview/*`) stay behind the window's token cookie.
+    ...Object.values(QAAP_AGENT_PREVIEW_ROUTES).map(route => `${QAAP_AGENT_PREVIEW_API_PATH}${route}`),
 ]);
 
 /**

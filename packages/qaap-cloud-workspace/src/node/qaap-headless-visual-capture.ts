@@ -46,6 +46,7 @@ import {
 import { conversationNeedsVisualVerificationEvidence, type QaapAgentConversation } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
+import { waitForQaapPreviewServer } from './qaap-preview-readiness';
 
 /**
  * Server-side visual evidence: a headless Chromium (playwright-core) drives the workspace's dev
@@ -84,7 +85,7 @@ declare const __non_webpack_require__: NodeRequire | undefined;
  * playwright-core cannot be bundled (dynamic requires + browser assets) — load it from
  * node_modules at runtime, bypassing the backend webpack bundle.
  */
-function loadPlaywrightCore(): { chromium: { launch(options: object): Promise<any>; executablePath(): string } } {
+export function loadPlaywrightCore(): { chromium: { launch(options: object): Promise<any>; executablePath(): string } } {
     const nodeRequire: NodeRequire = typeof __non_webpack_require__ === 'function'
         ? __non_webpack_require__
         // eslint-disable-next-line no-eval
@@ -1081,18 +1082,20 @@ export class QaapHeadlessVisualCaptureService {
             processId: identity.processId,
             ownerLogin: preview.ownerLogin,
         }, launch);
-        const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
-        while (Date.now() < deadline) {
-            if (await this.probePort(port)) {
-                return { ok: true, port, startedPreviewId };
-            }
+        const waited = await waitForQaapPreviewServer({
+            answers: () => this.probePort(port),
+            exited: () => this.supervisor.describe(startedPreviewId)?.status === 'exited',
+            timeoutMs: SERVER_READY_TIMEOUT_MS,
+            intervalMs: SERVER_PROBE_INTERVAL_MS,
+        });
+        if (waited.ok) {
+            return { ok: true, port, startedPreviewId };
+        }
+        if (waited.reason === 'exited') {
             const snapshot = this.supervisor.describe(startedPreviewId);
-            if (snapshot?.status === 'exited') {
-                const tail = snapshot.stderrTail?.slice(-3).join(' ').trim();
-                this.supervisor.stop(startedPreviewId);
-                return { ok: false, reason: tail || `the dev process exited (code ${snapshot.exitCode ?? '?'})` };
-            }
-            await new Promise(resolve => setTimeout(resolve, SERVER_PROBE_INTERVAL_MS));
+            const tail = snapshot?.stderrTail?.slice(-3).join(' ').trim();
+            this.supervisor.stop(startedPreviewId);
+            return { ok: false, reason: tail || `the dev process exited (code ${snapshot?.exitCode ?? '?'})` };
         }
         this.supervisor.stop(startedPreviewId);
         return { ok: false, reason: `nothing answered on port ${port} within ${SERVER_READY_TIMEOUT_MS / 1000}s` };
