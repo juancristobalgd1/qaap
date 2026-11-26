@@ -106,14 +106,15 @@ const SERVER_NAME_PATTERN = /^qaaq_[0-9a-f]{16}$/;
 
 /**
  * The operation of a preview tool of exactly `serverName`, as a harness names it: `mcp__<server>__<tool>`
- * (Claude Code, Codex, Pi's direct exposure) or `<server>_<tool>` (OpenCode). Undefined for anything else.
+ * (Claude Code, Codex, Pi, Cursor, Grok), `mcp_<server>_<tool>` or `<server>/<tool>` (Antigravity/Gemini),
+ * `<server>_<tool>` (OpenCode), or `<server>-<tool>` (Copilot). Undefined for anything else.
  */
 export function qaapAgentPreviewMcpOperation(toolName: string | undefined, serverName: string | undefined): QaapAgentPreviewOperation | undefined {
     const name = toolName?.trim() ?? '';
     if (!serverName || !SERVER_NAME_PATTERN.test(serverName)) {
         return undefined;
     }
-    for (const prefix of [`mcp__${serverName}__`, `${serverName}_`]) {
+    for (const prefix of [`mcp__${serverName}__`, `mcp_${serverName}_`, `${serverName}_`, `${serverName}-`, `${serverName}/`]) {
         const tool = name.startsWith(prefix) ? name.slice(prefix.length) : undefined;
         if (tool !== undefined && Object.prototype.hasOwnProperty.call(QAAP_AGENT_PREVIEW_TOOLS, tool)) {
             return QAAP_AGENT_PREVIEW_TOOLS[tool];
@@ -130,7 +131,7 @@ export function isQaapAgentPreviewToolCall(toolName: string | undefined, serverN
     return qaapAgentPreviewMcpOperation(toolName, serverName) !== undefined;
 }
 
-const TRANSCRIPT_PREVIEW_TOOL_PATTERN = /^(?:mcp__qaaq_[0-9a-f]{16}__|qaaq_[0-9a-f]{16}_)?(preview_(?:start|status|logs|stop|restart|snapshot))$/;
+const TRANSCRIPT_PREVIEW_TOOL_PATTERN = /^(?:mcp__qaaq_[0-9a-f]{16}__|mcp_qaaq_[0-9a-f]{16}_|qaaq_[0-9a-f]{16}[_/-])?(preview_(?:start|status|logs|stop|restart|snapshot))$/;
 
 /**
  * Recognizes a Qaap preview tool name as persisted in a transcript (where the per-turn nonce is not

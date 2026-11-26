@@ -47,6 +47,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resource';
+import { writeJsonAtomicSync } from './qaap-write-json-atomic';
 import {
     AGENT_PROMPT_REMOVE_SCRIPT, agentPromptOwnerRunner, removeAgentPromptTempDir, writeAgentPromptFile, type AgentPromptOwner,
 } from './qaap-agent-task-runner-utils';
@@ -188,9 +189,18 @@ export interface QaapDelegationMcpConfigOptions {
     readonly electronRunAsNode: boolean;
 }
 
-/** What one parent turn's delegation wiring needs: the per-task server name and its credentials. */
+/** What one parent turn's delegation/preview MCP wiring needs: the per-task server name and its credentials. */
 export interface QaapDelegationWiring {
-    readonly transport: 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension' | 'acp-stdio';
+    readonly transport:
+        | 'claude-mcp-config'
+        | 'codex-config'
+        | 'opencode-config'
+        | 'pi-extension'
+        | 'acp-stdio'
+        | 'copilot-mcp-config'
+        | 'grok-config'
+        | 'cursor-plugin-dir'
+        | 'antigravity-mcp-config';
     readonly mcpServerName: string;
     readonly url: string;
     readonly token: string;
@@ -255,6 +265,8 @@ export const QAAP_DELEGATION_SANDBOX_NODE = 'node';
 const QAAP_DELEGATION_SANDBOX_BASE_MODE = 0o1733;
 /** Directories created for a task: its config/token file's and, in a sandbox, its staged shim's. */
 const configDirsByTask = new Map<string, string[]>();
+/** Extra per-task cleanup hooks (for example removing a temporary per-task MCP server entry). */
+const cleanupCallbacksByTask = new Map<string, Array<() => void>>();
 
 /** Where the shim and the credential file of one turn live, and how the harness launches the shim. */
 export interface QaapDelegationPlacement {
@@ -265,6 +277,10 @@ export interface QaapDelegationPlacement {
 
 function rememberConfigDir(taskId: string, dir: string): void {
     configDirsByTask.set(taskId, [...(configDirsByTask.get(taskId) ?? []), dir]);
+}
+
+function rememberCleanupCallback(taskId: string, cleanup: () => void): void {
+    cleanupCallbacksByTask.set(taskId, [...(cleanupCallbacksByTask.get(taskId) ?? []), cleanup]);
 }
 
 /**
@@ -279,8 +295,19 @@ export function writeQaapDelegationMcpConfigFile(taskId: string, json: string, o
     return written.file;
 }
 
-/** Removes every directory the task's delegation wiring created (config/token file, staged shim). Idempotent. */
+/** Removes every directory and cleanup hook the task's delegation/preview wiring created. Idempotent. */
 export function releaseQaapDelegationMcpConfigFile(taskId: string): void {
+    const callbacks = cleanupCallbacksByTask.get(taskId);
+    if (callbacks) {
+        cleanupCallbacksByTask.delete(taskId);
+        for (const cleanup of callbacks) {
+            try {
+                cleanup();
+            } catch {
+                // Best effort cleanup on task end.
+            }
+        }
+    }
     const dirs = configDirsByTask.get(taskId);
     if (dirs) {
         configDirsByTask.delete(taskId);
@@ -585,5 +612,340 @@ export function applyQaapPiDelegation(
         releaseQaapDelegationMcpConfigFile(taskId);
         console.warn(`[qaap-delegation] could not write the Pi delegation config file; the turn runs without delegation (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
         return undefined;
+    }
+}
+
+/**
+ * Copilot CLI's `--additional-mcp-config @<file>` content: local stdio MCP server pointing at Qaap's shim,
+ * with only the path of the 0600 token file (never the raw token).
+ */
+export function buildQaapCopilotMcpConfig(
+    options: QaapDelegationMcpConfigOptions,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    tokenFile: string,
+): string {
+    return JSON.stringify({
+        mcpServers: {
+            [wiring.mcpServerName]: {
+                type: 'local',
+                command: options.nodeBin,
+                args: [options.shimPath],
+                env: shimEnvironment(options, wiring, tokenFile),
+                tools: ['*'],
+            },
+        },
+    });
+}
+
+/**
+ * Wires Qaap's preview MCP server into a native Copilot CLI command via `--additional-mcp-config @<file>`.
+ * Both the 0600 token file and the config file are tracked under `taskId` and removed when the task finishes.
+ */
+export function applyQaapCopilotPreviewMcp(
+    command: string,
+    taskId: string,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    owner: AgentPromptOwner | undefined,
+    quote: (value: string) => string,
+    placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
+): string | undefined {
+    try {
+        const tokenFile = writeQaapDelegationTokenFile(taskId, wiring.token, owner, placement.baseDir);
+        const configFile = writeQaapDelegationMcpConfigFile(
+            taskId,
+            buildQaapCopilotMcpConfig(placement.options, wiring, tokenFile),
+            owner,
+            'copilot-mcp.json',
+            placement.baseDir,
+        );
+        return `${command.trimEnd()} --additional-mcp-config ${quote(`@${configFile}`)}`;
+    } catch (error) {
+        console.warn(`[qaap-preview] could not wire Copilot MCP config (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
+        return undefined;
+    }
+}
+
+/**
+ * Strips any `[mcp_servers.qaaq*]` table from a Grok `config.toml` and appends the per-task Qaap preview MCP
+ * server table. Never writes the raw token to TOML (only `QAAP_DELEGATION_TOKEN_FILE`).
+ */
+export function buildQaapGrokConfigToml(
+    sourceConfig: string | undefined,
+    options: QaapDelegationMcpConfigOptions,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    tokenFile: string,
+): string {
+    const lines = (sourceConfig ?? '').split(/\r?\n/);
+    const kept: string[] = [];
+    let skippingQaaqSection = false;
+    for (const line of lines) {
+        const header = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(line);
+        if (header) {
+            const section = header[1].trim().toLowerCase();
+            skippingQaaqSection = section.startsWith(`mcp_servers.${QAAP_AGENT_DELEGATION_MCP_SERVER_NAME}`)
+                || section.startsWith(`mcp_servers."${QAAP_AGENT_DELEGATION_MCP_SERVER_NAME}`);
+        }
+        if (!skippingQaaqSection) {
+            kept.push(line);
+        }
+    }
+    const envEntries = Object.entries(shimEnvironment(options, wiring, tokenFile))
+        .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
+        .join(', ');
+    const block = [
+        `[mcp_servers.${wiring.mcpServerName}]`,
+        `command = ${JSON.stringify(options.nodeBin)}`,
+        `args = [${JSON.stringify(options.shimPath)}]`,
+        `env = { ${envEntries} }`,
+    ].join('\n');
+    const prefix = kept.join('\n').trimEnd();
+    return prefix ? `${prefix}\n\n${block}\n` : `${block}\n`;
+}
+
+/**
+ * Stages a per-task `GROK_HOME` overlay (symlinking every entry of the owner's `~/.grok` except `config.toml`,
+ * which is merged with `[mcp_servers.<serverName>]`) and points `env.GROK_HOME` at it. The overlay and its
+ * 0600 token file are removed automatically by {@link releaseQaapDelegationMcpConfigFile}.
+ */
+export function applyQaapGrokPreviewMcp(
+    env: NodeJS.ProcessEnv,
+    taskId: string,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    owner: AgentPromptOwner | undefined,
+    placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
+    sourceGrokHome?: string,
+): boolean {
+    try {
+        const resolvedSource = sourceGrokHome?.trim()
+            || env.GROK_HOME?.trim()
+            || path.join(env.HOME?.trim() || os.homedir(), '.grok');
+        const sourceConfigPath = path.join(resolvedSource, 'config.toml');
+        const sourceConfig = fs.existsSync(sourceConfigPath) ? fs.readFileSync(sourceConfigPath, 'utf8') : undefined;
+        const tokenFile = writeQaapDelegationTokenFile(taskId, wiring.token, owner, placement.baseDir);
+        const mergedToml = buildQaapGrokConfigToml(sourceConfig, placement.options, wiring, tokenFile);
+        const written = writeAgentPromptFile(mergedToml, owner, {
+            fileName: 'config.toml',
+            dirPrefix: `${QAAP_DELEGATION_CONFIG_DIR_PREFIX}grok-`,
+            ...(placement.baseDir ? { baseDir: placement.baseDir } : {}),
+        });
+        rememberConfigDir(taskId, written.dir);
+        if (fs.existsSync(resolvedSource)) {
+            for (const entry of fs.readdirSync(resolvedSource)) {
+                if (entry === 'config.toml') {
+                    continue;
+                }
+                const target = path.join(resolvedSource, entry);
+                const link = path.join(written.dir, entry);
+                try {
+                    fs.symlinkSync(target, link);
+                } catch {
+                    // Best-effort for transient lock files in ~/.grok.
+                }
+            }
+        }
+        env.GROK_HOME = written.dir;
+        return true;
+    } catch (error) {
+        console.warn(`[qaap-preview] could not stage Grok MCP overlay (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
+        return false;
+    }
+}
+
+/** Cursor plugin `.mcp.json` content pointing at Qaap's shim (token in a separate 0600 file). */
+export function buildQaapCursorPluginMcpJson(
+    options: QaapDelegationMcpConfigOptions,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    tokenFile: string,
+): string {
+    return JSON.stringify({
+        mcpServers: {
+            [wiring.mcpServerName]: {
+                command: options.nodeBin,
+                args: [options.shimPath],
+                env: shimEnvironment(options, wiring, tokenFile),
+            },
+        },
+    });
+}
+
+/**
+ * Wires Qaap's preview MCP server into a Cursor Agent command via `--plugin-dir <per-task-dir>` containing
+ * `.cursor-plugin/plugin.json` and `.mcp.json` (token stored in a separate 0600 file).
+ */
+export function applyQaapCursorPreviewMcp(
+    command: string,
+    taskId: string,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    owner: AgentPromptOwner | undefined,
+    quote: (value: string) => string,
+    placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
+): string | undefined {
+    try {
+        const tokenFile = writeQaapDelegationTokenFile(taskId, wiring.token, owner, placement.baseDir);
+        const mcpJson = buildQaapCursorPluginMcpJson(placement.options, wiring, tokenFile);
+        const written = writeAgentPromptFile(mcpJson, owner, {
+            fileName: '.mcp.json',
+            dirPrefix: `${QAAP_DELEGATION_CONFIG_DIR_PREFIX}cursor-`,
+            ...(placement.baseDir ? { baseDir: placement.baseDir } : {}),
+        });
+        rememberConfigDir(taskId, written.dir);
+        const manifestDir = path.join(written.dir, '.cursor-plugin');
+        fs.mkdirSync(manifestDir, { recursive: true, mode: 0o700 });
+        const manifestPath = path.join(manifestDir, 'plugin.json');
+        fs.writeFileSync(
+            manifestPath,
+            JSON.stringify({ name: 'qaaq-preview', version: '0.0.1', description: 'Qaap managed preview MCP tools' }),
+            { encoding: 'utf8', mode: 0o600 },
+        );
+        const currentUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+        if (owner && currentUid !== undefined && owner.uid !== currentUid) {
+            const gid = owner.gid ?? -1;
+            try {
+                fs.chownSync(manifestDir, owner.uid, gid);
+                fs.chownSync(manifestPath, owner.uid, gid);
+            } catch {
+                // Best effort when not running as root.
+            }
+        }
+        return `${command.trimEnd()} --plugin-dir ${quote(written.dir)}`;
+    } catch (error) {
+        console.warn(`[qaap-preview] could not stage Cursor preview MCP plugin (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
+        return undefined;
+    }
+}
+
+/**
+ * Wires Qaap's preview MCP server into Gemini CLI via `GEMINI_CLI_SYSTEM_SETTINGS_PATH`, preserving any
+ * existing system settings file while adding `mcpServers[wiring.mcpServerName]`.
+ */
+export function applyQaapGeminiPreviewMcp(
+    env: NodeJS.ProcessEnv,
+    taskId: string,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    owner: AgentPromptOwner | undefined,
+    placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
+): boolean {
+    try {
+        const tokenFile = writeQaapDelegationTokenFile(taskId, wiring.token, owner, placement.baseDir);
+        let base: Record<string, unknown> = {};
+        const existingPath = env.GEMINI_CLI_SYSTEM_SETTINGS_PATH?.trim();
+        if (existingPath && fs.existsSync(existingPath)) {
+            try {
+                const parsed = JSON.parse(fs.readFileSync(existingPath, 'utf8')) as unknown;
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    base = parsed as Record<string, unknown>;
+                }
+            } catch {
+                base = {};
+            }
+        }
+        const existingMcp = base.mcpServers && typeof base.mcpServers === 'object' && !Array.isArray(base.mcpServers)
+            ? base.mcpServers as Record<string, unknown>
+            : {};
+        const nextSettings = {
+            ...base,
+            mcpServers: {
+                ...existingMcp,
+                [wiring.mcpServerName]: {
+                    command: placement.options.nodeBin,
+                    args: [placement.options.shimPath],
+                    env: shimEnvironment(placement.options, wiring, tokenFile),
+                },
+            },
+        };
+        const settingsFile = writeQaapDelegationMcpConfigFile(
+            taskId,
+            JSON.stringify(nextSettings),
+            owner,
+            'gemini-settings.json',
+            placement.baseDir,
+        );
+        env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = settingsFile;
+        return true;
+    } catch (error) {
+        console.warn(`[qaap-preview] could not wire Gemini CLI preview MCP settings (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
+        return false;
+    }
+}
+
+/** Path of Antigravity CLI's user-level MCP configuration file (`~/.gemini/config/mcp_config.json`). */
+export function resolveAntigravityMcpConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+    const override = env.QAAP_ANTIGRAVITY_MCP_CONFIG_PATH?.trim();
+    if (override) {
+        return override;
+    }
+    return path.join(env.HOME?.trim() || os.homedir(), '.gemini', 'config', 'mcp_config.json');
+}
+
+function readJsonRecordSafe(filePath: string): Record<string, unknown> {
+    if (!fs.existsSync(filePath)) {
+        return {};
+    }
+    try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown;
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * Registers a per-task preview MCP server entry for non-ACP Antigravity CLI (`agy`) in
+ * `~/.gemini/config/mcp_config.json` (desktop / non-hosted only; ACP mode uses `acp-stdio` directly).
+ * Only the path of the 0600 token file is written (never the raw token). Stale `qaaq_*` entries whose token
+ * file is already gone are pruned, and this task's own `mcpServerName` key is removed atomically on release.
+ */
+export function applyQaapAgyPreviewMcp(
+    env: NodeJS.ProcessEnv,
+    taskId: string,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
+    owner: AgentPromptOwner | undefined,
+    placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
+    configPath: string = resolveAntigravityMcpConfigPath(env),
+): boolean {
+    try {
+        const tokenFile = writeQaapDelegationTokenFile(taskId, wiring.token, owner, placement.baseDir);
+        const doc = readJsonRecordSafe(configPath);
+        const rawServers = doc.mcpServers && typeof doc.mcpServers === 'object' && !Array.isArray(doc.mcpServers)
+            ? { ...(doc.mcpServers as Record<string, unknown>) }
+            : {};
+        for (const [name, entry] of Object.entries(rawServers)) {
+            if (!name.startsWith(`${QAAP_AGENT_DELEGATION_MCP_SERVER_NAME}_`)) {
+                continue;
+            }
+            const entryEnv = entry && typeof entry === 'object' ? (entry as { env?: Record<string, unknown> }).env : undefined;
+            const entryTokenFile = typeof entryEnv?.[QAAP_AGENT_DELEGATION_TOKEN_FILE_ENV] === 'string'
+                ? entryEnv[QAAP_AGENT_DELEGATION_TOKEN_FILE_ENV]
+                : undefined;
+            if (!entryTokenFile || !fs.existsSync(entryTokenFile)) {
+                delete rawServers[name];
+            }
+        }
+        rawServers[wiring.mcpServerName] = {
+            command: placement.options.nodeBin,
+            args: [placement.options.shimPath],
+            env: shimEnvironment(placement.options, wiring, tokenFile),
+        };
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        writeJsonAtomicSync(configPath, { ...doc, mcpServers: rawServers }, { trailingNewline: true });
+        const serverName = wiring.mcpServerName;
+        rememberCleanupCallback(taskId, () => {
+            if (!fs.existsSync(configPath)) {
+                return;
+            }
+            const latest = readJsonRecordSafe(configPath);
+            const servers = latest.mcpServers && typeof latest.mcpServers === 'object' && !Array.isArray(latest.mcpServers)
+                ? { ...(latest.mcpServers as Record<string, unknown>) }
+                : undefined;
+            if (!servers || !(serverName in servers)) {
+                return;
+            }
+            delete servers[serverName];
+            writeJsonAtomicSync(configPath, { ...latest, mcpServers: servers }, { trailingNewline: true });
+        });
+        return true;
+    } catch (error) {
+        console.warn(`[qaap-preview] could not register Antigravity preview MCP config (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
+        return false;
     }
 }

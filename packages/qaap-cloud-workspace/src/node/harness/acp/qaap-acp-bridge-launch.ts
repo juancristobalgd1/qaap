@@ -196,6 +196,11 @@ export function resolveQaapRuntimeHarnessCapabilities(agentId: string | undefine
     const capabilities = resolveQaapHarnessCapabilities(agentId);
     const flavor = resolveQaapAcpFlavor(agentId, env);
     if (flavor !== 'copilot' && flavor !== 'grok' && flavor !== 'antigravity') {
+        // `gemini` is an alias of Antigravity (`resolveQaapAcpFlavor` normalizes it too): keep its
+        // conservative default `delegateMcp`, but inherit Antigravity's native preview MCP transport.
+        if (agentId?.trim().toLowerCase() === 'gemini' && !capabilities.previewMcp) {
+            return { ...capabilities, previewMcp: 'antigravity-mcp-config' };
+        }
         return capabilities;
     }
     return {
@@ -203,6 +208,7 @@ export function resolveQaapRuntimeHarnessCapabilities(agentId: string | undefine
         // The bridge passes the delegation server as stdio (Grok) or, for Copilot (which ignores stdio MCP), behind
         // its loopback HTTP proxy; the runner side is the same.
         delegateMcp: 'acp-stdio',
+        previewMcp: 'acp-stdio',
         transport: 'acp',
         gate: 'acp',
         canAsk: true,

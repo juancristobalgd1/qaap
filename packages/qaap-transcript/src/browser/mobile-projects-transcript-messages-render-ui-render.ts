@@ -11,7 +11,6 @@ import { isSuccessfulAgentMessageInConversation } from '@theia/qaap-shared-core/
 import { parseAgentLogForTranscript } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { dedupeAgentMessageTextSegments } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
-import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
 import { fingerprintTranscriptMessage, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
@@ -69,13 +68,17 @@ export function resolveTranscriptAgentSegmentsExtracted(ctx: MobileProjectsTrans
         return cached.length ? [...cached] : undefined;
     }
     let trace: QaapTranscriptTrace = resolveQaapTranscriptTrace(msg);
+    const hasNonCheckpointTrace = (msg.traceEvents ?? []).some(event => event.type !== 'checkpoint');
     if (
         trace.segments.length === 0
-        && !agentMessageHasStructuredTrace(msg)
+        && !hasNonCheckpointTrace
         && msg.role === 'agent'
         && msg.content?.trim()
     ) {
-        const parsed = parseAgentLogForTranscript(conv.agentId, msg.content);
+        const turnAgentId = (msg.runUserMessageId
+            ? conv.messages.find(candidate => candidate.id === msg.runUserMessageId)?.turnAgentId
+            : undefined) ?? conv.agentId;
+        const parsed = parseAgentLogForTranscript(turnAgentId, msg.content);
         if (parsed.segments.length > 0) {
             trace = {
                 source: 'legacy-content',

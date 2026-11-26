@@ -4,6 +4,7 @@
 // *****************************************************************************
 import { withSelfEnforcedDeadline } from './qaap-exec-file-group';
 import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
@@ -2432,19 +2433,25 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!this.toolGateTokens) {
             return undefined;
         }
+        const wantsDelegate = this.wantsAgentDelegation(task);
+        const wantsPreview = this.wantsAgentPreviewTools(task);
         const toolsets: QaapAgentMcpToolset[] = [
-            ...(this.wantsAgentDelegation(task) ? ['delegate' as const] : []),
-            ...(this.wantsAgentPreviewTools(task) ? ['preview' as const] : []),
+            ...(wantsDelegate ? ['delegate' as const] : []),
+            ...(wantsPreview ? ['preview' as const] : []),
         ];
         if (toolsets.length === 0) {
             return undefined;
         }
-        const transport = resolveQaapRuntimeHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp;
-        if (transport !== 'claude-mcp-config' && transport !== 'codex-config' && transport !== 'opencode-config' && transport !== 'pi-extension'
-            && transport !== 'acp-stdio') {
+        const capabilities = resolveQaapRuntimeHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask));
+        const transport = wantsDelegate ? capabilities.delegateMcp : (capabilities.previewMcp ?? capabilities.delegateMcp);
+        if (!transport || !QaapAgentTaskRunner.PREVIEW_TOOL_TRANSPORTS.has(transport)) {
             return undefined;
         }
-        if (transport !== 'claude-mcp-config' && !env.QAAP_GATE_TOKEN) {
+        const requiresGateToken = transport === 'codex-config'
+            || transport === 'opencode-config'
+            || transport === 'pi-extension'
+            || transport === 'acp-stdio';
+        if (requiresGateToken && !env.QAAP_GATE_TOKEN) {
             // An HTTP-gated harness without its gate token runs ungated: it gets no Qaap MCP tools either.
             return undefined;
         }
@@ -2464,12 +2471,19 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         // `toolsets` is omitted for a delegation-only turn so its shim config stays exactly as before.
         const wiringToolsets = toolsets.includes('preview') ? { toolsets } : {};
-        return { transport, mcpServerName: issued.mcpServerName, url: origin, token: issued.token, ...wiringToolsets };
+        return {
+            transport: transport as QaapDelegationWiring['transport'],
+            mcpServerName: issued.mcpServerName,
+            url: origin,
+            token: issued.token,
+            ...wiringToolsets,
+        };
     }
 
     /**
-     * Harness transports that carry the agent preview tools over MCP (phases 1 + 2): Claude Code, Codex, Pi,
-     * OpenCode and ACP flavors. Harnesses without an MCP transport fall back to the `qaaq-preview` CLI.
+     * Harness transports that carry the agent preview tools over MCP: Claude Code, Codex, Pi, OpenCode,
+     * ACP flavors, plus native Copilot, Grok, Cursor, Antigravity/Gemini, OpenClaude and QAIQ.
+     * Unknown/custom harnesses without a declared MCP transport fall back to the `qaaq-preview` CLI.
      */
     protected static readonly PREVIEW_TOOL_TRANSPORTS: ReadonlySet<string> = new Set([
         'claude-mcp-config',
@@ -2477,6 +2491,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         'pi-extension',
         'opencode-config',
         'acp-stdio',
+        'copilot-mcp-config',
+        'grok-config',
+        'cursor-plugin-dir',
+        'antigravity-mcp-config',
     ]);
 
     /**
@@ -2488,7 +2506,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!isQaapAgentPreviewToolsEnabled(process.env) || !this.toolGateTokens || !this.helperApiUrl) {
             return 'none';
         }
-        const transport = resolveQaapRuntimeHarnessCapabilities(agentId).delegateMcp ?? 'none';
+        const capabilities = resolveQaapRuntimeHarnessCapabilities(agentId);
+        const transport = capabilities.previewMcp ?? capabilities.delegateMcp ?? 'none';
+        if (transport === 'antigravity-mcp-config' && isQaapHostedEnvironment() && agentId.trim().toLowerCase() !== 'gemini') {
+            // Hosted `agy` cannot mutate a shared global mcp_config.json without ACP; fall back to the CLI unless ACP is on.
+            return 'cli';
+        }
         return QaapAgentTaskRunner.PREVIEW_TOOL_TRANSPORTS.has(transport) ? 'mcp' : 'cli';
     }
 
@@ -2514,12 +2537,20 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * Issues a preview-only token for harnesses without an MCP transport (Cursor, native non-ACP Copilot/Antigravity,
-     * etc.) so the spawn path can stage the `qaaq-preview` CLI and its 0600 token file.
+     * Issues a preview-only token for harnesses without an MCP transport (custom CLIs, or a fallback when a native
+     * MCP config could not be staged) so the spawn path can stage the `qaaq-preview` CLI and its 0600 token file.
      * @internal Used by the extracted qaap-agent-task-runner-* modules.
      */
-    applyAgentPreviewCliEnv(env: NodeJS.ProcessEnv, task: QaapAgentDelegationTaskFields): { readonly url: string; readonly token: string } | undefined {
-        if (!this.toolGateTokens || this.agentPreviewToolsTransport(this.resolveTaskAgentId(task as QaapAgentTask)) !== 'cli') {
+    applyAgentPreviewCliEnv(
+        env: NodeJS.ProcessEnv,
+        task: QaapAgentDelegationTaskFields,
+        options?: { readonly fallback?: boolean },
+    ): { readonly url: string; readonly token: string } | undefined {
+        if (!this.toolGateTokens) {
+            return undefined;
+        }
+        const transport = this.agentPreviewToolsTransport(this.resolveTaskAgentId(task as QaapAgentTask));
+        if (transport === 'none' || (!options?.fallback && transport !== 'cli')) {
             return undefined;
         }
         const sandbox = this.agentSandboxFor(task.cwd);

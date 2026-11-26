@@ -393,6 +393,23 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
                     settled = { ...settled, content: agentReply };
                 }
             }
+            if (log && !usesStructuredAgentTranscript(turnAgentId)
+                && (settled.segments?.length ?? 0) === 0) {
+                const formatted = ctx.parseStructuredLog(turnAgentId, log);
+                const formattedSegments = formatted?.segments ?? [];
+                const formattedContent = formatted?.content?.trim() ?? '';
+                if (formatted && (formattedSegments.length > 0
+                    || (formattedContent && formattedContent !== settled.content.trim()))) {
+                    settled = materializeAgentMessageForApi({
+                        ...settled,
+                        content: formattedContent || settled.content,
+                        ...(formattedSegments.length > 0 ? {
+                            segments: formattedSegments,
+                            traceEvents: ctx.resolveStructuredParsedTraceEvents(settled, formatted),
+                        } : {}),
+                    });
+                }
+            }
             if (log && usesAgUiCliTranscriptStream(turnAgentId)
                 && !agentMessageHasStructuredTrace(settled)
                 && (settled.segments?.length ?? 0) === 0) {

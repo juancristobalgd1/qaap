@@ -411,5 +411,6 @@ export interface QaapAgentTaskRunnerContext {
     applyAgentPreviewCliEnv?(
         env: NodeJS.ProcessEnv,
         task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'delegationRole' | 'readOnlyWorkspace'>,
+        options?: { readonly fallback?: boolean },
     ): { readonly url: string; readonly token: string } | undefined;
 }

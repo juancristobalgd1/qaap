@@ -496,6 +496,10 @@ export function isAntigravityAgent(agentId: string | undefined): boolean {
     return normalized === 'antigravity' || normalized === 'gemini';
 }
 
+export function isCopilotAgent(agentId: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === 'copilot';
+}
+
 /** VPS agents whose stdout is parsed into thinking / tool / text transcript segments. */
 export function usesStructuredAgentTranscript(agentId: string | undefined): boolean {
     return isQaiqAgent(agentId)

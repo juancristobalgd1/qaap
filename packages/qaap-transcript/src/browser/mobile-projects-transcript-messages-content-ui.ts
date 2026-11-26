@@ -100,9 +100,20 @@ export function extractTranscriptPreviewId(href: string, publicOrigin: string): 
     }
 }
 
+/**
+ * Truncates raw or percent-encoded quote/JSON delimiters (`"`, `'`, `%22`, `}`, `>`, `<`) that
+ * auto-linkifiers can accidentally swallow when a harness prints JSON tool output containing a URL
+ * (for example `{"url":"http://127.0.0.1:3001/","httpStatus":200}`).
+ */
+function stripTrailingUrlDelimiterJunk(href: string): string {
+    const cut = href.search(/(?:["'<>\\{}]|%(?:22|27|3[cCeE]|7[bBdD]))/);
+    const clean = cut >= 0 ? href.slice(0, cut) : href;
+    return clean.replace(/[,.;:]+$/, '');
+}
+
 /** Returns only URLs that Qaap can safely route into the conversation's integrated preview. */
 export function normalizeTranscriptPreviewHref(href: string, publicOrigin: string): string | undefined {
-    const trimmed = href.trim();
+    const trimmed = stripTrailingUrlDelimiterJunk(href.trim());
     if (!trimmed) {
         return undefined;
     }
@@ -732,14 +743,18 @@ export class MobileProjectsTranscriptMessagesContentUi {
 
     linkifyTranscriptPreviewUrls(content: string | undefined | null): string {
         // Agents often quote the preview as an inline code span (`http://localhost:5173`). The bare-URL
-        // pattern below needs whitespace or "(" before the URL, so the code span is linked first.
+        // pattern below needs whitespace, "(" or a quote before the URL, so the code span is linked first.
         const text = (content ?? '').replace(
-            /`((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?)`/gi,
-            (_match, url: string) => '[`' + url + '`](' + url + ')',
+            /`((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60"'<>)\]}]*)?)`/gi,
+            (_match, rawUrl: string) => {
+                const url = rawUrl.replace(/[,.;:]+$/, '');
+                const tail = rawUrl.slice(url.length);
+                return '[`' + url + '`](' + url + ')' + tail;
+            },
         );
         return text.replace(
-            /(^|[\s(])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-preview\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\/[^\s\x60<)]*)?|https?:\/\/[0-9a-f]{32}(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?){2,}(?::\d{2,5})?(?:\/[^\s\x60<)]*)?)/gi,
-            (match, prefix: string, url: string, offset: number) => {
+            /(^|[\s("'])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60"'<>)\]}]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60"'<>)\]}]*)?|\/qaap-preview\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\/[^\s\x60"'<>)\]}]*)?|https?:\/\/[0-9a-f]{32}(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?){2,}(?::\d{2,5})?(?:\/[^\s\x60"'<>)\]}]*)?)/gi,
+            (match, prefix: string, rawUrl: string, offset: number) => {
                 // Avoid slicing the entire accumulated stream for every URL.
                 // lastIndexOf preserves the markdown-context checks while
                 // keeping a URL-heavy stream linear instead of quadratic.
@@ -750,7 +765,9 @@ export class MobileProjectsTranscriptMessagesContentUi {
                 if (lastOpenBracket > lastCloseBracket || lastLinkStart > lastLinkEnd) {
                     return match;
                 }
-                return prefix + '[' + url + '](' + url + ')';
+                const url = rawUrl.replace(/[,.;:]+$/, '');
+                const tail = rawUrl.slice(url.length);
+                return prefix + '[' + url + '](' + url + ')' + tail;
             },
         );
     }

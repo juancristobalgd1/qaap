@@ -12,7 +12,7 @@ import { normalizeWorktreeCwd } from './qaap-worktree-label';
 import { foldQaapPrivatePathAlias } from './qaap-preview-identity';
 
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
-const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)\]]*)?/i;
+const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)"'<>\]}]*)?/i;
 // Tolerates the punctuation agents actually emit: "port 5173", "port (5173)", "puerto: 5173",
 // "port #5173". A bare `\s+` missed "port (5173)" and silently dropped the only preview signal.
 const PORT_HINT_RE = /\b(?:ports?|puertos?)\s*[:#(]?\s*(\d{2,5})\b/i;
