@@ -396,13 +396,15 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             if (log && !usesStructuredAgentTranscript(turnAgentId)
                 && (settled.segments?.length ?? 0) === 0) {
                 const formatted = ctx.parseStructuredLog(turnAgentId, log);
-                if (formatted && (formatted.segments.length > 0
-                    || (formatted.content.trim() && formatted.content.trim() !== settled.content.trim()))) {
+                const formattedSegments = formatted?.segments ?? [];
+                const formattedContent = formatted?.content?.trim() ?? '';
+                if (formatted && (formattedSegments.length > 0
+                    || (formattedContent && formattedContent !== settled.content.trim()))) {
                     settled = materializeAgentMessageForApi({
                         ...settled,
-                        content: formatted.content.trim() || settled.content,
-                        ...(formatted.segments.length > 0 ? {
-                            segments: formatted.segments,
+                        content: formattedContent || settled.content,
+                        ...(formattedSegments.length > 0 ? {
+                            segments: formattedSegments,
                             traceEvents: ctx.resolveStructuredParsedTraceEvents(settled, formatted),
                         } : {}),
                     });

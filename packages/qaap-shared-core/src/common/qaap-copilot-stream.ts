@@ -13,7 +13,7 @@ const COPILOT_BULLET_TOOL_LINE = /^(\s*)[●○✓✗✕]\s+(.+)$/u;
 const COPILOT_SLASH_TOOL_LINE = /^\s*\/\s+(Search|Read|View|List|Glob|Grep|Edit|Write|Create|Delete|Run|Bash|Shell|Fetch|Web)\b(.*)$/i;
 
 /** Matches indented tool-output / attachment continuation lines emitted beneath a Copilot tool line. */
-const COPILOT_TOOL_ATTACHMENT_LINE = /^\s*\[Image:\s+[^\]]+\]\s*$/i;
+const COPILOT_TOOL_ATTACHMENT_LINE = /^\s*\[Image:\s+.+\]\s*$/i;
 const COPILOT_TOOL_TREE_LINE = /^\s*[└├│↳]\s*(.*)$/u;
 
 /** Matches lines in Copilot CLI's trailing usage / resume telemetry footer. */
@@ -78,7 +78,6 @@ export function parseCopilotFormattedLog(log: string): { content: string; segmen
     let index = 0;
     while (index < lines.length) {
         const line = lines[index];
-        const trimmed = line.trim();
 
         const bulletMatch = COPILOT_BULLET_TOOL_LINE.exec(line);
         if (bulletMatch) {
@@ -87,7 +86,7 @@ export function parseCopilotFormattedLog(log: string): { content: string; segmen
             toolCount += 1;
             segments.push({
                 type: 'tool',
-                id: `copilot-tool-${toolCount}`,
+                toolUseId: `copilot-tool-${toolCount}`,
                 name: parsed.name,
                 args: parsed.args,
                 ...(parsed.result ? { result: parsed.result } : {}),
@@ -134,7 +133,7 @@ export function parseCopilotFormattedLog(log: string): { content: string; segmen
             toolCount += 1;
             segments.push({
                 type: 'tool',
-                id: `copilot-tool-${toolCount}`,
+                toolUseId: `copilot-tool-${toolCount}`,
                 name: parsed.name,
                 args: parsed.args,
                 finished: true,
