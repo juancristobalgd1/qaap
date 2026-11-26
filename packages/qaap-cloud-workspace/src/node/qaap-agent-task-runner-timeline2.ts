@@ -28,6 +28,11 @@ import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-contex
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import {
     appendQaapDelegationLaunchArgs,
+    applyQaapAgyPreviewMcp,
+    applyQaapCopilotPreviewMcp,
+    applyQaapCursorPreviewMcp,
+    applyQaapGeminiPreviewMcp,
+    applyQaapGrokPreviewMcp,
     applyQaapOpencodeDelegation,
     applyQaapPiDelegation,
     applyQaapPreviewCli,
@@ -713,9 +718,36 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     } else {
                         delegation = undefined;
                     }
+                } else if (delegation?.transport === 'copilot-mcp-config' && delegationPlacement) {
+                    const copilotCommand = applyQaapCopilotPreviewMcp(spawnCommand, task.id, delegation, owner, quoteShellArg, delegationPlacement);
+                    if (copilotCommand) {
+                        spawnCommand = copilotCommand;
+                    } else {
+                        delegation = undefined;
+                    }
+                } else if (delegation?.transport === 'grok-config' && delegationPlacement) {
+                    if (!applyQaapGrokPreviewMcp(childEnv, task.id, delegation, owner, delegationPlacement)) {
+                        delegation = undefined;
+                    }
+                } else if (delegation?.transport === 'cursor-plugin-dir' && delegationPlacement) {
+                    const cursorCommand = applyQaapCursorPreviewMcp(spawnCommand, task.id, delegation, owner, quoteShellArg, delegationPlacement);
+                    if (cursorCommand) {
+                        spawnCommand = cursorCommand;
+                    } else {
+                        delegation = undefined;
+                    }
+                } else if (delegation?.transport === 'antigravity-mcp-config' && delegationPlacement) {
+                    const isGeminiBin = /\bgemini\b/.test(spawnCommand) && !/\bagy\b/.test(spawnCommand);
+                    const wired = isGeminiBin
+                        ? applyQaapGeminiPreviewMcp(childEnv, task.id, delegation, owner, delegationPlacement)
+                        : (!isQaapHostedEnvironment() && applyQaapAgyPreviewMcp(childEnv, task.id, delegation, owner, delegationPlacement));
+                    if (!wired) {
+                        delegation = undefined;
+                    }
                 }
-            } else {
-                const previewCli = ctx.applyAgentPreviewCliEnv?.(childEnv, task);
+            }
+            if (!delegation) {
+                const previewCli = ctx.applyAgentPreviewCliEnv?.(childEnv, task, { fallback: true });
                 if (previewCli) {
                     releaseQaapDelegationMcpConfigFile(task.id);
                     const identity = ctx.resolveAgentSpawnIdentity(task.cwd);

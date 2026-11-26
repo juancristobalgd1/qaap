@@ -9,12 +9,16 @@ import { installTranscriptLinkContextMenu } from '@theia/qaap-transcript/lib/bro
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import { fetchQaapPreviewConfig } from '@theia/qaap-shared-core/lib/browser/qaap-agent-preview-client';
 
 /**
  * Copies options fields onto the panel instance. Extracted from the constructor
  * to keep the main file under control.
  */
 export function applyPanelOptions(self: MobileProjectsPanelContext, options: MobileProjectsPanelOptions): void {
+    // Pre-warm the preview feature-flag cache at panel mount so the first turn knows whether
+    // agent-driven preview is active instead of firing a legacy bootstrap run before the cache fills.
+    void fetchQaapPreviewConfig();
     self.homeMode = !!options.homeMode;
     self.whenFrontendReadyProvider = options.whenFrontendReady;
     self.activeTasks = options.activeTasks;

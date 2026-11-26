@@ -39,6 +39,22 @@ export type QaapWhenAskUnsupported = 'runs-unchecked' | 'refuses';
 export type QaapDelegateMcpTransport = 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension'
     | 'acp-stdio' | 'acp-http' | 'acp-mcp-over-acp' | 'none';
 
+/**
+ * How a harness receives Qaap's preview MCP server (`preview_start`, `preview_status`, ...).
+ * Extends {@link QaapDelegateMcpTransport} with native per-session MCP mechanisms for harnesses
+ * that do not carry the delegation toolset:
+ * - `copilot-mcp-config`: `--additional-mcp-config @<0600-file>` (Copilot CLI native mode).
+ * - `grok-config`: per-task `GROK_HOME` overlay with `[mcp_servers.<name>]` in `config.toml` (Grok native mode).
+ * - `cursor-plugin-dir`: `--plugin-dir <per-task-0700-dir>` with `.cursor-plugin/plugin.json` + `.mcp.json` (Cursor Agent).
+ * - `antigravity-mcp-config`: `GEMINI_CLI_SYSTEM_SETTINGS_PATH` for `gemini`, or a per-task entry in `~/.gemini/config/mcp_config.json` for desktop `agy`.
+ */
+export type QaapPreviewMcpTransport =
+    | QaapDelegateMcpTransport
+    | 'copilot-mcp-config'
+    | 'grok-config'
+    | 'cursor-plugin-dir'
+    | 'antigravity-mcp-config';
+
 /** Where the cost of a turn comes from. `none` when Qaap cannot show a cost for the harness. */
 export type QaapCostSource = 'reported' | 'price-table' | 'estimate' | 'none';
 
@@ -64,6 +80,8 @@ export interface QaapHarnessCapabilities {
     untrustedFolderEnv?: Readonly<Record<string, string>>;
     /** How the delegation MCP server reaches this harness; absent = `none`. */
     delegateMcp?: QaapDelegateMcpTransport;
+    /** How the preview MCP server reaches this harness when different from {@link delegateMcp}; absent falls back to `delegateMcp`. */
+    previewMcp?: QaapPreviewMcpTransport;
     /** Which usage parser reads this harness's output; `none` when no parser is wired. */
     usage: 'qaiq' | 'claude' | 'codex' | 'opencode' | 'pi-json' | 'acp' | 'none';
     costSource: QaapCostSource;
@@ -146,6 +164,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         whenAskUnsupported: 'refuses',
         shellGuard: 'gate',
         usage: 'qaiq',
+        previewMcp: 'claude-mcp-config',
     },
     {
         ...createDefaultHarnessCapabilities('openclaude'),
@@ -156,6 +175,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         whenAskUnsupported: 'refuses',
         shellGuard: 'gate',
         usage: 'claude',
+        previewMcp: 'claude-mcp-config',
     },
     // Claude Code speaks the same stream-json control protocol as QAIQ (a fork of it): with
     // `--permission-prompt-tool stdio` every `can_use_tool` request reaches the in-process gate and a pending
@@ -234,10 +254,11 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     },
     // Cursor, Antigravity, Copilot and Grok run unchecked: no permission gate and no ask window. Explicit
     // entries keep them covered by the registry spec, so a future gate is a deliberate change here.
-    { ...createDefaultHarnessCapabilities('cursor') },
-    { ...createDefaultHarnessCapabilities('antigravity') },
-    { ...createDefaultHarnessCapabilities('copilot') },
-    { ...createDefaultHarnessCapabilities('grok') },
+    // Each still declares its native preview MCP transport so every harness can use Qaap's preview MCP.
+    { ...createDefaultHarnessCapabilities('cursor'), previewMcp: 'cursor-plugin-dir' },
+    { ...createDefaultHarnessCapabilities('antigravity'), previewMcp: 'antigravity-mcp-config' },
+    { ...createDefaultHarnessCapabilities('copilot'), previewMcp: 'copilot-mcp-config' },
+    { ...createDefaultHarnessCapabilities('grok'), previewMcp: 'grok-config' },
 ];
 
 /**

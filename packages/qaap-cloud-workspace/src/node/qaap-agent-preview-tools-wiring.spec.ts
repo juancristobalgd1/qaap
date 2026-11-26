@@ -9,6 +9,9 @@
  */
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import {
     appendAgentDefaultWorkflowToPrompt,
@@ -16,12 +19,23 @@ import {
 } from '../common/qaap-agent-default-workflow';
 import { buildDevServerShellDenyMessage, findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
 import { resolveQaiqControlRequestAutoDecision } from '../common/qaap-qaiq-control-auto-response';
+import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import {
+    parseQaapTranscriptPreviewToolOperation,
+    qaapAgentPreviewMcpOperation,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import {
     QAAP_AGENT_DELEGATION_GUIDANCE,
     QAAP_AGENT_PREVIEW_GUIDANCE,
+    applyQaapAgyPreviewMcp,
+    applyQaapCopilotPreviewMcp,
+    applyQaapCursorPreviewMcp,
+    applyQaapGeminiPreviewMcp,
+    applyQaapGrokPreviewMcp,
     buildQaapAgentMcpGuidance,
     buildQaapDelegationMcpConfig,
     buildQaapDelegationPiConfig,
+    releaseQaapDelegationMcpConfigFile,
     withQaapDelegationOpencodeMcp,
 } from './qaap-agent-delegation-launch';
 import { buildQaapAcpDelegationMcpServers } from './harness/acp/qaap-acp-bridge-launch';
@@ -140,16 +154,133 @@ describe('agent preview tools wiring', () => {
             const acpServers = JSON.parse(buildQaapAcpDelegationMcpServers(MCP, { ...ocWiring, toolsets: ['preview'] }, '/tmp/tok'));
             expect(acpServers[0].env).to.deep.include({ name: 'QAAP_AGENT_MCP_TOOLSETS', value: 'preview' });
 
-            // Cursor (no MCP transport) uses the qaaq-preview CLI fallback with a preview-only token.
-            expect(instance.agentPreviewToolsTransport('cursor')).to.equal('cli');
-            expect(instance.agentPreviewToolsAvailable('cursor')).to.equal(true);
-            const cliWiring = instance.applyAgentPreviewCliEnv({}, task('cursor', 'cursor-agent'))!;
+            // Every built-in harness (plus gemini, openclaude and qaiq) resolves to MCP preview transport.
+            for (const agentId of [...QAAP_BUILTIN_AGENT_DEFINITIONS.map(def => def.id), 'gemini', 'openclaude', 'qaiq']) {
+                expect(instance.agentPreviewToolsTransport(agentId), agentId).to.equal('mcp');
+                expect(instance.agentPreviewToolsAvailable(agentId), agentId).to.equal(true);
+            }
+            for (const [agentId, command, expectedTransport] of [
+                ['copilot', 'copilot --autopilot --yolo', 'copilot-mcp-config'],
+                ['grok', 'grok --always-approve', 'grok-config'],
+                ['cursor', 'cursor-agent -p --force --trust --approve-mcps', 'cursor-plugin-dir'],
+                ['antigravity', 'agy -p', 'antigravity-mcp-config'],
+                ['gemini', 'gemini -p', 'antigravity-mcp-config'],
+                ['openclaude', 'openclaude -p', 'claude-mcp-config'],
+                ['qaiq', 'qaiq -p', 'claude-mcp-config'],
+            ] as const) {
+                const wiring = instance.applyAgentDelegationEnv({}, task(agentId, command))!;
+                expect(wiring, agentId).to.not.equal(undefined);
+                expect(wiring.transport, agentId).to.equal(expectedTransport);
+                expect(wiring.toolsets, agentId).to.deep.equal(['preview']);
+                expect(tokens.authorize(wiring.token, 'preview').ok, agentId).to.equal(true);
+                expect(tokens.authorize(wiring.token, 'delegate').ok, agentId).to.equal(false);
+            }
+
+            // Unknown/custom harnesses without a declared MCP transport fall back to the qaaq-preview CLI.
+            expect(instance.agentPreviewToolsTransport('custom-cli')).to.equal('cli');
+            expect(instance.agentPreviewToolsAvailable('custom-cli')).to.equal(true);
+            const cliWiring = instance.applyAgentPreviewCliEnv({}, task('custom-cli', 'my-custom-agent'))!;
             expect(cliWiring.url).to.equal('http://127.0.0.1:4873');
             expect(tokens.authorize(cliWiring.token, 'preview').ok).to.equal(true);
             expect(tokens.authorize(cliWiring.token, 'delegate').ok).to.equal(false);
 
             const bare = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
             expect(bare.agentPreviewToolsAvailable('claude')).to.equal(false);
+        });
+
+        it('stages and cleans up native preview MCP configs for Copilot, Grok, Cursor, Gemini and Antigravity', () => {
+            const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-all-harnesses-mcp-'));
+            const wiring = { mcpServerName: SERVER, url: 'http://127.0.0.1:4873', token: 'secret-preview-tok', toolsets: ['preview' as const] };
+            const quote = (value: string): string => `'${value}'`;
+            try {
+                // Copilot: --additional-mcp-config @<file> with token in separate 0600 file.
+                const copilotCmd = applyQaapCopilotPreviewMcp('copilot --yolo', 't-copilot', wiring, undefined, quote, { options: MCP })!;
+                const copilotMatch = /--additional-mcp-config '@([^']+)'/.exec(copilotCmd);
+                expect(copilotMatch).to.not.equal(null);
+                const copilotRaw = fs.readFileSync(copilotMatch![1], 'utf8');
+                expect(copilotRaw).to.not.contain('secret-preview-tok');
+                const copilotCfg = JSON.parse(copilotRaw);
+                expect(copilotCfg.mcpServers[SERVER].type).to.equal('local');
+                expect(copilotCfg.mcpServers[SERVER].env.QAAP_AGENT_MCP_TOOLSETS).to.equal('preview');
+                expect(fs.readFileSync(copilotCfg.mcpServers[SERVER].env.QAAP_DELEGATION_TOKEN_FILE, 'utf8')).to.equal('secret-preview-tok');
+                releaseQaapDelegationMcpConfigFile('t-copilot');
+                expect(fs.existsSync(copilotMatch![1])).to.equal(false);
+
+                // Grok: GROK_HOME overlay preserving auth & user config while stripping old qaaq* tables.
+                const fakeGrokHome = path.join(tmp, 'grok-src');
+                fs.mkdirSync(fakeGrokHome, { recursive: true });
+                fs.writeFileSync(path.join(fakeGrokHome, 'auth.json'), '{"ok":true}');
+                fs.writeFileSync(path.join(fakeGrokHome, 'config.toml'), 'model = "grok-4"\n\n[mcp_servers.qaaq_old]\ncommand = "evil"\n\n[mcp_servers.user]\ncommand = "ok"\n');
+                const grokEnv: NodeJS.ProcessEnv = {};
+                expect(applyQaapGrokPreviewMcp(grokEnv, 't-grok', wiring, undefined, { options: MCP }, fakeGrokHome)).to.equal(true);
+                expect(grokEnv.GROK_HOME).to.be.a('string').and.not.equal(fakeGrokHome);
+                expect(fs.existsSync(path.join(grokEnv.GROK_HOME!, 'auth.json'))).to.equal(true);
+                const grokToml = fs.readFileSync(path.join(grokEnv.GROK_HOME!, 'config.toml'), 'utf8');
+                expect(grokToml).to.contain('model = "grok-4"').and.contain('[mcp_servers.user]');
+                expect(grokToml).to.not.contain('qaaq_old').and.not.contain('secret-preview-tok');
+                expect(grokToml).to.contain(`[mcp_servers.${SERVER}]`).and.contain('QAAP_AGENT_MCP_TOOLSETS = "preview"');
+                releaseQaapDelegationMcpConfigFile('t-grok');
+                expect(fs.existsSync(grokEnv.GROK_HOME!)).to.equal(false);
+
+                // Cursor: --plugin-dir with .cursor-plugin/plugin.json and .mcp.json.
+                const cursorCmd = applyQaapCursorPreviewMcp('cursor-agent -p --approve-mcps', 't-cursor', wiring, undefined, quote, { options: MCP })!;
+                const cursorMatch = /--plugin-dir '([^']+)'/.exec(cursorCmd);
+                expect(cursorMatch).to.not.equal(null);
+                const pluginDir = cursorMatch![1];
+                expect(JSON.parse(fs.readFileSync(path.join(pluginDir, '.cursor-plugin', 'plugin.json'), 'utf8')).name).to.equal('qaaq-preview');
+                const cursorMcpRaw = fs.readFileSync(path.join(pluginDir, '.mcp.json'), 'utf8');
+                expect(cursorMcpRaw).to.not.contain('secret-preview-tok');
+                expect(JSON.parse(cursorMcpRaw).mcpServers[SERVER].env.QAAP_AGENT_MCP_TOOLSETS).to.equal('preview');
+                releaseQaapDelegationMcpConfigFile('t-cursor');
+                expect(fs.existsSync(pluginDir)).to.equal(false);
+
+                // Gemini CLI: GEMINI_CLI_SYSTEM_SETTINGS_PATH merges existing settings.
+                const existingGemini = path.join(tmp, 'existing-gemini.json');
+                fs.writeFileSync(existingGemini, JSON.stringify({ theme: 'dark', mcpServers: { existing: { command: 'x' } } }));
+                const geminiEnv: NodeJS.ProcessEnv = { GEMINI_CLI_SYSTEM_SETTINGS_PATH: existingGemini };
+                expect(applyQaapGeminiPreviewMcp(geminiEnv, 't-gemini', wiring, undefined, { options: MCP })).to.equal(true);
+                const geminiCfg = JSON.parse(fs.readFileSync(geminiEnv.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, 'utf8'));
+                expect(geminiCfg.theme).to.equal('dark');
+                expect(geminiCfg.mcpServers.existing).to.deep.equal({ command: 'x' });
+                expect(geminiCfg.mcpServers[SERVER].env.QAAP_AGENT_MCP_TOOLSETS).to.equal('preview');
+                releaseQaapDelegationMcpConfigFile('t-gemini');
+                expect(fs.existsSync(geminiEnv.GEMINI_CLI_SYSTEM_SETTINGS_PATH!)).to.equal(false);
+
+                // Antigravity (`agy` non-ACP): adds only its own server entry, prunes dead qaaq_* entries, removes only its entry on release.
+                const agyConfig = path.join(tmp, 'mcp_config.json');
+                fs.writeFileSync(agyConfig, JSON.stringify({
+                    mcpServers: {
+                        userServer: { command: 'keep' },
+                        qaaq_dead000000000000: { command: 'node', env: { QAAP_DELEGATION_TOKEN_FILE: path.join(tmp, 'missing-token') } },
+                    },
+                }));
+                expect(applyQaapAgyPreviewMcp({}, 't-agy', wiring, undefined, { options: MCP }, agyConfig)).to.equal(true);
+                const agyActive = JSON.parse(fs.readFileSync(agyConfig, 'utf8'));
+                expect(Object.keys(agyActive.mcpServers).sort()).to.deep.equal([SERVER, 'userServer'].sort());
+                expect(JSON.stringify(agyActive)).to.not.contain('secret-preview-tok');
+                releaseQaapDelegationMcpConfigFile('t-agy');
+                const agyAfter = JSON.parse(fs.readFileSync(agyConfig, 'utf8'));
+                expect(Object.keys(agyAfter.mcpServers)).to.deep.equal(['userServer']);
+
+                // Tool name parsing recognizes every harness's MCP naming convention.
+                for (const name of [
+                    `mcp__${SERVER}__preview_start`,
+                    `mcp_${SERVER}_preview_start`,
+                    `${SERVER}_preview_start`,
+                    `${SERVER}-preview_start`,
+                    `${SERVER}/preview_start`,
+                ]) {
+                    expect(qaapAgentPreviewMcpOperation(name, SERVER), name).to.equal('start');
+                    expect(parseQaapTranscriptPreviewToolOperation(name), name).to.equal('start');
+                }
+            } finally {
+                releaseQaapDelegationMcpConfigFile('t-copilot');
+                releaseQaapDelegationMcpConfigFile('t-grok');
+                releaseQaapDelegationMcpConfigFile('t-cursor');
+                releaseQaapDelegationMcpConfigFile('t-gemini');
+                releaseQaapDelegationMcpConfigFile('t-agy');
+                fs.rmSync(tmp, { recursive: true, force: true });
+            }
         });
 
         it('keeps a delegation-only turn\'s wiring exactly as before (no toolsets field)', () => {
