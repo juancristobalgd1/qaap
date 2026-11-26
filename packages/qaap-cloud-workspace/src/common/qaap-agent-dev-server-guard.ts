@@ -40,6 +40,10 @@ export function isLongLivedDevServerShellCommand(command: string | undefined): b
     if (!text) {
         return false;
     }
+    // Qaap's own supervised preview CLI (`qaaq-preview start …`) is the sanctioned path, never a raw shell dev server.
+    if (/^qaaq-preview(?:\s|$)/.test(text)) {
+        return false;
+    }
     // Script/launcher invocations are never exempt: a one-shot word elsewhere in the command must not hide them.
     if (QAAP_DEV_SCRIPT_RE.test(text) || QAAP_RESTART_SCRIPT_RE.test(text)) {
         return true;
@@ -62,16 +66,23 @@ export interface DevServerShellDenyOptions {
     readonly reservedPort?: number;
     /** Real state of the reserved port, measured by the backend just before the denial (see `probeReservedDevPreviewStatus`). */
     readonly previewStatus?: DevServerPreviewStatus;
-    /** The turn has the agent preview tools: the denial redirects to `preview_start` instead of "Qaap runs it". */
-    readonly previewTools?: boolean;
+    /** The turn has the agent preview tools: the denial redirects to `preview_start` (MCP) or `qaaq-preview start` (CLI). */
+    readonly previewTools?: boolean | 'mcp' | 'cli';
 }
 
-/** Deny guidance when the turn has the agent preview tools: the block becomes a redirect. */
+/** Deny guidance when the turn has the agent preview tools over MCP: the block becomes a redirect. */
 export const QAAP_DEV_SERVER_PREVIEW_TOOL_REDIRECT =
     'Blocked by Qaap: do not start dev servers from shell tools — the process dies with the shell and is not visible in the Preview. '
     + 'Call the preview_start tool instead (no arguments to use the detected command, or script / argv): Qaap starts the app supervised, '
     + 'keeps it running after your turn, waits until it answers HTTP and returns "ready" or the failure with its log. '
     + 'If preview_start fails, fix the cause in the project and call it again. Use the shell only for one-shot commands (install, build, typecheck, test).';
+
+/** Deny guidance when the turn has the `qaaq-preview` CLI fallback. */
+export const QAAP_DEV_SERVER_PREVIEW_CLI_REDIRECT =
+    'Blocked by Qaap: do not start dev servers directly from shell tools — the process dies with the shell and is not visible in the Preview. '
+    + 'Run `qaaq-preview start` instead (or `qaaq-preview start --script <name>` / `qaaq-preview start -- <argv...>`): Qaap starts the app supervised, '
+    + 'keeps it running after your turn, waits until it answers HTTP and returns JSON ("ready", exit 3 with `qaaq-preview wait`, or failure + logTail). '
+    + 'If it fails, fix the cause in the project and run `qaaq-preview start` again. Use the shell directly only for one-shot commands (install, build, typecheck, test).';
 
 /** Health of the reserved preview port as measured by the backend. */
 export interface DevServerPreviewStatus {
@@ -83,6 +94,9 @@ export interface DevServerPreviewStatus {
 
 /** Deny guidance sent back to the agent so it self-corrects instead of retrying. */
 export function buildDevServerShellDenyMessage(options: DevServerShellDenyOptions = {}): string {
+    if (options.previewTools === 'cli') {
+        return QAAP_DEV_SERVER_PREVIEW_CLI_REDIRECT;
+    }
     if (options.previewTools) {
         return QAAP_DEV_SERVER_PREVIEW_TOOL_REDIRECT;
     }

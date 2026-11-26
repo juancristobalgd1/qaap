@@ -7,6 +7,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import { resolveQaapHarnessCapabilities, type QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QAAP_AGENT_DELEGATION_TOKEN_FILE_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../../../common/qaap-agent-delegation-protocol';
+import { QAAP_AGENT_MCP_TOOLSETS_ENV } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import {
     QAAP_DELEGATION_SANDBOX_NODE,
     stageQaapSandboxScripts,
@@ -222,7 +223,7 @@ export function qaapAcpFlavorPrintsStreamJson(flavor: QaapAcpFlavorId | undefine
  */
 export function buildQaapAcpDelegationMcpServers(
     options: QaapDelegationMcpConfigOptions,
-    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url'>,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'toolsets'>,
     tokenFile: string,
 ): string {
     return JSON.stringify([{
@@ -230,6 +231,7 @@ export function buildQaapAcpDelegationMcpServers(
         command: options.nodeBin,
         args: [options.shimPath],
         env: [
+            ...(wiring.toolsets ? [{ name: QAAP_AGENT_MCP_TOOLSETS_ENV, value: wiring.toolsets.join(',') }] : []),
             { name: QAAP_AGENT_DELEGATION_URL_ENV, value: wiring.url },
             { name: QAAP_AGENT_DELEGATION_TOKEN_FILE_ENV, value: tokenFile },
             ...(options.electronRunAsNode ? [{ name: 'ELECTRON_RUN_AS_NODE', value: '1' }] : []),

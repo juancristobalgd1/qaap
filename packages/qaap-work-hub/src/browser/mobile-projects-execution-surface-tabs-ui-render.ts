@@ -1036,6 +1036,17 @@ export function syncConnectedTranscriptSurfaceHostsExtracted(ctx: MobileProjects
         }
         ctx.syncSurfaceHostsFromContainer(sheet);
     }
+
+    const sidebar = ctx.host.executionSurfaceSidebar;
+    if (sidebar?.element?.isConnected && sidebar.activeHost?.isConnected) {
+        if (sidebar.activeTab === 'preview') {
+            ctx.host.transcriptPreviewHost = sidebar.activeHost;
+        } else if (sidebar.activeTab === 'files') {
+            ctx.host.transcriptFilesHost = sidebar.activeHost;
+        } else if (sidebar.activeTab === 'terminal') {
+            ctx.host.transcriptTerminalHost = sidebar.activeHost;
+        }
+    }
 }
 
 export function syncSurfaceHostsFromContainerExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, container: HTMLElement): void {

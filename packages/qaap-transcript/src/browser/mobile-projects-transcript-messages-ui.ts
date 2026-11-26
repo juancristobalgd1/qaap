@@ -61,6 +61,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptOpenSummaryId: string | undefined;
     transcriptPreviewRequestPending: boolean;
     transcriptPreviewRequestRunning: boolean;
+    transcriptPreviewSuppressedByUser?: boolean;
     /** Harness picked in the composer for the next turn (with {@link transcriptComposerPrefsConvId}): drives "Handoff pending". */
     readonly transcriptComposerPinnedAgentId?: string;
     /** Conversation the composer selection above belongs to. */

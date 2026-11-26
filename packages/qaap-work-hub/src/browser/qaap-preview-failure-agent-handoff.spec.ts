@@ -13,6 +13,7 @@ import { Emitter } from '@theia/core/lib/common/event';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapBootstrapStateChange, QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { attachQaapPreviewFailureAgentHandoff } from './qaap-preview-failure-agent-handoff';
+import { setQaapPreviewConfigForTests } from '@theia/qaap-shared-core/lib/browser/qaap-agent-preview-client';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -86,5 +87,20 @@ describe('attachQaapPreviewFailureAgentHandoff', () => {
         await flush();
         expect(posted).to.deep.equal([]);
         attached.dispose();
+    });
+
+    it('never auto-sends a fix turn when agent-driven preview mode is active (D5)', async () => {
+        setQaapPreviewConfigForTests({ agentDriven: true, previewService: true, agentPreviewTools: true });
+        try {
+            const emitter = new Emitter<QaapBootstrapStateChange>();
+            const bootstrap = { onStateChange: emitter.event } as unknown as QaapProjectBootstrapService;
+            const attached = attachQaapPreviewFailureAgentHandoff(bootstrap, () => summary('c3', REPO));
+            emitter.fire(failed('run-agent-driven'));
+            await flush();
+            expect(posted).to.deep.equal([]);
+            attached.dispose();
+        } finally {
+            setQaapPreviewConfigForTests(undefined);
+        }
     });
 });

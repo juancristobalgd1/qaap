@@ -1201,3 +1201,48 @@ describe('MobileProjectsTranscriptSurfacesUi — app picker dismissed without a 
         expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-title')?.textContent).to.equal('Choose an app to preview');
     });
 });
+
+describe('MobileProjectsTranscriptSurfacesUi — execution host resolution with docked sidebar', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('prefers the connected docked sidebar preview host even when transcriptPreviewHost is unset or stale', () => {
+        const dockedHost = document.createElement('div');
+        dockedHost.className = 'theia-mobile-transcript-preview';
+        document.body.append(dockedHost);
+        const staleInlineHost = document.createElement('div');
+        const { host } = buildSyncHeaderPreviewHost({ activeTab: 'preview' });
+        host.agentsHubShellActive = true;
+        host.transcriptPreviewHost = undefined;
+        (host as unknown as { executionSurfaceSidebar?: { activeTab?: string; activeHost?: HTMLElement } }).executionSurfaceSidebar = {
+            activeTab: 'preview',
+            activeHost: dockedHost,
+        };
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+
+        expect(ui.executionPreviewHost()).to.equal(dockedHost);
+
+        host.transcriptPreviewHost = staleInlineHost;
+        expect(ui.executionPreviewHost()).to.equal(dockedHost);
+    });
+
+    it('prefers the connected docked sidebar terminal host when terminal sidebar is open', () => {
+        const dockedHost = document.createElement('div');
+        dockedHost.className = 'theia-mobile-transcript-terminal-host';
+        document.body.append(dockedHost);
+        const { host } = buildSyncHeaderPreviewHost({ activeTab: 'terminal' });
+        host.agentsHubShellActive = true;
+        host.transcriptTerminalHost = undefined;
+        (host as unknown as { executionSurfaceSidebar?: { activeTab?: string; activeHost?: HTMLElement } }).executionSurfaceSidebar = {
+            activeTab: 'terminal',
+            activeHost: dockedHost,
+        };
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+
+        expect(ui.executionTerminalHost()).to.equal(dockedHost);
+    });
+});

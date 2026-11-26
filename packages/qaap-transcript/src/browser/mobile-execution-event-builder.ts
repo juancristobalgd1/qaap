@@ -14,6 +14,7 @@ import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/com
 import { extractToolArgFilePath, formatReadToolDetailFromArgs } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, extractTranscriptTaskSummary } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptSubagentToolName } from '../common/qaap-transcript-activity-nesting';
+import { parseQaapTranscriptPreviewToolOperation } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import { isAgentToolResultFailure } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 import {
     isTranscriptWebSearchTool,
@@ -154,6 +155,15 @@ function describeMobileTool(segment: Extract<QaapAgentMessageSegmentDTO, { type:
     const name = segment.name.toLowerCase();
     const activityKind = classifyTranscriptToolActivityKind(segment.name);
 
+    const previewOp = parseQaapTranscriptPreviewToolOperation(segment.name);
+    if (previewOp) {
+        return {
+            kind: 'other',
+            icon: 'codicon-browser',
+            verb: nls.localize('qaap/transcript/previewToolVerb', 'Preview'),
+            narrative: nls.localize('qaap/transcript/previewToolNarrative', 'Running the app preview.'),
+        };
+    }
     if (isTranscriptWebSearchTool(segment.name)) {
         return {
             kind: 'explore',
@@ -206,6 +216,10 @@ function matchesName(name: string, tokens: string[]): boolean {
 }
 
 function extractToolDetail(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>, kind: MobileEventKind): string {
+    const previewOp = parseQaapTranscriptPreviewToolOperation(segment.name);
+    if (previewOp) {
+        return `preview_${previewOp}`;
+    }
     if (isTranscriptWebSearchTool(segment.name)) {
         return parseTranscriptWebSearchQuery(segment.args) || segment.name;
     }

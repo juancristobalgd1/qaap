@@ -28,7 +28,9 @@ import {
     transcriptPreviewProbeBackoffMs,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { isQaapAgentDrivenPreviewCached } from '@theia/qaap-shared-core/lib/browser/qaap-agent-preview-client';
 import { probeQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { findLatestReadyPreviewToolUrl } from './mobile-preview-tool-card';
 import {
     TRANSCRIPT_TOOL_USE_ID_ATTR,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
@@ -408,6 +410,14 @@ export async function refreshTranscriptPreviewOfferExtracted(ctx: MobileProjects
 }
 
 export async function resolveReadyTranscriptPreviewUrlExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): Promise<string | undefined> {
+        const fromTool = findLatestReadyPreviewToolUrl(conv);
+        if (fromTool) {
+            return normalizePreviewUrlForSameOrigin(fromTool.url);
+        }
+        if (isQaapAgentDrivenPreviewCached()) {
+            // Phase 3: no legacy default-port sweeps or prose URL scraping when agent-driven preview is active.
+            return undefined;
+        }
         const readyUrl = await resolveReadyTranscriptPreviewUrlFromProbe(
             conv,
             port => probeQaapDevPreviewPort(port),

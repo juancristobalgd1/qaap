@@ -22,7 +22,10 @@ import {
     buildQaapAgentMcpGuidance,
     buildQaapDelegationMcpConfig,
     buildQaapDelegationPiConfig,
+    withQaapDelegationOpencodeMcp,
 } from './qaap-agent-delegation-launch';
+import { buildQaapAcpDelegationMcpServers } from './harness/acp/qaap-acp-bridge-launch';
+import { isLongLivedDevServerShellCommand } from '../common/qaap-agent-dev-server-guard';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapCodexGateOverlayBuilder } from './qaap-codex-gate-overlay';
 import { QaapToolGateService, type QaapToolGateEvaluationEnv } from './qaap-tool-gate-service';
@@ -115,16 +118,36 @@ describe('agent preview tools wiring', () => {
             expect(runner(tokens).applyAgentDelegationEnv({}, task('claude', 'claude -p', { delegationRole: 'child' }))?.toolsets).to.deep.equal(['preview']);
         });
 
-        it('wires nothing with the flag off, for harnesses not yet verified, or without a token service', () => {
+        it('wires OpenCode and ACP flavors over MCP and falls back to the qaaq-preview CLI for harnesses without MCP', () => {
             const tokens = new QaapToolGateTokenService();
             expect(runner(tokens).applyAgentDelegationEnv({}, task('claude', 'claude -p'))).to.equal(undefined);
             expect(runner(tokens).agentPreviewToolsAvailable('claude')).to.equal(false);
             process.env.QAAP_AGENT_PREVIEW_TOOLS = '1';
-            const opencodeEnv: NodeJS.ProcessEnv = {};
             const instance = runner(tokens);
-            instance.applyToolGateEnv(opencodeEnv, task('opencode', 'opencode run'));
-            expect(instance.applyAgentDelegationEnv(opencodeEnv, task('opencode', 'opencode run'))).to.equal(undefined);
-            expect(instance.agentPreviewToolsAvailable('opencode')).to.equal(false);
+
+            // OpenCode gets MCP preview tools next to its gate token.
+            const opencodeEnv: NodeJS.ProcessEnv = {};
+            const opencode = task('opencode', 'opencode run');
+            instance.applyToolGateEnv(opencodeEnv, opencode);
+            const ocWiring = instance.applyAgentDelegationEnv(opencodeEnv, opencode)!;
+            expect(ocWiring.transport).to.equal('opencode-config');
+            expect(ocWiring.toolsets).to.deep.equal(['preview']);
+            expect(instance.agentPreviewToolsTransport('opencode')).to.equal('mcp');
+            const ocConfig = JSON.parse(withQaapDelegationOpencodeMcp(undefined, MCP, ocWiring, '/tmp/tok'));
+            expect(ocConfig.mcp[ocWiring.mcpServerName].environment.QAAP_AGENT_MCP_TOOLSETS).to.equal('preview');
+
+            // ACP flavors (when enabled) get MCP preview tools forwarded in their ACP server env.
+            const acpServers = JSON.parse(buildQaapAcpDelegationMcpServers(MCP, { ...ocWiring, toolsets: ['preview'] }, '/tmp/tok'));
+            expect(acpServers[0].env).to.deep.include({ name: 'QAAP_AGENT_MCP_TOOLSETS', value: 'preview' });
+
+            // Cursor (no MCP transport) uses the qaaq-preview CLI fallback with a preview-only token.
+            expect(instance.agentPreviewToolsTransport('cursor')).to.equal('cli');
+            expect(instance.agentPreviewToolsAvailable('cursor')).to.equal(true);
+            const cliWiring = instance.applyAgentPreviewCliEnv({}, task('cursor', 'cursor-agent'))!;
+            expect(cliWiring.url).to.equal('http://127.0.0.1:4873');
+            expect(tokens.authorize(cliWiring.token, 'preview').ok).to.equal(true);
+            expect(tokens.authorize(cliWiring.token, 'delegate').ok).to.equal(false);
+
             const bare = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
             expect(bare.agentPreviewToolsAvailable('claude')).to.equal(false);
         });
@@ -183,11 +206,14 @@ describe('agent preview tools wiring', () => {
     });
 
     describe('dev-server guard', () => {
-        it('turns the block into a redirect to preview_start', () => {
+        it('turns the block into a redirect to preview_start (MCP) or qaaq-preview start (CLI) and exempts qaaq-preview', () => {
             const message = buildDevServerShellDenyMessage({ previewTools: true, reservedPort: 5173 });
             expect(message).to.contain('preview_start');
             expect(message).to.not.contain('Qaap runs the dev server');
             expect(findQaiqDevServerGuardDenial({ toolName: 'Bash', toolInput: { command: 'npm run dev' } } as never, { previewTools: true })).to.contain('preview_start');
+            expect(buildDevServerShellDenyMessage({ previewTools: 'cli' })).to.contain('qaaq-preview start');
+            expect(isLongLivedDevServerShellCommand('qaaq-preview start')).to.equal(false);
+            expect(isLongLivedDevServerShellCommand('qaaq-preview start -- npm run dev')).to.equal(false);
             expect(buildDevServerShellDenyMessage({})).to.not.contain('preview_start');
         });
     });
@@ -195,13 +221,18 @@ describe('agent preview tools wiring', () => {
     describe('prompt', () => {
         const prompt = 'Get the app running please';
 
-        it('replaces the "Qaap runs the preview" and curl blocks with the preview tools block', () => {
+        it('replaces the "Qaap runs the preview" and curl blocks with the preview tools block (MCP and CLI variants)', () => {
             const withTools = appendAgentDefaultWorkflowToPrompt(prompt, 'pi', { previewTools: true, userQuery: prompt });
             expect(withTools).to.contain('[QAAP preview tools]');
             expect(withTools).to.not.contain('[QAAP dev preview]');
             expect(withTools).to.not.contain('[QAAP dev server verification]');
             expect(withTools).to.not.contain('You cannot start the preview server yourself');
             expect(withTools).to.not.contain('curl -s -o /dev/null');
+            const withCli = appendAgentDefaultWorkflowToPrompt(prompt, 'cursor', { previewTools: 'cli', userQuery: prompt });
+            expect(withCli).to.contain('[QAAP preview tools]');
+            expect(withCli).to.contain('qaaq-preview start');
+            expect(withCli).to.contain('qaaq-preview wait');
+            expect(withCli).to.not.contain('[QAAP dev preview]');
             const classic = appendAgentDefaultWorkflowToPrompt(prompt, 'pi', { userQuery: prompt });
             expect(classic).to.contain('[QAAP dev preview]');
             expect(classic).to.not.contain('[QAAP preview tools]');

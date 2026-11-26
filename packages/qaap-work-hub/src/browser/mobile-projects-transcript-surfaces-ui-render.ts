@@ -233,6 +233,13 @@ export function executionSurfaceHostExtracted(ctx: MobileProjectsTranscriptSurfa
 }
 
 export function executionPreviewHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): HTMLElement | undefined {
+    // The Browser drawer/right panel owns its host independently while open.
+    // Mount into it instead of returning undefined or a sibling inline host
+    // after a shell rebuild (mirrors executionFilesHostExtracted).
+    const sidebar = ctx.host.executionSurfaceSidebar;
+    if (sidebar?.activeTab === 'preview' && sidebar.activeHost?.isConnected) {
+        return sidebar.activeHost;
+    }
     return ctx.executionSurfaceHost(
         ctx.host.transcriptPreviewHost,
         ctx.host.projectDetailSurfaceTargets?.previewHost,
@@ -254,6 +261,10 @@ export function executionFilesHostExtracted(ctx: MobileProjectsTranscriptSurface
 }
 
 export function executionTerminalHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): HTMLElement | undefined {
+    const sidebar = ctx.host.executionSurfaceSidebar;
+    if (sidebar?.activeTab === 'terminal' && sidebar.activeHost?.isConnected) {
+        return sidebar.activeHost;
+    }
     return ctx.executionSurfaceHost(
         ctx.host.transcriptTerminalHost,
         ctx.host.projectDetailSurfaceTargets?.terminalHost,

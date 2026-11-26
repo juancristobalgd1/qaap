@@ -4581,6 +4581,73 @@ details.theia-mobile-turn-result-verdict[open] .theia-mobile-turn-result-verdict
   overflow-wrap: anywhere;
 }
 
+/* Compact preview tool-result card (Phase 3 agent-driven preview). */
+.theia-mobile-preview-tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.35)) 80%, transparent);
+  background: color-mix(in srgb, var(--theia-editor-background) 88%, var(--theia-foreground) 4%);
+  font-size: var(--q-text-meta);
+}
+
+.theia-mobile-preview-tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theia-mobile-preview-tool-card.theia-mod-ready .theia-mobile-preview-tool-card-icon {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-preview-tool-card.theia-mod-failed .theia-mobile-preview-tool-card-icon,
+.theia-mobile-preview-tool-card.theia-mod-exited .theia-mobile-preview-tool-card-icon {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-preview-tool-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--theia-foreground);
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-preview-tool-card-open {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 20%, transparent);
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: var(--q-text-meta);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.theia-mobile-preview-tool-card-logs-summary {
+  cursor: pointer;
+  color: var(--theia-descriptionForeground);
+  user-select: none;
+}
+
+.theia-mobile-preview-tool-card-logs-body {
+  margin: 6px 0 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--theia-editor-background) 95%, #000 5%);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* "Change model" on usage-limit and model-unavailable failures. */
 .theia-mobile-agent-turn-failure-change-model {
   align-self: flex-start;

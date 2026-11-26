@@ -20,6 +20,8 @@
 export const QAAP_PREVIEW_SERVICE_ENV = 'QAAP_PREVIEW_SERVICE';
 /** Backend switch for the agent preview tools (MCP toolset, prompt block, Tool Gate redirect). Off by default. */
 export const QAAP_AGENT_PREVIEW_TOOLS_ENV = 'QAAP_AGENT_PREVIEW_TOOLS';
+/** Switch for Phase 3 frontend agent-driven preview (disables regex kickoff/sweeps/auto-handoff, Run app uses backend service). */
+export const QAAP_PREVIEW_AGENT_DRIVEN_ENV = 'QAAP_PREVIEW_AGENT_DRIVEN';
 
 function isOn(value: string | undefined): boolean {
     const normalized = value?.trim().toLowerCase();
@@ -31,15 +33,44 @@ export function isQaapAgentPreviewToolsEnabled(env: Readonly<Record<string, stri
     return isOn(env[QAAP_AGENT_PREVIEW_TOOLS_ENV]);
 }
 
-/** True when the preview service runs: its own switch, or implied by the agent tools that need it. */
+/** True when the preview service runs: its own switch, or implied by the agent tools or frontend switch that need it. */
 export function isQaapPreviewServiceEnabled(env: Readonly<Record<string, string | undefined>>): boolean {
-    return isOn(env[QAAP_PREVIEW_SERVICE_ENV]) || isQaapAgentPreviewToolsEnabled(env);
+    return isOn(env[QAAP_PREVIEW_SERVICE_ENV])
+        || isQaapAgentPreviewToolsEnabled(env)
+        || isQaapPreviewAgentDrivenEnabled(env);
 }
+
+/** True when the frontend should switch over to agent-driven preview mode ({@link QAAP_PREVIEW_AGENT_DRIVEN_ENV}). */
+export function isQaapPreviewAgentDrivenEnabled(env: Readonly<Record<string, string | undefined>>): boolean {
+    return isOn(env[QAAP_PREVIEW_AGENT_DRIVEN_ENV]);
+}
+
+/** How agent preview tools reach a harness: MCP toolset (`mcp`), `qaaq-preview` CLI (`cli`), or disabled (`none`). */
+export type QaapAgentPreviewTransport = 'mcp' | 'cli' | 'none';
+
+/** Env vars for the `qaaq-preview` CLI fallback (token travels in a 0600 file, never directly in env). */
+export const QAAP_PREVIEW_URL_ENV = 'QAAP_PREVIEW_URL';
+export const QAAP_PREVIEW_TOKEN_FILE_ENV = 'QAAP_PREVIEW_TOKEN_FILE';
+/** Default wait for `qaaq-preview start`/`wait` so shell tools (~30s timeout) return exit 3 cleanly. */
+export const QAAP_PREVIEW_CLI_DEFAULT_TIMEOUT_SEC = 25;
+/** Exit codes of `qaaq-preview`: 0 ready/ok, 2 failed/exited/error, 3 still starting (run `qaaq-preview wait`). */
+export const QAAP_PREVIEW_CLI_EXIT_READY = 0;
+export const QAAP_PREVIEW_CLI_EXIT_FAILED = 2;
+export const QAAP_PREVIEW_CLI_EXIT_STARTING = 3;
 
 /** HTTP base path of the token-authenticated agent preview API (called by the MCP shim). */
 export const QAAP_AGENT_PREVIEW_API_PATH = '/qaap/api/agent-preview';
 /** HTTP base path of the user-authenticated preview API (Run app button, manual checks). */
 export const QAAP_USER_PREVIEW_API_PATH = '/qaap/api/preview';
+/** GET route under {@link QAAP_USER_PREVIEW_API_PATH} exposing server preview feature flags to the frontend. */
+export const QAAP_USER_PREVIEW_CONFIG_ROUTE = '/config';
+
+/** Feature-flag snapshot exposed by `GET /qaap/api/preview/config` to drive Phase 3 frontend switch-over. */
+export interface QaapPreviewConfigResponse {
+    readonly previewService: boolean;
+    readonly agentPreviewTools: boolean;
+    readonly agentDriven: boolean;
+}
 
 export type QaapAgentPreviewOperation = 'start' | 'status' | 'logs' | 'stop' | 'restart' | 'snapshot';
 
@@ -97,6 +128,18 @@ export function qaapAgentPreviewMcpOperation(toolName: string | undefined, serve
  */
 export function isQaapAgentPreviewToolCall(toolName: string | undefined, serverName: string | undefined): boolean {
     return qaapAgentPreviewMcpOperation(toolName, serverName) !== undefined;
+}
+
+const TRANSCRIPT_PREVIEW_TOOL_PATTERN = /^(?:mcp__qaaq_[0-9a-f]{16}__|qaaq_[0-9a-f]{16}_)?(preview_(?:start|status|logs|stop|restart|snapshot))$/;
+
+/**
+ * Recognizes a Qaap preview tool name as persisted in a transcript (where the per-turn nonce is not
+ * kept separately): `mcp__qaaq_<16hex>__preview_*`, `qaaq_<16hex>_preview_*`, or bare `preview_*`.
+ * Display/UI helper only — NEVER use for authorization (use {@link qaapAgentPreviewMcpOperation} with the task's exact server name).
+ */
+export function parseQaapTranscriptPreviewToolOperation(toolName: string | undefined): QaapAgentPreviewOperation | undefined {
+    const match = (toolName?.trim() ?? '').match(TRANSCRIPT_PREVIEW_TOOL_PATTERN);
+    return match ? QAAP_AGENT_PREVIEW_TOOLS[match[1]] : undefined;
 }
 
 // ---------------------------------------------------------------------------------------------

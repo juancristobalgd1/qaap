@@ -180,4 +180,19 @@ describe('QaapAgentPreviewEndpoint', () => {
         endpoint.envValues = {};
         expect((await endpoint.call('status', undefined, { cwd: '/work/alice/app' }, true)).status).to.equal(404);
     });
+
+    it('exposes backend preview feature flags from GET /qaap/api/preview/config for signed-in users', () => {
+        const { endpoint } = setup();
+        endpoint.envValues = { QAAP_AGENT_PREVIEW_TOOLS: '1', QAAP_PREVIEW_AGENT_DRIVEN: '1' };
+        let status = 200;
+        let payload: unknown;
+        const res = {
+            headersSent: false,
+            status(code: number): unknown { status = code; return this; },
+            json(data: unknown): void { payload = data; },
+        };
+        (endpoint as unknown as { handleConfig(req: unknown, res: unknown): void }).handleConfig({ header: () => undefined }, res);
+        expect(status).to.equal(200);
+        expect(payload).to.deep.equal({ previewService: true, agentPreviewTools: true, agentDriven: true });
+    });
 });

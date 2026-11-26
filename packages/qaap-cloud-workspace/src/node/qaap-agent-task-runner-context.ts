@@ -405,4 +405,11 @@ export interface QaapAgentTaskRunnerContext {
     ): QaapDelegationWiring | undefined;
     /** Whether turns of `agentId` get the agent preview tools (picks the preview prompt block). */
     agentPreviewToolsAvailable?(agentId: string): boolean;
+    /** Transport carrying agent preview tools (`mcp`, `cli`, or `none`). */
+    agentPreviewToolsTransport?(agentId: string): import('@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol').QaapAgentPreviewTransport;
+    /** Issues preview-only credentials for harnesses using the `qaaq-preview` CLI fallback. */
+    applyAgentPreviewCliEnv?(
+        env: NodeJS.ProcessEnv,
+        task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'delegationRole' | 'readOnlyWorkspace'>,
+    ): { readonly url: string; readonly token: string } | undefined;
 }

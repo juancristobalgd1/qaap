@@ -415,13 +415,15 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             return { command: runnerPrompt, agentId: id };
         }
         const gitAvailable = cwd ? isInsideGitCheckout(cwd) : true;
+        const previewTransport = ctx.agentPreviewToolsTransport?.(id)
+            ?? (ctx.agentPreviewToolsAvailable?.(id) ? 'mcp' : 'none');
         const workflowPrompt = appendAgentDefaultWorkflowToPrompt(
             runnerPrompt,
             id,
             {
                 gitAvailable,
                 userQuery,
-                ...(ctx.agentPreviewToolsAvailable?.(id) ? { previewTools: true } : {}),
+                ...(previewTransport !== 'none' ? { previewTools: previewTransport } : {}),
             },
         );
         // Inject important project context for every agent: cross-project context from the request

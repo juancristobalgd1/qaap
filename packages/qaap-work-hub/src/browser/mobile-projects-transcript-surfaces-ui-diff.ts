@@ -9,9 +9,11 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { reconcileAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import { isQaapAgentDrivenPreviewCached, startQaapUserPreview } from '@theia/qaap-shared-core/lib/browser/qaap-agent-preview-client';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { clearQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { sendQaapPreviewFailureToAgent } from './qaap-preview-failure-agent-handoff';
 import { isStalledPreviewAgentFallback, TRANSCRIPT_PREVIEW_AGENT_FALLBACK_TIMEOUT_MS } from './transcript-preview-liveness';
 
 export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
@@ -60,6 +62,73 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
         // open and records ANOTHER project's preview URL onto this one. Validate first and fail
         // loudly instead.
         const projectRoot = ctx.resolveRunnableTranscriptProjectRoot(project, summary);
+        if (projectRoot && isQaapAgentDrivenPreviewCached()) {
+            // Phase 3 (decisions D2 + D5): Run app calls POST /qaap/api/preview/start directly; on failure it
+            // offers an explicit user-pressed "Ask agent to fix" button and never starts an automatic turn.
+            ctx.beginTranscriptDevPreviewRequest(latestProject, summary);
+            if (options?.revealPreviewTab) {
+                revealPreviewTab();
+            }
+            ctx.updateTranscriptPreviewRunButtonState();
+            try {
+                const state = await startQaapUserPreview(projectRoot, { conversationId: summary.id });
+                if (launchGeneration !== ctx.previewLaunchGeneration || ctx.host.transcriptPreviewSuppressedByUser) {
+                    ctx.host.transcriptPreviewRequestRunning = false;
+                    ctx.host.transcriptPreviewRequestPending = false;
+                    refreshPreviewComposer();
+                    return;
+                }
+                if (state.status === 'ready' && state.url) {
+                    if (options?.revealPreviewTab) {
+                        revealPreviewTab();
+                    }
+                    ctx.adoptReadyTranscriptPreview(project, summary, state.url);
+                    refreshPreviewComposer();
+                    return;
+                }
+                if (state.status === 'starting') {
+                    ctx.host.transcriptPreviewRequestRunning = false;
+                    ctx.host.transcriptPreviewRequestPending = false;
+                    ctx.syncHeaderPreviewRunButton(project, summary);
+                    refreshPreviewComposer();
+                    MobileSnackbar.show(
+                        nls.localize('qaap/mobileProjects/previewStillStarting', 'Preview is still starting. Open the Preview tab or try again shortly.'),
+                        { duration: 5000 },
+                    );
+                    return;
+                }
+                ctx.host.transcriptPreviewRequestRunning = false;
+                ctx.host.transcriptPreviewRequestPending = false;
+                ctx.syncHeaderPreviewRunButton(project, summary);
+                refreshPreviewComposer();
+                const errorText = state.failure?.message
+                    ?? nls.localize('qaap/mobileProjects/previewDidNotStart', 'Preview did not start. Check the logs and retry.');
+                MobileSnackbar.show(errorText, {
+                    kind: 'warning',
+                    duration: 10_000,
+                    actionLabel: nls.localize('qaap/mobileProjects/previewAskAgentToFix', 'Ask agent to fix'),
+                    onAction: () => {
+                        void sendQaapPreviewFailureToAgent(summary, {
+                            phase: 'run-failed',
+                            failureKind: state.failure?.kind ?? 'unknown',
+                            error: errorText,
+                            previewLogTail: Array.isArray(state.logTail) ? state.logTail.join('\n') : undefined,
+                            devCommand: state.command,
+                            projectPath: projectRoot,
+                        }, { agentDriven: true });
+                    },
+                });
+            } catch (error) {
+                if (launchGeneration === ctx.previewLaunchGeneration) {
+                    ctx.host.transcriptPreviewRequestRunning = false;
+                    ctx.host.transcriptPreviewRequestPending = false;
+                    ctx.syncHeaderPreviewRunButton(project, summary);
+                    refreshPreviewComposer();
+                    MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
+                }
+            }
+            return;
+        }
         if (bootstrap && !projectRoot) {
             MobileSnackbar.show(
                 nls.localize(
