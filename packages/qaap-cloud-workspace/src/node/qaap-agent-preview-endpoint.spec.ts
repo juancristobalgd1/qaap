@@ -95,6 +95,30 @@ describe('QaapAgentPreviewEndpoint', () => {
         expect(endpoint.calls[0].body).to.deep.equal({ script: 'start' });
     });
 
+    it('lets an ownerless local task (desktop, no signed-in user) use its preview as the local login', async () => {
+        // Desktop QA, 26 Nov 2026: every preview call answered 403 "This task has no preview tools".
+        const tokens = new QaapToolGateTokenService();
+        const endpoint = new TestEndpoint(tokens);
+        endpoint.tasks.set('task-1', { cwd: '/work/app' });
+        endpoint.turns.set('task-1', { conversationId: 'conv-1', userMessageId: 'm1' });
+        endpoint.conversations.set('conv-1', { cwd: '/work/app' });
+        const token = tokens.issueAgentMcp('task-1', undefined, '/work/app', ['preview'])!.token;
+        const result = await endpoint.call('start', token, { script: 'start' });
+        expect(result.status).to.equal(200);
+        expect(endpoint.calls[0].caller).to.deep.include({ ownerLogin: '_dev', conversationId: 'conv-1', canControl: true });
+    });
+
+    it('a hosted tenant backend still refuses an ownerless preview token', async () => {
+        const tokens = new QaapToolGateTokenService();
+        const endpoint = new TestEndpoint(tokens);
+        endpoint.envValues = { ...endpoint.envValues, QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_LOGIN: 'alice' };
+        endpoint.tasks.set('task-1', { cwd: '/work/app' });
+        endpoint.turns.set('task-1', { conversationId: 'conv-1', userMessageId: 'm1' });
+        endpoint.conversations.set('conv-1', { cwd: '/work/app' });
+        const token = tokens.issueAgentMcp('task-1', undefined, '/work/app', ['preview'])!.token;
+        expect((await endpoint.call('start', token, { script: 'start' })).status).to.equal(403);
+    });
+
     it('answers 404 while the agent tools are off', async () => {
         const { endpoint, token } = setup();
         endpoint.envValues = {};

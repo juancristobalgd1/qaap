@@ -32,6 +32,7 @@ import { QAAP_AGENT_DELEGATION_TOKEN_HEADER } from '../common/qaap-agent-delegat
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentPreviewService, type QaapAgentPreviewCaller } from './qaap-agent-preview-service';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
+import { canonicalQaapTenantLogin } from './qaap-tenant-runtime-store';
 
 const BODY_LIMIT = '64kb';
 
@@ -141,7 +142,10 @@ export class QaapAgentPreviewEndpoint implements BackendApplicationContribution 
                 ? new QaapAgentPreviewError('unauthorized', 'Invalid or expired preview token.')
                 : new QaapAgentPreviewError('forbidden', result.reason === 'scope' ? 'This task has no preview tools.' : 'The preview token belongs to another tenant.');
         }
-        if (result.grant.oneShot || !result.grant.owner) {
+        // A local runtime (desktop, `start:browser`) has no signed-in user: its tasks carry no owner and its
+        // previews are claimed as the local login (`_dev`). A hosted tenant backend always needs the owner.
+        const owner = result.grant.owner || (ownerCheck ? undefined : canonicalQaapTenantLogin(''));
+        if (result.grant.oneShot || !owner) {
             throw new QaapAgentPreviewError('forbidden', 'This task has no preview tools.');
         }
         const turn = this.store.taskToConversation.get(result.grant.taskId);
@@ -154,7 +158,7 @@ export class QaapAgentPreviewEndpoint implements BackendApplicationContribution 
         const child = task.delegationRole === 'child' || !!parentId;
         const readOnly = task.readOnlyWorkspace === true;
         const caller: QaapAgentPreviewCaller = {
-            ownerLogin: result.grant.owner,
+            ownerLogin: owner,
             // A delegated child addresses its parent's preview (D3).
             conversationId: child && parentId ? parentId : turn.conversationId,
             cwd: child && parentId ? (this.store.get(parentId)?.cwd ?? task.cwd) : task.cwd,
