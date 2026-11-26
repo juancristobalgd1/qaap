@@ -97,6 +97,10 @@ export class QaapAgentPreviewEndpoint implements BackendApplicationContribution 
         }
         try {
             const { caller, body } = authenticate();
+            if (!caller.ownerLogin) {
+                this.fail(res, 'forbidden', 'This request has no owner.');
+                return;
+            }
             const parsed = PARSERS[operation](body);
             if (!parsed.ok) {
                 this.fail(res, 'invalid-request', parsed.error);
