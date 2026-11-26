@@ -36,6 +36,7 @@ import {
     QAAP_AGENT_DELEGATION_URL_ENV,
     QAAP_AGENT_DELEGATION_WAIT_MAX_SEC,
 } from '../common/qaap-agent-delegation-protocol';
+import { QAAP_AGENT_MCP_TOOLSETS_ENV, type QaapAgentMcpToolset } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -74,6 +75,28 @@ export const QAAP_AGENT_DELEGATION_GUIDANCE = [
     'resume, call qaaq_task_status first to see the tasks you already delegated instead of delegating them again.',
 ].join(' ');
 
+/**
+ * Model-facing guidance for the `preview` toolset, appended next to (or instead of) the delegation guidance when the
+ * turn gets the preview tools. The full contract is the `[QAAP preview tools]` workflow block; this is the short form
+ * that rides on the system prompt with the tools themselves. Not a user-facing string, so it is not localized.
+ */
+export const QAAP_AGENT_PREVIEW_GUIDANCE = [
+    'You run this project\'s app with the qaaq preview tools (preview_start, preview_status, preview_logs, preview_restart,',
+    'preview_stop, preview_snapshot). Qaap supervises the process, so it keeps running after your turn.',
+    'When the user wants the app running, started, previewed or checked, in any wording or language, call preview_start;',
+    'never start a dev server from the shell. Only status "ready" means the app is up: on "failed" or "exited" read failure',
+    'and logTail, fix the cause in the project and call preview_start again. Before saying the app works, check the page',
+    'with preview_snapshot. Never cite localhost or a port to the user: the app is live in the Preview tab.',
+].join(' ');
+
+/** The system-prompt guidance for the toolsets a turn gets. */
+export function buildQaapAgentMcpGuidance(toolsets: readonly QaapAgentMcpToolset[] = ['delegate']): string {
+    return [
+        ...(toolsets.includes('delegate') ? [QAAP_AGENT_DELEGATION_GUIDANCE] : []),
+        ...(toolsets.includes('preview') ? [QAAP_AGENT_PREVIEW_GUIDANCE] : []),
+    ].join('\n\n');
+}
+
 /** Where the shim lives on this server. */
 export function resolveQaapDelegateMcpPath(): string {
     return resolveQaapCloudWorkspaceResource(QAAP_DELEGATE_MCP_FILE);
@@ -93,11 +116,14 @@ export interface QaapDelegationWiring {
     readonly mcpServerName: string;
     readonly url: string;
     readonly token: string;
+    /** Toolsets the shim lists (its {@link QAAP_AGENT_MCP_TOOLSETS_ENV}); absent means `delegate` only. */
+    readonly toolsets?: readonly QaapAgentMcpToolset[];
 }
 
 /** The shim's environment: the credentials (or, with `tokenFile`, only the path of the token file), and node mode for an Electron binary. */
-function shimEnvironment(options: QaapDelegationMcpConfigOptions, wiring: Pick<QaapDelegationWiring, 'url' | 'token'>, tokenFile?: string): Record<string, string> {
+function shimEnvironment(options: QaapDelegationMcpConfigOptions, wiring: Pick<QaapDelegationWiring, 'url' | 'token' | 'toolsets'>, tokenFile?: string): Record<string, string> {
     return {
+        ...(wiring.toolsets ? { [QAAP_AGENT_MCP_TOOLSETS_ENV]: wiring.toolsets.join(',') } : {}),
         [QAAP_AGENT_DELEGATION_URL_ENV]: wiring.url,
         ...(tokenFile ? { [QAAP_AGENT_DELEGATION_TOKEN_FILE_ENV]: tokenFile } : { [QAAP_AGENT_DELEGATION_TOKEN_ENV]: wiring.token }),
         ...(options.electronRunAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
@@ -105,7 +131,7 @@ function shimEnvironment(options: QaapDelegationMcpConfigOptions, wiring: Pick<Q
 }
 
 /** Claude's `--mcp-config` content. Holds the token: write it only with {@link writeQaapDelegationMcpConfigFile}. */
-export function buildQaapDelegationMcpConfig(options: QaapDelegationMcpConfigOptions, wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>): string {
+export function buildQaapDelegationMcpConfig(options: QaapDelegationMcpConfigOptions, wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>): string {
     return JSON.stringify({
         mcpServers: {
             [wiring.mcpServerName]: { type: 'stdio', command: options.nodeBin, args: [options.shimPath], env: shimEnvironment(options, wiring) },
@@ -118,7 +144,7 @@ export function buildQaapDelegationMcpConfig(options: QaapDelegationMcpConfigOpt
  * `exposure: 'direct'` declares the tools to the model like built-ins; `timeout` (seconds) outlasts the longest
  * wait. Holds the token: write it only with {@link writeQaapDelegationMcpConfigFile}.
  */
-export function buildQaapDelegationPiConfig(options: QaapDelegationMcpConfigOptions, wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>): string {
+export function buildQaapDelegationPiConfig(options: QaapDelegationMcpConfigOptions, wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>): string {
     return JSON.stringify({
         serverName: wiring.mcpServerName,
         config: {
@@ -366,7 +392,7 @@ export function writeQaapDelegationTokenFile(taskId: string, token: string, owne
 export function withQaapDelegationOpencodeMcp(
     inherited: string | undefined,
     options: QaapDelegationMcpConfigOptions,
-    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
     tokenFile: string,
 ): string {
     let config: Record<string, unknown> = {};
@@ -402,7 +428,7 @@ export function withQaapDelegationOpencodeMcp(
 export function applyQaapOpencodeDelegation(
     env: NodeJS.ProcessEnv,
     taskId: string,
-    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
     owner: AgentPromptOwner | undefined,
     writeTokenFile: typeof writeQaapDelegationTokenFile = writeQaapDelegationTokenFile,
     placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
@@ -466,7 +492,7 @@ export function applyQaapPiDelegation(
     env: NodeJS.ProcessEnv,
     command: string,
     taskId: string,
-    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token' | 'toolsets'>,
     owner: AgentPromptOwner | undefined,
     quote: (value: string) => string,
     writeConfigFile: typeof writeQaapDelegationMcpConfigFile = writeQaapDelegationMcpConfigFile,
@@ -476,7 +502,7 @@ export function applyQaapPiDelegation(
         const extension = stagePiExtension(taskId, owner, placement);
         const file = writeConfigFile(taskId, buildQaapDelegationPiConfig(placement.options, wiring), owner, 'pi-delegation.json', placement.baseDir);
         env[QAAP_AGENT_DELEGATION_PI_CONFIG_ENV] = file;
-        return `${command.trimEnd()} -e builtin:mcp -e ${quote(extension)} --append-system-prompt ${quote(QAAP_AGENT_DELEGATION_GUIDANCE)}`;
+        return `${command.trimEnd()} -e builtin:mcp -e ${quote(extension)} --append-system-prompt ${quote(buildQaapAgentMcpGuidance(wiring.toolsets))}`;
     } catch (error) {
         releaseQaapDelegationMcpConfigFile(taskId);
         console.warn(`[qaap-delegation] could not write the Pi delegation config file; the turn runs without delegation (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);

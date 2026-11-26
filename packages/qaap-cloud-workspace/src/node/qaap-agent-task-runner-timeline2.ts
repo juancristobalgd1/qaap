@@ -32,7 +32,7 @@ import {
     applyQaapPiDelegation,
     buildQaapDelegationMcpConfig,
     currentQaapDelegationMcpConfigOptions,
-    QAAP_AGENT_DELEGATION_GUIDANCE,
+    buildQaapAgentMcpGuidance,
     releaseQaapDelegationMcpConfigFile,
     resolveQaapDelegationPlacement,
     writeQaapDelegationMcpConfigFile,
@@ -676,7 +676,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 if (delegation?.transport === 'claude-mcp-config' && delegationPlacement) {
                     // The config (with the token) goes to a private 0600 file; only its path is on the command line.
                     const file = writeQaapDelegationMcpConfigFile(task.id, buildQaapDelegationMcpConfig(delegationPlacement.options, delegation), owner, 'mcp.json', delegationPlacement.baseDir);
-                    spawnCommand = appendQaapDelegationLaunchArgs(spawnCommand, file, quoteShellArg);
+                    spawnCommand = appendQaapDelegationLaunchArgs(spawnCommand, file, quoteShellArg, buildQaapAgentMcpGuidance(delegation.toolsets));
                 } else if (delegation?.transport === 'opencode-config' && delegationPlacement) {
                     if (opencodeGatePluginSeeded(childEnv)) {
                         // Only next to the armed gate plugin: without it OpenCode's own rules refuse the tools anyway.
@@ -735,7 +735,14 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     // Seatbelt cannot nest: under the desktop task sandbox Codex's own sandbox-exec would fail every shell call.
                     ownSandboxOff: ctx.runsInTaskSandbox?.() === true || QaapDesktopTaskSandbox.shared.appliesTo(task.cwd),
                     ...(delegation?.transport === 'codex-config'
-                        ? { delegationMcp: { ...(delegationPlacement?.options ?? currentQaapDelegationMcpConfigOptions()), serverName: delegation.mcpServerName, instructions: QAAP_AGENT_DELEGATION_GUIDANCE } }
+                        ? {
+                            delegationMcp: {
+                                ...(delegationPlacement?.options ?? currentQaapDelegationMcpConfigOptions()),
+                                serverName: delegation.mcpServerName,
+                                instructions: buildQaapAgentMcpGuidance(delegation.toolsets),
+                                ...(delegation.toolsets ? { toolsets: delegation.toolsets } : {}),
+                            },
+                        }
                         : {}),
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
@@ -925,6 +932,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         autoApprove: task.autoApprove,
                         request: event.request,
                         cwd: task.cwd,
+                        ...(delegation?.toolsets?.includes('preview') ? { previewTools: true } : {}),
                         options: {
                             autoApproveReadOnlyShell: readAutoApproveReadOnlyShell(),
                             allowSubagentTools: harnessAdapter.spawnQuirks.allowsSubagentTools,
@@ -983,7 +991,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         if (devServerDenial && reservedPort !== undefined) {
                             // The denial states the live preview's measured health, so it is answered once the probe settles.
                             void probeReservedDevPreviewStatus(reservedPort).then(previewStatus => {
-                                writeControlResponse(findQaiqDevServerGuardDenial(event.request, { reservedPort, previewStatus }) ?? devServerDenial);
+                                writeControlResponse(findQaiqDevServerGuardDenial(event.request, {
+                                    reservedPort, previewStatus, ...(delegation?.toolsets?.includes('preview') ? { previewTools: true } : {}),
+                                }) ?? devServerDenial);
                             });
                             continue;
                         }

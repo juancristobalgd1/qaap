@@ -10,6 +10,7 @@ import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHead
 import { commandUsesDefaultToolSet, parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 import { isQaapDelegationToolAutoAllowed } from './qaap-agent-delegation-protocol';
+import { isQaapAgentPreviewToolCall } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 
 const VERIFICATION_SUBAGENT_TYPE = 'verification';
 
@@ -123,7 +124,8 @@ export function resolveQaiqControlRequestAutoDecision(
     if (findQaiqDevServerGuardDenial(request)) {
         return { action: 'deny' };
     }
-    if (isQaapDelegationToolAutoAllowed(request.toolName, options.delegationServer, autoApprove)) {
+    if (isQaapDelegationToolAutoAllowed(request.toolName, options.delegationServer, autoApprove)
+        || isQaapAgentPreviewToolCall(request.toolName, options.delegationServer)) {
         return { action: 'allow' };
     }
     const readOnly = classifyReadOnlyShellRequest(command, request, options);

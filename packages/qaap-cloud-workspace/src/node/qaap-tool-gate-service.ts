@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { isQaapDelegationToolAutoAllowed } from '../common/qaap-agent-delegation-protocol';
+import { isQaapAgentPreviewToolCall } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -42,6 +43,8 @@ export interface QaapQaiqToolGateInput {
     readonly options: QaapQaiqControlAutoOptions;
     /** Lazy: only consulted when the request is answered without queueing, like the legacy inline code. */
     readonly reservedPort?: () => number | undefined;
+    /** The turn has the agent preview tools: a dev-server denial redirects to `preview_start`. */
+    readonly previewTools?: boolean;
     /**
      * The task's isolated git worktree, when it runs in one: write/edit tools may not target a path outside
      * it, and a shell command naming such a path is denied (auto-approve) or queued for the user.
@@ -89,6 +92,8 @@ export interface QaapToolGateEvaluationEnv {
      * read-only or one-shot task: they only start, wait for or stop child turns, gated under the same policy.
      */
     readonly delegationServer?: string;
+    /** The task's MCP token holds the `preview` scope: dev-server denials redirect to `preview_start`. */
+    readonly previewTools?: boolean;
     /** One-shot grants: only read tools and read-only shell commands pass; every other tool kind is denied. */
     readonly strictReadOnly?: boolean;
     /** PreToolUse hooks for this task's workspace; absent for one-shot grants. */
@@ -136,7 +141,7 @@ export class QaapToolGateService {
         let reservedPort: number | undefined;
         if (action !== 'queue') {
             reservedPort = input.reservedPort?.();
-            devServerDenial = findQaiqDevServerGuardDenial(request, { reservedPort });
+            devServerDenial = findQaiqDevServerGuardDenial(request, { reservedPort, ...(input.previewTools ? { previewTools: true } : {}) });
             destructiveDenial = findQaiqDestructiveCommandGuardDenial(request, cwd);
             denyMessage = devServerDenial
                 ?? destructiveDenial
@@ -263,7 +268,7 @@ export class QaapToolGateService {
             if (destructive) {
                 return { kind: 'deny', source: 'destructive-guard', reason: destructive };
             }
-            const devServer = findQaiqDevServerGuardDenial(guarded);
+            const devServer = findQaiqDevServerGuardDenial(guarded, env.previewTools ? { previewTools: true } : {});
             return devServer ? { kind: 'deny', source: 'dev-server-guard', reason: devServer } : undefined;
         };
         const firstDenial = denialFor(req.input);
@@ -309,6 +314,11 @@ export class QaapToolGateService {
         // A request-approval run shows a shell command that leaves the worktree to the user, even past a hook allow.
         forceAsk = forceAsk || shellEscapeNeedsAsk;
         if (!forceAsk && !env.strictReadOnly && !env.readOnlyWorkspace && isQaapDelegationToolAutoAllowed(req.rawToolName, env.delegationServer, env.autoApprove)) {
+            return { kind: 'allow', source: 'policy', ...(updatedInput ? { updatedInput } : {}) };
+        }
+        // Preview tools of the task's own server never need approval (decision D1), read-only turns included: the
+        // backend lets those only read the preview (D7) and answers process changes with a clear refusal.
+        if (!forceAsk && isQaapAgentPreviewToolCall(req.rawToolName, env.delegationServer)) {
             return { kind: 'allow', source: 'policy', ...(updatedInput ? { updatedInput } : {}) };
         }
         const request = requestFor(input);

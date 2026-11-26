@@ -62,7 +62,16 @@ export interface DevServerShellDenyOptions {
     readonly reservedPort?: number;
     /** Real state of the reserved port, measured by the backend just before the denial (see `probeReservedDevPreviewStatus`). */
     readonly previewStatus?: DevServerPreviewStatus;
+    /** The turn has the agent preview tools: the denial redirects to `preview_start` instead of "Qaap runs it". */
+    readonly previewTools?: boolean;
 }
+
+/** Deny guidance when the turn has the agent preview tools: the block becomes a redirect. */
+export const QAAP_DEV_SERVER_PREVIEW_TOOL_REDIRECT =
+    'Blocked by Qaap: do not start dev servers from shell tools — the process dies with the shell and is not visible in the Preview. '
+    + 'Call the preview_start tool instead (no arguments to use the detected command, or script / argv): Qaap starts the app supervised, '
+    + 'keeps it running after your turn, waits until it answers HTTP and returns "ready" or the failure with its log. '
+    + 'If preview_start fails, fix the cause in the project and call it again. Use the shell only for one-shot commands (install, build, typecheck, test).';
 
 /** Health of the reserved preview port as measured by the backend. */
 export interface DevServerPreviewStatus {
@@ -74,6 +83,9 @@ export interface DevServerPreviewStatus {
 
 /** Deny guidance sent back to the agent so it self-corrects instead of retrying. */
 export function buildDevServerShellDenyMessage(options: DevServerShellDenyOptions = {}): string {
+    if (options.previewTools) {
+        return QAAP_DEV_SERVER_PREVIEW_TOOL_REDIRECT;
+    }
     const reservedPort = options.reservedPort;
     const previewStatus = options.previewStatus;
     const head = 'Blocked by Qaap: do not start dev servers from shell tools — they time out after ~30s and kill the live preview. ';

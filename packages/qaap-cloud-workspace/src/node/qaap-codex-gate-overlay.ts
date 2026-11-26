@@ -11,6 +11,7 @@ import * as path from 'path';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { quoteShellArg } from './qaap-agent-task-runner-utils';
 import { QAAP_AGENT_DELEGATION_ENV_PREFIX, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
+import { QAAP_AGENT_MCP_TOOLSETS_ENV } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resource';
 import { nls } from '@theia/core/lib/common/nls';
 
@@ -84,6 +85,8 @@ export interface QaapCodexDelegationMcp {
     readonly shimPath: string;
     readonly electronRunAsNode: boolean;
     readonly instructions: string;
+    /** Toolsets the shim lists (`QAAP_AGENT_MCP_TOOLSETS`, not a secret, so it is written to the overlay); absent: delegate. */
+    readonly toolsets?: readonly string[];
 }
 
 /** Owner `[mcp_servers.qaaq*]` tables are dropped when delegation is injected: none may pose as Qaap's server. */
@@ -385,13 +388,22 @@ export class QaapCodexGateOverlayBuilder {
                 `args = [${JSON.stringify(mcp.shimPath)}]`,
                 // Forwarded from Codex's own env by name: the secret never lands in this file.
                 `env_vars = [${JSON.stringify(QAAP_AGENT_DELEGATION_URL_ENV)}, ${JSON.stringify(QAAP_AGENT_DELEGATION_TOKEN_ENV)}]`,
-                ...(mcp.electronRunAsNode ? ['env = { ELECTRON_RUN_AS_NODE = "1" }'] : []),
+                ...QaapCodexGateOverlayBuilder.shimEnvTable(mcp),
                 'startup_timeout_sec = 20',
                 `tool_timeout_sec = ${QAAP_CODEX_DELEGATION_TOOL_TIMEOUT_SEC}`,
                 '',
             );
         }
         return lines.join('\n');
+    }
+
+    /** The `env` table of the Qaap MCP server: toolsets and node mode, both non-secret (the token comes via `env_vars`). */
+    static shimEnvTable(mcp: Pick<QaapCodexDelegationMcp, 'electronRunAsNode' | 'toolsets'>): string[] {
+        const entries = [
+            ...(mcp.toolsets ? [`${QAAP_AGENT_MCP_TOOLSETS_ENV} = ${JSON.stringify(mcp.toolsets.join(','))}`] : []),
+            ...(mcp.electronRunAsNode ? ['ELECTRON_RUN_AS_NODE = "1"'] : []),
+        ];
+        return entries.length ? [`env = { ${entries.join(', ')} }`] : [];
     }
 
     /**
