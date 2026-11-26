@@ -271,7 +271,7 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTrans
                 }
                 placePreviewRootWhenConnected(host, root);
             }
-            if (current !== normalized) {
+            if (current !== normalized && !ctx.isTranscriptPreviewFrameActive()) {
                 chrome.setUrl(normalized);
             }
             ctx.wireTranscriptPreviewAnnotationScope(project, normalized);
@@ -280,20 +280,11 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTrans
             return;
         }
 
-        // Swapping in the project preview while the user types in the empty chrome's URL field
-        // would replace the input under their cursor; mount once they leave the field instead.
-        const typingInput = ctx.isTranscriptPreviewUrlFieldActive()
-            ? ctx.host.transcriptEmbeddedPreview?.root.querySelector<HTMLInputElement>('.theia-mini-browser-url-field input')
-            : undefined;
-        if (typingInput && host.contains(typingInput)) {
-            typingInput.addEventListener('blur', () => {
-                window.setTimeout(() => {
-                    if (host.isConnected && ctx.transcriptPreviewProjectId === project.id
-                        && !ctx.embeddedPreviewByConversationScopeId.has(conversationScopeId)) {
-                        ctx.mountTranscriptEmbeddedPreview(host, previewUrl, project, summary);
-                    }
-                });
-            }, { once: true });
+        // Never destroy or overwrite the empty chrome while the user is typing or holds an
+        // uncommitted URL draft — even if focus momentarily leaves the input (history popover,
+        // window switch). Mounting a fresh chrome on blur used to wipe their typed URL.
+        const liveEmptyRoot = ctx.host.transcriptEmbeddedPreview?.root;
+        if (liveEmptyRoot?.isConnected && host.contains(liveEmptyRoot) && ctx.isTranscriptPreviewUrlFieldActive()) {
             return;
         }
 

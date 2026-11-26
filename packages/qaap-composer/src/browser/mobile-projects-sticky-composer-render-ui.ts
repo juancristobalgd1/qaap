@@ -373,6 +373,21 @@ export class MobileProjectsStickyComposerRenderUi {
             return;
         }
         const activeElementBeforeRender = document.activeElement;
+        const activeComposerTextarea = activeElementBeforeRender instanceof HTMLTextAreaElement
+            && activeElementBeforeRender.classList.contains('theia-mobile-projects-sticky-composer-input')
+            && this.host.stickyComposerHost.contains(activeElementBeforeRender)
+            ? activeElementBeforeRender
+            : undefined;
+        const preservedTypingState = activeComposerTextarea
+            ? {
+                value: activeComposerTextarea.value,
+                selectionStart: activeComposerTextarea.selectionStart,
+                selectionEnd: activeComposerTextarea.selectionEnd,
+            }
+            : undefined;
+        if (preservedTypingState && project) {
+            this.writeStickyComposerDraft(project, preservedTypingState.value);
+        }
         const focusEligibleBeforeMount = !activeElementBeforeRender
             || activeElementBeforeRender === document.body
             || (activeElementBeforeRender instanceof HTMLElement && activeElementBeforeRender.classList.contains('theia-mod-loading'));
@@ -563,6 +578,18 @@ export class MobileProjectsStickyComposerRenderUi {
                 : nls.localize('qaap/mobileProjects/taskCreate', 'Create'),
         });
         this.host.stickyComposerHost.append(column);
+        if (preservedTypingState && showComposer) {
+            const nextTextarea = column.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
+            if (nextTextarea && !nextTextarea.disabled) {
+                if (nextTextarea.value !== preservedTypingState.value) {
+                    nextTextarea.value = preservedTypingState.value;
+                }
+                nextTextarea.focus();
+                try {
+                    nextTextarea.setSelectionRange(preservedTypingState.selectionStart, preservedTypingState.selectionEnd);
+                } catch { /* ignore unsupported selection */ }
+            }
+        }
         this.host.updateWorkingPillChrome();
         const becameMounted = showComposer && !this.reposComposerMounted;
         this.reposComposerMounted = showComposer;

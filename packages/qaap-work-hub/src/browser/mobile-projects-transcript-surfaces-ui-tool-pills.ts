@@ -169,8 +169,23 @@ export function resetTranscriptPreviewToEmptyExtracted(ctx: MobileProjectsTransc
     summary: QaapAgentConversationSummaryDTO): boolean {
     const live = ctx.host.transcriptEmbeddedPreview?.root;
     const liveInHost = !!live?.isConnected && host.contains(live);
-    if (liveInHost && (ctx.isTranscriptPreviewUrlFieldActive() || live.classList.contains(USER_NAVIGATED_PREVIEW_CLASS))) {
+    if (liveInHost && (
+        ctx.isTranscriptPreviewUrlFieldActive()
+        || ctx.isTranscriptPreviewFrameActive()
+        || live.classList.contains(USER_NAVIGATED_PREVIEW_CLASS)
+    )) {
         return false;
+    }
+    // Never destroy and recreate an already-mounted empty-preview toolbar on background probe
+    // ticks: update its status overlay and run affordances in place so the URL input stays stable.
+    if (liveInHost && live.classList.contains('theia-mod-empty-preview')) {
+        ctx.syncHeaderPreviewRunButton(project, summary);
+        if (ctx.host.projectsService) {
+            ctx.annotateEmptyPreviewWhenNotRunnable(project, summary);
+            renderEmptyPreviewRunHintExtracted(ctx, project, summary);
+        }
+        ctx.updateTranscriptPreviewLaunchStatus();
+        return true;
     }
     ctx.disposeTranscriptEmbeddedPreview();
     host.replaceChildren();
@@ -210,13 +225,15 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: MobileProjectsTranscri
     if (ctx.isTranscriptPreviewUrlFieldActive()) {
         return;
     }
-    const removeEmptyState = (url: string): void => {
+    const removeEmptyState = (url: string, meta?: { readonly source: 'user' | 'programmatic' }): void => {
         const root = ctx.host.transcriptEmbeddedPreview?.root;
         if (!root || !url || url === 'about:blank') {
             return;
         }
         root.classList.remove('theia-mod-empty-preview');
-        root.classList.add(USER_NAVIGATED_PREVIEW_CLASS);
+        if (meta?.source !== 'programmatic') {
+            root.classList.add(USER_NAVIGATED_PREVIEW_CLASS);
+        }
         root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
     };
     ctx.host.transcriptEmbeddedPreview = mountEmbeddedAgentPreviewChrome(host, {
