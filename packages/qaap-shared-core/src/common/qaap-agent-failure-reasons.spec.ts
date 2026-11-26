@@ -301,6 +301,25 @@ describe('agent failure reasons (real logs)', () => {
             });
         });
 
+        it('Claude Code plan limits: weekly / 5-hour limit read as a usage limit with their reset time', () => {
+            // Desktop QA, 26 Nov 2026: stored as "The agent stopped unexpectedly" before these patterns.
+            const weekly = 'You\'ve hit your weekly limit · resets 6am (Europe/Madrid) · out of usage credits';
+            expect(isAgentUsageLimitText(weekly)).to.equal(true);
+            expect(detectAgentFailureKind(weekly)).to.equal('quota');
+            expect(extractAgentUsageLimitResetText(weekly)).to.equal('6am (Europe/Madrid)');
+            expect(describeAgentTurnFailure(weekly, { agentLabel: 'Claude Code' })).to.deep.include({
+                kind: 'usage_limit',
+                label: 'Claude Code usage limit reached — resets 6am (Europe/Madrid)',
+            });
+            expect(describeAgentTurnFailure('5-hour limit reached ∙ resets 3pm')?.label).to.equal('Usage limit reached — resets 3pm');
+            expect(describeAgentTurnFailure('Error: You\'ve hit your limit · resets 5pm')?.kind).to.equal('usage_limit');
+        });
+
+        it('prose about limits is not a usage limit', () => {
+            expect(isAgentUsageLimitText('This endpoint has a size limit of 5MB.')).to.equal(false);
+            expect(isAgentUsageLimitText('The cache resets every hour.')).to.equal(false);
+        });
+
         it('usage limit without a reset time or agent name still reads as a usage limit', () => {
             expect(extractAgentUsageLimitResetText('Free usage limit reached. Subscribe to keep going')).to.equal(undefined);
             expect(describeAgentTurnFailure('Free usage limit reached. Subscribe to keep going')?.label).to.equal('Usage limit reached');

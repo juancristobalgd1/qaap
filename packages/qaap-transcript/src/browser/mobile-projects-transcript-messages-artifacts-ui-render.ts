@@ -43,6 +43,7 @@ import {
 import {
     didExecutionToolSegmentsChange as didExecutionToolSegmentsChangeHelper,
     collectMobileClosingNarrativeTextsBefore as collectMobileClosingNarrativeTextsBeforeHelper,
+    isAgentMessageFailed,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
@@ -231,13 +232,13 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: MobileProjectsT
         const eventTimeline = createMobileExecutionEventTimeline(segments);
         // Wrap the timeline in a process accordion (Codex-style "Processed in").
         const { isWorking, elapsedMs, turnStartMs } = resolveAgentMessageTiming(conv, message ?? ctx.resolveLastAgentMessage(conv));
-        const isError = ctx.isConversationError(conv);
-        // Cancellation must be derived from THIS message, not merely the
-        // conversation's last agent message -- each agent message renders its
-        // own accordion, and in a multi-turn conversation a historical
-        // (already-settled) turn's accordion would otherwise be mislabeled
-        // whenever a later turn happened to end up cancelled.
+        // Failure and cancellation are derived from THIS message, not the whole
+        // conversation -- each agent message renders its own accordion, and in a
+        // multi-turn conversation an earlier failed turn (or a later cancelled one)
+        // must not relabel a successful turn "Failed after …" / "Stopped after …".
+        // Same rule as the streaming sync (syncRowProcessAccordion).
         const effectiveMessage = message ?? ctx.resolveLastAgentMessage(conv);
+        const isError = !!error || isAgentMessageFailed(conv, effectiveMessage);
         const isCancelled = ctx.isAgentMessageCancelled(effectiveMessage);
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
         const provenance = ctx.resolveTurnProvenance(conv, effectiveMessage);

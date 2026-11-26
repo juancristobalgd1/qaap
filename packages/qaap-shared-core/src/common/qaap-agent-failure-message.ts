@@ -56,10 +56,15 @@ const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
     // Codex CLI on a ChatGPT plan: "You've hit your usage limit. Upgrade to Plus to continue ..., or try again at Nov 19th, 2026 12:56 AM."
     /\bhit\s+your\s+usage\s+limit\b/i,
     /\busage\s+limit\b[^\n]{0,160}\btry\s+again\s+at\b/i,
+    // Claude Code on a Claude plan: "You've hit your weekly limit · resets 6am (Europe/Madrid) · out of usage
+    // credits", "You've hit your limit · resets 5pm", "5-hour limit reached ∙ resets 3pm".
+    /\bhit\s+your\s+(?:weekly|daily|monthly|session|5-hour|opus|sonnet)?\s*limit\b/i,
+    /\b(?:weekly|daily|monthly|session|5-hour|opus|sonnet)\s+limit\s+reached\b/i,
+    /\bout\s+of\s+usage\s+credits\b/i,
 ];
 
 /** The reset time a usage-limit message names ("try again at Nov 19th, 2026 12:56 AM."). Never guessed. */
-const USAGE_LIMIT_RESET_PATTERN = /\btry\s+again\s+at\s+([^.\n]{3,60}?)\s*(?:\.|\n|$)/i;
+const USAGE_LIMIT_RESET_PATTERN = /\b(?:try\s+again\s+at|resets)\s+([^.\n·∙|]{2,60}?)\s*(?:\.|\n|·|∙|\||$)/i;
 
 /**
  * Provider quota exhaustion. Strict on purpose: a bare "quota" or "billing" is a word in prose and in
