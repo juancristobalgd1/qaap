@@ -15,12 +15,13 @@ export interface MobileTurnResultVerdict {
 }
 
 /**
- * The verdict line that closes the Files Changed card once a turn succeeded. It carries no actions: the
- * next steps (open or run the preview, review the changes, commit, create a PR) are the pills above the
- * composer, so the transcript never repeats them per turn. `undefined` when the turn has no verdict.
+ * The verdict line that closes the Files Changed card once a turn succeeded with warnings. Clean
+ * `done` turns stay quiet (no footer); warning verdicts with details collapse into a compact
+ * one-line disclosure so the transcript stays calm while keeping review feedback one tap away.
+ * Carries no actions: the composer pills own preview, review, commit and Create PR.
  */
 export function createMobileTurnResultFooterElement(verdict: MobileTurnResultVerdict | undefined): HTMLElement | undefined {
-    if (!verdict) {
+    if (!verdict || verdict.tone === 'done') {
         return undefined;
     }
     const footer = document.createElement('div');
@@ -30,20 +31,29 @@ export function createMobileTurnResultFooterElement(verdict: MobileTurnResultVer
 }
 
 function createVerdictElement(verdict: MobileTurnResultVerdict): HTMLElement {
-    const row = document.createElement('div');
-    row.className = `${MOBILE_TURN_RESULT_CLASS}-verdict theia-mod-${verdict.tone}`;
     const icon = document.createElement('span');
-    icon.className = `codicon ${verdict.tone === 'warning' ? 'codicon-warning' : 'codicon-pass'} ${MOBILE_TURN_RESULT_CLASS}-verdict-icon`;
+    icon.className = `codicon codicon-warning ${MOBILE_TURN_RESULT_CLASS}-verdict-icon`;
     icon.setAttribute('aria-hidden', 'true');
     const title = document.createElement('span');
     title.className = `${MOBILE_TURN_RESULT_CLASS}-verdict-title`;
     title.textContent = verdict.title;
-    row.append(icon, title);
-    if (verdict.details.length > 0) {
-        const details = document.createElement('span');
-        details.className = `${MOBILE_TURN_RESULT_CLASS}-verdict-details`;
-        details.textContent = verdict.details.join(' · ');
-        row.append(details);
+    if (verdict.details.length === 0) {
+        const row = document.createElement('div');
+        row.className = `${MOBILE_TURN_RESULT_CLASS}-verdict theia-mod-${verdict.tone}`;
+        row.append(icon, title);
+        return row;
     }
-    return row;
+    const disclosure = document.createElement('details');
+    disclosure.className = `${MOBILE_TURN_RESULT_CLASS}-verdict theia-mod-${verdict.tone}`;
+    const summary = document.createElement('summary');
+    summary.className = `${MOBILE_TURN_RESULT_CLASS}-verdict-summary`;
+    const chevron = document.createElement('span');
+    chevron.className = `codicon codicon-chevron-right ${MOBILE_TURN_RESULT_CLASS}-verdict-chevron`;
+    chevron.setAttribute('aria-hidden', 'true');
+    summary.append(icon, title, chevron);
+    const details = document.createElement('div');
+    details.className = `${MOBILE_TURN_RESULT_CLASS}-verdict-details`;
+    details.textContent = verdict.details.join('\n');
+    disclosure.append(summary, details);
+    return disclosure;
 }

@@ -249,16 +249,19 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
             const becameFreshForTurn = !!next && turnSince !== undefined
                 && next.verifiedAt >= turnSince
                 && (ctx.verifiedComposerPreview?.verifiedAt ?? 0) < turnSince;
-            const changed = ctx.verifiedComposerPreview?.projectId !== next?.projectId
+            const shouldWriteVerified = stillCurrent || ctx.verifiedComposerPreview?.projectId === project.id;
+            const changed = shouldWriteVerified && (ctx.verifiedComposerPreview?.projectId !== next?.projectId
                 || ctx.verifiedComposerPreview?.url !== next?.url
-                || becameFreshForTurn;
-            ctx.verifiedComposerPreview = next;
+                || becameFreshForTurn);
+            if (shouldWriteVerified) {
+                ctx.verifiedComposerPreview = next;
+            }
             if (ctx.composerPreviewProbeCandidate === candidate) {
                 if (probeReady || adopted) {
                     // An adopted successor claim is re-verified immediately by the refresh above.
                     ctx.composerPreviewProbeFailures = 0;
                     ctx.composerPreviewNextProbeAt = 0;
-                } else {
+                } else if (stillCurrent) {
                     ctx.composerPreviewProbeFailures += 1;
                     ctx.composerPreviewNextProbeAt = Date.now() + composerPreviewProbeBackoffMs(ctx.composerPreviewProbeFailures);
                 }
@@ -286,6 +289,15 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
             }
         }).finally(() => {
             ctx.composerPreviewProbeInFlight = undefined;
+            // If the user switched tasks or projects while this probe was in flight, verify the
+            // newly mounted project right away instead of leaving it stuck on "Starting preview…".
+            const activeProject = ctx.host.transcriptComposerProject;
+            if (activeProject && (activeProject.id !== project.id || !ctx.verifiedComposerPreview)) {
+                const activeCandidate = resolveComposerPreviewCandidate(ctx.resolveComposerPreviewRuntime(activeProject));
+                if (activeCandidate && activeCandidate !== candidate) {
+                    ctx.syncComposerPreviewAvailability(activeProject, activeCandidate);
+                }
+            }
         });
 }
 
@@ -546,26 +558,43 @@ export async function fetchWorkspaceChangedFilesExtracted(ctx: MobileProjectsTra
         if (!cwd) {
             return [];
         }
-        // Measured against the task baseline, like the Changes panel, so the pill and the panel agree on the task total.
-        const baseCommit = summary.baselineCommit;
         const fetchChanges = (base: string | undefined) => fetch(
             `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(cwd)}${base ? `&baseCommit=${encodeURIComponent(base)}` : ''}`,
             { credentials: 'include' },
         );
-        let taskScoped = !!baseCommit;
-        let response = await fetchChanges(baseCommit);
-        // A baseline the repository no longer has is refused: fall back to the HEAD-relative list rather than failing.
-        if (!response.ok && baseCommit) {
-            taskScoped = false;
-            response = await fetchChanges(undefined);
+        // Always check the real HEAD-relative working tree first so already-committed changes
+        // (clean working tree after Approve & Commit) never keep the Changes or Commit pills alive,
+        // and staged flags remain accurate after Accept.
+        const workingResponse = await fetchChanges(undefined);
+        if (!workingResponse.ok) {
+            throw new Error(`git changes request failed (${workingResponse.status})`);
         }
-        if (!response.ok) {
-            throw new Error(`git changes request failed (${response.status})`);
+        const workingBody = await workingResponse.json() as { files?: QaapGitChangedFile[] };
+        const workingFiles = workingBody.files ?? [];
+        if (workingFiles.length === 0) {
+            return [];
         }
-        const body = await response.json() as { files?: QaapGitChangedFile[] };
-        const files = body.files ?? [];
-        if (taskScoped && baseCommit) {
-            QaapLiveTaskDiff.publish(baseCommit, QaapLiveTaskDiff.sum(files));
+        const baseCommit = summary.baselineCommit;
+        if (!baseCommit) {
+            return workingFiles.map(file => ctx.mapGitChangedFileToComposerView(file));
         }
-        return files.map(file => ctx.mapGitChangedFileToComposerView(file));
+        // When a task baseline exists and uncommitted changes are present, scope to files this task
+        // touched (excluding pre-task dirt), keep live task totals in sync, and preserve each file's
+        // real working-tree `staged` flag.
+        const baselineResponse = await fetchChanges(baseCommit);
+        if (!baselineResponse.ok) {
+            return workingFiles.map(file => ctx.mapGitChangedFileToComposerView(file));
+        }
+        const baselineBody = await baselineResponse.json() as { files?: QaapGitChangedFile[] };
+        const taskFiles = baselineBody.files ?? [];
+        QaapLiveTaskDiff.publish(baseCommit, QaapLiveTaskDiff.sum(taskFiles));
+        const workingByPath = new Map(workingFiles.map(file => [file.path, file]));
+        const pendingTaskFiles: QaapGitChangedFile[] = [];
+        for (const file of taskFiles) {
+            const working = workingByPath.get(file.path);
+            if (working) {
+                pendingTaskFiles.push({ ...file, staged: working.staged });
+            }
+        }
+        return pendingTaskFiles.map(file => ctx.mapGitChangedFileToComposerView(file));
 }

@@ -193,4 +193,130 @@ describe('mobile-projects-transcript-sticky-composer preview probe gating', () =
         expect(harness.scheduled).to.deep.equal([]);
         expect(harness.ctx.composerPreviewProbeFailures).to.equal(1);
     });
+
+    it('drops stale previewStarting flags once the live preview is verified', () => {
+        const streamingModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-streaming') =
+            require('./mobile-projects-transcript-sticky-composer-ui-streaming');
+        const harness = createHarness('running');
+        const verifiedUrl = 'http://localhost:3000/qaap-preview/u-alice-w-app-x-1/';
+        harness.ctx.host.transcriptPreviewRequestRunning = true;
+        harness.ctx.host.transcriptPreviewRequestPending = true;
+        harness.ctx.host.transcriptLastConv = {
+            id: 'conv-1',
+            status: 'idle',
+            messages: [],
+        } as unknown as typeof harness.ctx.host.transcriptLastConv;
+        harness.ctx.verifiedComposerPreview = {
+            projectId: project.id,
+            url: verifiedUrl,
+            candidate: verifiedUrl,
+            verifiedAt: Date.now(),
+        };
+        harness.ctx.resolveComposerPreviewRuntime = () => ({
+            projectId: project.id,
+            projectCwd: '/workspace/app',
+            bootstrapRoot: '/workspace/app',
+            dependenciesInstalled: true,
+            phase: 'running',
+            previewUrl: verifiedUrl,
+        });
+        harness.ctx.resolveComposerActivityFilesForStack = () => ({ files: [] });
+        harness.ctx.refreshComposerActivityGitFilesIfNeeded = async () => undefined;
+        harness.ctx.hasComposerFileActivity = () => true;
+        harness.ctx.hasComposerCommittableChangesFromGit = () => false;
+        harness.ctx.peekTranscriptComposerChangedFilesExpanded = () => false;
+        harness.ctx.syncComposerPreviewAvailability = () => undefined;
+
+        const opts = streamingModule.buildTranscriptComposerActivityOptionsExtracted(
+            harness.ctx,
+            project,
+            { id: 'conv-1', cwd: '/workspace/app' } as unknown as Parameters<typeof streamingModule.buildTranscriptComposerActivityOptionsExtracted>[2],
+        );
+
+        expect(opts.previewStarting).to.equal(false);
+        expect(opts.onOpenPreview).to.be.a('function');
+    });
+
+    it('returns empty workspace changed files after commit even when summary.baselineCommit still diffs committed history', async () => {
+        const requestedUrls: string[] = [];
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+            const url = String(input);
+            requestedUrls.push(url);
+            if (url.includes('baseCommit=')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        files: [{ path: 'server.js', status: 'M', adds: 5, dels: 1, staged: false }],
+                    }),
+                } as Response;
+            }
+            // Working tree is clean after Approve & Commit.
+            return {
+                ok: true,
+                json: async () => ({ files: [] }),
+            } as Response;
+        }) as typeof fetch;
+
+        const ctx = {
+            resolveComposerWorkspaceRoot: () => '/workspace/todo',
+            mapGitChangedFileToComposerView: (file: { path: string; staged: boolean }) => ({
+                path: file.path,
+                kind: 'edited' as const,
+                staged: file.staged,
+            }),
+        } as unknown as MobileProjectsTranscriptStickyComposerUiContext;
+
+        const files = await renderModule.fetchWorkspaceChangedFilesExtracted(
+            ctx,
+            project,
+            { id: 'conv-1', cwd: '/workspace/todo', baselineCommit: 'a'.repeat(40) } as unknown as Parameters<typeof renderModule.fetchWorkspaceChangedFilesExtracted>[2],
+        );
+
+        expect(files).to.deep.equal([]);
+        expect(requestedUrls).to.have.length(1);
+        expect(requestedUrls[0]).to.not.include('baseCommit=');
+    });
+
+    it('preserves working-tree staged flags and excludes already-committed baseline files when scoping to baselineCommit', async () => {
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('baseCommit=')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        files: [
+                            { path: 'committed.js', status: 'M', adds: 2, dels: 0, staged: false },
+                            { path: 'staged.js', status: 'M', adds: 4, dels: 1, staged: false },
+                        ],
+                    }),
+                } as Response;
+            }
+            return {
+                ok: true,
+                json: async () => ({
+                    files: [
+                        { path: 'staged.js', status: 'M', adds: 4, dels: 1, staged: true },
+                        { path: 'pre-task-dirt.js', status: 'M', adds: 1, dels: 0, staged: false },
+                    ],
+                }),
+            } as Response;
+        }) as typeof fetch;
+
+        const ctx = {
+            resolveComposerWorkspaceRoot: () => '/workspace/todo',
+            mapGitChangedFileToComposerView: (file: { path: string; staged: boolean }) => ({
+                path: file.path,
+                kind: 'edited' as const,
+                staged: file.staged,
+            }),
+        } as unknown as MobileProjectsTranscriptStickyComposerUiContext;
+
+        const files = await renderModule.fetchWorkspaceChangedFilesExtracted(
+            ctx,
+            project,
+            { id: 'conv-1', cwd: '/workspace/todo', baselineCommit: 'b'.repeat(40) } as unknown as Parameters<typeof renderModule.fetchWorkspaceChangedFilesExtracted>[2],
+        );
+
+        expect(files).to.deep.equal([{ path: 'staged.js', kind: 'edited', staged: true }]);
+    });
 });

@@ -13,15 +13,27 @@ describe('parseMobileTurnClosingReport', () => {
         expect(parsed.details).to.deep.equal(['Checks: failing (npm test)']);
     });
 
-    it('drops detail lines that say nothing', () => {
+    it('drops detail lines that say nothing and redundant Changes summaries', () => {
         const parsed = parseMobileTurnClosingReport([
             'Blocked — needs your input: pick a database.',
             'Checks: not run.',
             'Independent review: not run.',
             'Changes: not measured.',
             'Changes: none.',
+            'Changes: 2 files, +2 −1 lines.',
         ].join('\n'));
         expect(parsed.details).to.deep.equal([]);
+    });
+
+    it('drops Changes summaries from warning details while keeping review feedback', () => {
+        const parsed = parseMobileTurnClosingReport([
+            'Completed with warnings — the independent review rejected the change.',
+            'Independent review: rejected by claude — package.json:6.',
+            'Changes: 2 files, +2 −1 lines.',
+        ].join('\n'));
+        expect(parsed.tone).to.equal('warning');
+        expect(parsed.reviewRejected).to.equal(true);
+        expect(parsed.details).to.deep.equal(['Independent review: rejected by claude — package.json:6']);
     });
 
     it('keeps an informative detail that only mentions none inside a list', () => {

@@ -28,7 +28,7 @@ import {
     shouldDeferTranscriptRowHeavyContent,
 } from './qaap-transcript-row-defer';
 import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { createMobileTurnClosingReportElement } from './mobile-turn-closing-report';
+import { createMobileTurnClosingReportElement, parseMobileTurnClosingReport } from './mobile-turn-closing-report';
 import {
     resolveTranscriptComposerHarnessSelection,
     resolveTranscriptHarnessSwitchAt,
@@ -231,9 +231,9 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTr
             undefined,
             { deferHeavyContent, streaming: streamingTail, conv: normalized, message: msg },
         );
-        // A text-only turn (its trace holds just lifecycle events) still closes with its report.
+        // A text-only turn still surfaces blocked/warning closing reports; clean "done" turns stay quiet.
         const closingReport = msg.role === 'agent' && !streamingTail ? findQaapClosingReport(msg) : undefined;
-        if (closingReport) {
+        if (closingReport && parseMobileTurnClosingReport(closingReport).tone !== 'done') {
             row.append(createMobileTurnClosingReportElement(closingReport));
         }
     }

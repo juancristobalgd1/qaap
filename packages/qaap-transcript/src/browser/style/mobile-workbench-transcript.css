@@ -4509,40 +4509,75 @@ details > summary:focus-visible,
   pointer-events: none;
 }
 
-/* Turn-end result footer: closes the Files Changed card (verdict, preview, one primary next step). */
+/* Turn-end result footer: compact collapsible warning verdict inside the Files Changed card. */
 .theia-mobile-turn-result {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.35)) 70%, transparent);
 }
 
 .theia-mobile-turn-result-verdict {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
   font-size: var(--q-text-meta);
   color: var(--theia-descriptionForeground);
 }
 
-.theia-mobile-turn-result-verdict.theia-mod-warning .theia-mobile-turn-result-verdict-icon {
-  color: var(--theia-editorWarning-foreground);
+div.theia-mobile-turn-result-verdict {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.theia-mobile-turn-result-verdict.theia-mod-done .theia-mobile-turn-result-verdict-icon {
-  color: var(--theia-charts-green);
+.theia-mobile-turn-result-verdict-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.theia-mobile-turn-result-verdict-summary::-webkit-details-marker {
+  display: none;
+}
+
+.theia-mobile-turn-result-verdict.theia-mod-warning .theia-mobile-turn-result-verdict-icon {
+  color: var(--theia-editorWarning-foreground);
+  flex-shrink: 0;
 }
 
 .theia-mobile-turn-result-verdict-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 600;
   color: var(--theia-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+details.theia-mobile-turn-result-verdict[open] .theia-mobile-turn-result-verdict-title {
+  white-space: normal;
+}
+
+.theia-mobile-turn-result-verdict-chevron {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--theia-descriptionForeground);
+  transition: transform 0.15s ease;
+}
+
+details.theia-mobile-turn-result-verdict[open] .theia-mobile-turn-result-verdict-chevron {
+  transform: rotate(90deg);
 }
 
 .theia-mobile-turn-result-verdict-details {
+  margin-top: 6px;
+  padding-left: 22px;
   min-width: 0;
+  line-height: 1.45;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 

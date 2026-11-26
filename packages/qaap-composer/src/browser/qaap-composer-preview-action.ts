@@ -64,16 +64,23 @@ export function isComposerPreviewStartupActive(
  * turn and left the user without any sign of progress while the server was still compiling.
  */
 export function isComposerPreviewBootingForProject(
-    runtime: Pick<ComposerPreviewRuntime, 'phase' | 'projectCwd' | 'bootstrapRoot'>,
+    runtime: Pick<ComposerPreviewRuntime, 'phase' | 'projectCwd' | 'bootstrapRoot'>
+        & Partial<Pick<ComposerPreviewRuntime, 'dependenciesInstalled' | 'previewUrl'>>,
     previewVerified: boolean,
 ): boolean {
     if (!runtime.projectCwd || !runtime.bootstrapRoot
         || normalizePath(runtime.projectCwd) !== normalizePath(runtime.bootstrapRoot)) {
         return false;
     }
-    return runtime.phase === 'installing'
-        || runtime.phase === 'starting'
-        || (runtime.phase === 'running' && !previewVerified);
+    if (runtime.phase === 'installing' || runtime.phase === 'starting') {
+        return true;
+    }
+    if (runtime.phase === 'running' && !previewVerified) {
+        // Never trap the chip in "Starting preview…" when dependenciesInstalled is explicitly false
+        // (resolveComposerPreviewCandidate skips runtime.previewUrl, so it could never verify).
+        return runtime.dependenciesInstalled !== false;
+    }
+    return false;
 }
 
 /** What the composer must probe to verify a preview URL: a process identity or a legacy port. */

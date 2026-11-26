@@ -921,6 +921,22 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(descriptor?.nodeModulesPresent).to.equal(false);
     });
 
+    it('marks standalone zero-dependency Node projects as having dependencies satisfied without node_modules', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'qa-e2e-todo',
+            scripts: { start: 'node server.js' },
+        }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.kind).to.equal('node-generic');
+        expect(descriptor?.devCommand).to.equal('npm run start');
+        expect(descriptor?.nodeModulesPresent).to.equal(true);
+    });
+
     it('never requires a system tool the script calls (docker) as an installed bin', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');
