@@ -154,8 +154,11 @@ describe('failure card for a provider billing failure', () => {
         link!.click();
         expect(opened).to.deep.equal([MODELS_URL]);
         expect(signInOpened).to.equal(0);
-        // The raw provider lines stay available in the card's details.
+        // The raw provider lines stay available in the card's details, folded under "Technical details".
         expect(card.querySelector('.theia-test-technical')?.textContent).to.contain('Model access is disabled');
+        const technical = card.querySelector<HTMLDetailsElement>('.theia-mobile-agent-turn-failure-technical');
+        expect(technical?.open).to.equal(false);
+        expect(technical?.querySelector('.theia-test-technical')).to.not.equal(null);
     });
 
     it('draws the live OpenCode turn as the model-access card, its raw lines only in the details', () => {

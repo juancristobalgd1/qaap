@@ -366,10 +366,21 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                         || /^code:\s*/i.test(trimmed);
                 });
             if (!hideTechnical) {
-                body.append(ctx.createTranscriptClampedPre(
+                const output = ctx.createTranscriptClampedPre(
                     cleanedTechnical,
                     'theia-mobile-agent-shell-output',
-                ));
+                );
+                if (billingFailure) {
+                    // The card already says what to do; the provider's raw log is for whoever wants it, folded.
+                    const technicalDetails = document.createElement('details');
+                    technicalDetails.className = 'theia-mobile-agent-turn-failure-technical';
+                    const technicalSummary = document.createElement('summary');
+                    technicalSummary.textContent = nls.localize('qaap/mobileProjects/failureTechnicalDetails', 'Technical details');
+                    technicalDetails.append(technicalSummary, output);
+                    body.append(technicalDetails);
+                } else {
+                    body.append(output);
+                }
             }
         }
         details.append(summary, body);
