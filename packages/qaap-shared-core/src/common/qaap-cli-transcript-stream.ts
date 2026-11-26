@@ -7,10 +7,12 @@ import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
 import { structuredLogResidueText } from './qaap-structured-log-residue';
 import { QaapPiStreamAccumulator, type QaapProviderRetryStatus } from './qaap-pi-json-stream';
 import { parseOpencodeFormattedLog, parseOpencodeLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
+import { parseCopilotFormattedLog } from './qaap-copilot-stream';
 import {
     isAntigravityAgent,
     isClaudeCodeAgent,
     isCodexAgent,
+    isCopilotAgent,
     isOpencodeAgent,
     isPiAgent,
     isQaiqAgent,
@@ -157,6 +159,13 @@ export function parseAgentLogForTranscript(
             };
         }
         const formatted = parseOpencodeFormattedLog(log);
+        return {
+            ...formatted,
+            traceEvents: formatted.segments.length ? segmentsToTraceEvents(formatted.segments) : [],
+        };
+    }
+    if (isCopilotAgent(agentId)) {
+        const formatted = parseCopilotFormattedLog(log);
         return {
             ...formatted,
             traceEvents: formatted.segments.length ? segmentsToTraceEvents(formatted.segments) : [],
