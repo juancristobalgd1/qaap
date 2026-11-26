@@ -482,17 +482,17 @@ transcripts with preview tool pills render as generic MCP pills when the pill re
 
 ---
 
-## 11. Open product decisions (for the user)
+## 11. Product decisions (decided by the user, Nov 26 2026)
 
-- **D1 Ask vs. auto in request-approval mode:** should `preview_start` ask like a shell command (proposed) or be
-  always allowed because it is "just running the app"?
-- **D2 Who owns the button:** should Run app start the server directly (proposed, free, deterministic) or always
-  "ask the agent" (smarter, costs tokens, slower)?
-- **D3 Delegated children:** should children get `preview_start` in their own worktree (more parallel verification,
-  more servers) or only read the parent's preview (proposed for v1)?
-- **D4 Snapshot default:** text plus diagnostics (proposed) or always attach a screenshot to the agent?
-- **D5 Crash after the turn:** keep "no automatic turn, show Ask agent to fix" (proposed), or allow one opt-in
-  automatic fix per conversation as today?
-- **D6 Idle TTL:** how long an agent-started preview may run with nobody viewing it (proposed 60 min hosted, unlimited
-  on desktop).
-- **D7 Plan-mode turns:** may they call `preview_snapshot`/`status` on an existing preview (proposed yes) and never start one?
+- **D1 Approval:** `preview_start`/`preview_restart` never need approval, also under request-approval. They take
+  argv or a script name only (no shell strings), the process is supervised and its lifetime is bounded.
+- **D2 Run app button:** calls the backend service directly; on failure it offers "Ask agent to fix" (user-pressed).
+- **D3 Delegated children:** v1 children only read the parent's preview (`status`/`logs`/`snapshot`); no start.
+- **D4 Snapshot default:** text + diagnostics; a screenshot only with `screenshot: true`.
+- **D5 Crash after the turn:** only shows "Ask agent to fix"; never an automatic turn.
+- **D6 Idle lifetime:** 60 min without proxy traffic on hosted backends; no idle reap on desktop.
+- **D7 Plan-mode / read-only turns:** may call `preview_status`/`preview_logs`/`preview_snapshot`; never start,
+  restart or stop.
+
+Consequence for §5 "Tool Gate interplay": `start`/`restart` are auto-allowed like `status` (D1); read-only turns are
+refused by the backend endpoint, not by an approval card (D7).
