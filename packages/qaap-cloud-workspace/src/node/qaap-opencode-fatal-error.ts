@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { isAgentQuotaOrRateLimitText } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { isAgentBillingFailureText, isAgentQuotaOrRateLimitText } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
 /** Pending partial stderr line kept between chunks; longer than this is not a log line we need. */
 const MAX_PENDING_STDERR_LENGTH = 64 * 1024;
@@ -16,7 +16,7 @@ const OPENCODE_ERROR_FIELD = /\berror\.error="((?:[^"\\]|\\.)*)"/;
 
 /**
  * Returns the provider error when an OpenCode `--print-logs` line reports that the main turn's
- * stream failed on a quota, usage limit or rate limit. OpenCode keeps the CLI alive after such an
+ * stream failed on a quota, usage limit, rate limit or an account without credits / model access. OpenCode keeps the CLI alive after such an
  * error and prints nothing on stdout in `--format json` mode, so the runner must stop the run.
  */
 export function detectOpencodeFatalStreamError(line: string): string | undefined {
@@ -34,7 +34,7 @@ export function detectOpencodeFatalStreamError(line: string): string | undefined
         return undefined;
     }
     const error = match[1].replace(/\\(.)/g, '$1').trim();
-    return error && isAgentQuotaOrRateLimitText(error) ? error : undefined;
+    return error && (isAgentQuotaOrRateLimitText(error) || isAgentBillingFailureText(error)) ? error : undefined;
 }
 
 /** Feeds OpenCode stderr chunks and reports the first fatal stream error, once. */

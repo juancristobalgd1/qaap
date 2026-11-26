@@ -36,6 +36,9 @@ export const AGENT_ACCOUNT_LEVEL_FAILURE_KINDS: ReadonlySet<QaapAgentFailureKind
     'provider_key_rejected',
     'provider_credits',
     'provider_free_limit',
+    // The harness's provider account has no credits / the model switched off: the user picks another model.
+    'credits_exhausted',
+    'model_access_disabled',
     'cli_missing',
 ]);
 

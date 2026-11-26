@@ -15,6 +15,7 @@ import {
     canStreamPatchAgentSegmentsInPlaceWithAppend,
     canStreamPatchAgentTextContentOnly,
     canStreamPatchAgentToolsOnly,
+    agentMessageFailureChanged,
     canStreamPatchStdoutAgentContentOnly,
     fingerprintTranscriptMessage,
     isStreamingTranscriptTailUnchanged,
@@ -344,6 +345,18 @@ describe('qaap-transcript-incremental-update', () => {
         const prevMsg = { id: 'a1', role: 'agent' as const, content: 'Hel', createdAt: 1 };
         const nextMsg = { id: 'a1', role: 'agent' as const, content: 'Hello', createdAt: 1 };
         expect(canStreamPatchStdoutAgentContentOnly(prevMsg, nextMsg)).to.equal(true);
+    });
+
+    it('canStreamPatchStdoutAgentContentOnly refuses the tick that settles a failed turn (the failure card needs a rebuild)', () => {
+        const raw = '[qaap] OpenCode tool gate unavailable: …\ntimestamp=2026-11-25T23:33:47.850Z level=ERROR message="stream error" '
+            + 'error.error="AI_APICallError: Model access is disabled."';
+        const prevMsg = { id: 'a1', role: 'agent' as const, content: '', createdAt: 1 };
+        const failed = { id: 'a1', role: 'agent' as const, content: raw, createdAt: 1, error: 'Access to this model is disabled in your OpenCode account.' };
+        expect(canStreamPatchStdoutAgentContentOnly(prevMsg, failed)).to.equal(false);
+        expect(agentMessageFailureChanged(prevMsg, failed)).to.equal(true);
+        // Once the failure is drawn, later edits of the same failed message are not a new failure.
+        expect(agentMessageFailureChanged(failed, { ...failed, content: `${raw}\nmore` })).to.equal(false);
+        expect(agentMessageFailureChanged(prevMsg, { ...prevMsg, content: 'Hello' })).to.equal(false);
     });
 
     it('canStreamPatchAgentToolsOnly allows streaming tool result growth', () => {

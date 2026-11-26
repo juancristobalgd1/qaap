@@ -6,7 +6,7 @@
 import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
 import { structuredLogResidueText } from './qaap-structured-log-residue';
 import { QaapPiStreamAccumulator, type QaapProviderRetryStatus } from './qaap-pi-json-stream';
-import { parseOpencodeFormattedLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
+import { parseOpencodeFormattedLog, parseOpencodeLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
 import {
     isAntigravityAgent,
     isClaudeCodeAgent,
@@ -19,7 +19,7 @@ import {
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
 } from './qaap-agent-auth-login';
-import { detectAgentFailureKind, localizeAgentFailureMessage } from './qaap-agent-failure-message';
+import { detectAgentFailureKind, isAgentBillingFailureKind, localizeAgentFailureMessage } from './qaap-agent-failure-message';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
 import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
@@ -122,7 +122,8 @@ export function parseAgentLogForTranscript(
     }
     if (isOpencodeAgent(agentId)) {
         const acc = new QaapOpencodeStreamAccumulator();
-        acc.push(log);
+        // A log without a trailing newline still ends on a whole record (a failed turn's `{"type":"error"}`).
+        acc.push(log.endsWith('\n') ? log : `${log}\n`);
         if (acc.consumedJsonEvents()) {
             const segments = [...acc.getSegments()];
             return {
@@ -131,7 +132,8 @@ export function parseAgentLogForTranscript(
                 traceEvents: [...acc.getTraceEvents()],
             };
         }
-        const formatted = parseOpencodeFormattedLog(log);
+        // `--print-logs` lines (`timestamp=… level=ERROR …`) are diagnostics, never the agent's reply text.
+        const formatted = parseOpencodeLog(log);
         return {
             ...formatted,
             traceEvents: formatted.segments.length ? segmentsToTraceEvents(formatted.segments) : [],
@@ -183,6 +185,11 @@ export function resolveAgentLogDisplayText(agentId: string | undefined, log: str
             parts.push(`Code: ${challenge.userCode}`);
         }
         return parts.join('\n');
+    }
+    if (isAgentBillingFailureKind(failureKind)) {
+        // The failure card says what happened (no credits / model access, with the provider's link); the body
+        // keeps the CLI's own lines so the card's details still show the raw provider error.
+        return structuredLogResidueText(trimmed) || localizeAgentFailureMessage(failureKind);
     }
     if (failureKind) {
         return localizeAgentFailureMessage(failureKind);

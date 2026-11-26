@@ -210,3 +210,16 @@ export const PRODUCTION_ROW_ERRORS = {
     legacyWatchdog: 'Stopped automatically after 45 minutes: the turn exceeded the maximum allowed time.',
     backendRestart: 'The backend restarted while this turn was in progress, so it was interrupted. Retry to continue.',
 } as const;
+
+/**
+ * The stored body of a live OpenCode turn (desktop app, opencode/claude-fable-5, Nov 2026): the runner's gate note,
+ * OpenCode's `--print-logs` errors (title agent out of balance, main turn refused for model access) and the runner's
+ * stop line. Kept verbatim: its order and the `[qaap]` lines are what the transcript and failure body must handle.
+ */
+export const OPENCODE_MODEL_ACCESS_DISABLED_LIVE_LOG = [
+    '[qaap] OpenCode tool gate unavailable: This OpenCode loaded the Qaap gate plugin but never called tool.execute.before. Gated actions (edits, shell, network) are refused for this run.',
+    'timestamp=2026-11-25T23:33:33.633Z level=ERROR run=ce66f7e5 message="stream error" providerID=opencode modelID=gpt-5.4-nano session.id=ses_deaf174e0ffeXoGh6ShuGG9FWn small=true agent=title mode=primary error.error="AI_APICallError: Insufficient balance. This request is pay-as-you-go, billed to OpenCode Models credits. Top up at https://opencode.ai/console/wrk_01KFXW8JT3MNFG0P5H21F14TVD/billing?credits=1. OpenCode Go covers only requests to the OpenCode Go provider."',
+    'timestamp=2026-11-25T23:33:47.850Z level=ERROR run=ce66f7e5 message="stream error" providerID=opencode modelID=claude-fable-5 session.id=ses_deaf174e0ffeXoGh6ShuGG9FWn small=false agent=build mode=primary error.error="AI_APICallError: Model access is disabled. Change model access at https://opencode.ai/console/wrk_01KFXW8JT3MNFG0P5H21F14TVD/models."',
+    'timestamp=2026-11-25T23:33:47.871Z level=ERROR run=ce66f7e5 message=process session.id=ses_deaf174e0ffeXoGh6ShuGG9FWn messageID=msg_2150ea374001KpIIXHbg0LfXsL error="Model access is disabled. Change model access at https://opencode.ai/console/wrk_01KFXW8JT3MNFG0P5H21F14TVD/models." stack="AI_APICallError: Model access is disabled. Change model access at https://opencode.ai/console/wrk_01KFXW8JT3MNFG0P5H21F14TVD/models.\\n    at <anonymous> (/$bunfs/root/chunk-7qsz08pj.js:6:14520)\\n    at async <anonymous> (/$bunfs/root/chunk-7qsz08pj.js:6:12648)"',
+    '[qaap] OpenCode reported: AI_APICallError: Model access is disabled. Change model access at https://opencode.ai/console/wrk_01KFXW8JT3MNFG0P5H21F14TVD/models.',
+].join('\n');

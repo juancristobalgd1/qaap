@@ -12,6 +12,7 @@ import { detectAgentFailureKind, isQaiqProviderKeyMissingFailure, localizeAgentF
 import { sharedQaapAgentModelUnavailableRegistry } from './qaap-agent-model-unavailable-registry';
 
 import { resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import { resolveFailedTurnBody } from './qaap-failed-turn-body';
 
 import { resolveChatTurnOutcome } from '../common/qaap-chat-turn-workflow';
 
@@ -338,7 +339,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         if (rejectedModelId) {
             sharedQaapAgentModelUnavailableRegistry.record(withUsageBaseline.ownerLogin, turnAgentId, rejectedModelId);
         }
-        const failureBody = log ? resolveAgentLogDisplayText(turnAgentId, log) : '';
+        const failureBody = resolveFailedTurnBody(turnAgentId, log, agentMessageForFailure);
         const failed = ctx.markTurnFailed(convForFailure, {
             userMessageId,
             agentMessageId,

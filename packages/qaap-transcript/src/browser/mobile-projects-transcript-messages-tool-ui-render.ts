@@ -10,7 +10,9 @@ import {
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
     detectAgentFailureKind,
+    extractAgentBillingFailure,
     formatStoredAgentFailureMessage,
+    isAgentBillingFailureKind,
     isAgentUsageLimitText,
     isProviderKeyFailureKind,
     isQaiqProviderKeyMissingFailure,
@@ -124,10 +126,16 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         const isQaiqKeyMissing = isQaiqProviderKeyMissingFailure(authSample);
         // A provider key was refused by a legacy turn: the fix is to connect a harness in Settings.
         const isProviderKeyFailure = !planLimit && !isQaiqKeyMissing && isProviderKeyFailureKind(failureKind);
-        const extractedChallenge = isProviderKeyFailure || isQaiqKeyMissing
+        // The harness's provider account is signed in but has no credits or has the model switched off: never a
+        // Sign-in card. The provider's own top-up / model-access page (exact host only) backs the primary button.
+        const billingFailure = !planLimit && !guardRefusal && isAgentBillingFailureKind(failureKind)
+            ? (extractAgentBillingFailure(authSample) ?? { kind: failureKind })
+            : undefined;
+        const noSignIn = isProviderKeyFailure || isQaiqKeyMissing || !!billingFailure;
+        const extractedChallenge = noSignIn
             ? undefined
             : extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
-        const sessionChallenge = isProviderKeyFailure || isQaiqKeyMissing ? undefined : extractedChallenge
+        const sessionChallenge = noSignIn ? undefined : extractedChallenge
             ?? (guardRefusal || failureKind === 'auth' ? { mode: 'session' as const } : undefined)
             ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
                 ? { mode: 'session' as const }
@@ -157,13 +165,16 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         if (isProviderKeyFailure) {
             details.classList.add('theia-mod-provider-key');
         }
+        if (billingFailure) {
+            details.classList.add('theia-mod-quota-limit', 'theia-mod-provider-billing');
+        }
         if (planLimit) {
             details.classList.add('theia-mod-quota-limit', 'theia-mod-plan-limit');
         }
         // Keep ordinary failures compact so a noisy backend error does not
         // dominate the transcript. Authentication, quota, and missing-CLI
         // failures expose their next-step guidance immediately.
-        details.open = !!authChallenge || isQuotaFailure || isCliMissing || isProviderKeyFailure || isProviderRejected || !!planLimit;
+        details.open = !!authChallenge || isQuotaFailure || isCliMissing || isProviderKeyFailure || isProviderRejected || !!planLimit || !!billingFailure;
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head';
@@ -174,7 +185,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         const iconWrap = document.createElement('span');
         iconWrap.className = 'theia-mobile-agent-shell-icon-wrap';
         const icon = document.createElement('span');
-        icon.className = `theia-mobile-agent-shell-icon codicon ${authChallenge || isProviderKeyFailure ? 'codicon-key' : isCliMissing ? 'codicon-desktop-download' : 'codicon-warning'}`;
+        icon.className = `theia-mobile-agent-shell-icon codicon ${authChallenge || isProviderKeyFailure ? 'codicon-key' : billingFailure ? 'codicon-credit-card' : isCliMissing ? 'codicon-desktop-download' : 'codicon-warning'}`;
         icon.setAttribute('aria-hidden', 'true');
         iconWrap.append(icon);
         const titleWrap = document.createElement('span');
@@ -188,6 +199,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             ? authTitle
             : isProviderKeyFailure
               ? (localizeAgentFailureShortReason(formatted) ?? nls.localize('qaap/agentFailure/reasonProviderKey', 'Provider key rejected'))
+              : billingFailure
+                ? (localizeAgentFailureShortReason(formatted) ?? nls.localize('qaap/agentFailure/reasonCreditsExhausted', 'No credits left'))
               : isProviderRejected
                 ? nls.localize('qaap/mobileProjects/transcriptProviderRejected', 'The model\'s provider rejected the request')
               : planLimit
@@ -207,7 +220,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             titleWrap.append(toolLine);
         }
         // The hint in the body already says what happened; the collapsed line would repeat the raw body.
-        if (!authChallenge && !isQuotaFailure && !isCliMissing && !isProviderKeyFailure && !isProviderRejected && !planLimit) {
+        if (!authChallenge && !isQuotaFailure && !isCliMissing && !isProviderKeyFailure && !isProviderRejected && !planLimit && !billingFailure) {
             const reason = summarizeCollapsedAgentFailure({
                 formatted,
                 generic,
@@ -296,6 +309,24 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                 void Promise.resolve(options.onOpenAiFeaturesSettings!());
             });
             body.append(settingsBtn);
+        } else if (billingFailure?.url) {
+            const billingUrl = billingFailure.url;
+            const billingBtn = document.createElement('button');
+            billingBtn.type = 'button';
+            billingBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-link-external';
+            billingBtn.textContent = billingFailure.kind === 'model_access_disabled'
+                ? nls.localize('qaap/mobileProjects/openProviderModelAccess', 'Manage model access')
+                : nls.localize('qaap/mobileProjects/openProviderBilling', 'Top up credits');
+            billingBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                if (options?.onOpenAuthUrl) {
+                    options.onOpenAuthUrl(billingUrl);
+                    return;
+                }
+                window.open(billingUrl, '_blank', 'noopener,noreferrer');
+            });
+            body.append(billingBtn);
         } else if (isQuotaFailure) {
             const hint = document.createElement('p');
             hint.className = 'theia-mobile-agent-auth-login-hint';
@@ -307,7 +338,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         }
 
         // A usage limit or a retired/unavailable model is cured by another model, not by retrying this one.
-        const canChangeModel = !authChallenge && (isAgentUsageLimitText(authSample) || failureKind === 'model_unavailable');
+        const canChangeModel = !authChallenge && (isAgentUsageLimitText(authSample) || failureKind === 'model_unavailable' || !!billingFailure);
         if (canChangeModel && options?.onChangeModel) {
             const changeModelBtn = document.createElement('button');
             changeModelBtn.type = 'button';
@@ -335,10 +366,21 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                         || /^code:\s*/i.test(trimmed);
                 });
             if (!hideTechnical) {
-                body.append(ctx.createTranscriptClampedPre(
+                const output = ctx.createTranscriptClampedPre(
                     cleanedTechnical,
                     'theia-mobile-agent-shell-output',
-                ));
+                );
+                if (billingFailure) {
+                    // The card already says what to do; the provider's raw log is for whoever wants it, folded.
+                    const technicalDetails = document.createElement('details');
+                    technicalDetails.className = 'theia-mobile-agent-turn-failure-technical';
+                    const technicalSummary = document.createElement('summary');
+                    technicalSummary.textContent = nls.localize('qaap/mobileProjects/failureTechnicalDetails', 'Technical details');
+                    technicalDetails.append(technicalSummary, output);
+                    body.append(technicalDetails);
+                } else {
+                    body.append(output);
+                }
             }
         }
         details.append(summary, body);
