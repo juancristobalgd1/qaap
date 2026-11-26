@@ -165,6 +165,23 @@ export class QaapDesktopTaskSandbox {
      * {@link QaapDesktopTaskSandboxUnavailableError} when `sandbox-exec` is missing or rejects the profile.
      */
     async wrapCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, quote: (value: string) => string): Promise<string> {
+        const profile = await this.compiledProfile(cwd, env);
+        // `exec` keeps one process: the agent stays the process-group leader Stop signals.
+        return `exec ${QAAP_SANDBOX_EXEC_PATH} -p ${quote(profile)} /bin/sh -c ${quote(command)}`;
+    }
+
+    /**
+     * Argv form of {@link wrapCommand} for processes Qaap starts without a shell (preview dev servers): the same
+     * profile, so a dev server the agent asked for cannot write outside the worktree either. `sandbox-exec`
+     * resolves `command` on `PATH` and execs it, so the child pid stays the process Qaap supervises.
+     */
+    async wrapArgv(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ command: string; args: string[] }> {
+        const profile = await this.compiledProfile(cwd, env);
+        return { command: QAAP_SANDBOX_EXEC_PATH, args: ['-p', profile, command, ...args] };
+    }
+
+    /** The profile for worktree `cwd`, after checking that `sandbox-exec` exists and accepts it. */
+    protected async compiledProfile(cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
         if (!this.isExecutable(QAAP_SANDBOX_EXEC_PATH)) {
             throw new QaapDesktopTaskSandboxUnavailableError(nls.localize(
                 'theia/qaap-cloud-workspace/desktopTaskSandboxMissing', '{0} was not found or is not executable.', QAAP_SANDBOX_EXEC_PATH));
@@ -175,8 +192,7 @@ export class QaapDesktopTaskSandbox {
             throw new QaapDesktopTaskSandboxUnavailableError(nls.localize(
                 'theia/qaap-cloud-workspace/desktopTaskSandboxProfileRejected', 'sandbox-exec rejected the generated profile ({0}).', compileError));
         }
-        // `exec` keeps one process: the agent stays the process-group leader Stop signals.
-        return `exec ${QAAP_SANDBOX_EXEC_PATH} -p ${quote(profile)} /bin/sh -c ${quote(command)}`;
+        return profile;
     }
 
     /** Collects the real paths the profile for worktree `cwd` is built from. */

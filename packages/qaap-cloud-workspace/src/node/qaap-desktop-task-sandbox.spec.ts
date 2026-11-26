@@ -260,6 +260,27 @@ describe('QaapDesktopTaskSandbox', () => {
         });
     });
 
+    describe('wrapArgv (preview dev servers)', () => {
+        it('runs the argv under sandbox-exec with the same profile and no shell', async () => {
+            const { worktree } = makeLinkedWorktree(root);
+            const sandbox = new TestSandbox(root);
+            const wrapped = await sandbox.wrapArgv('npm', ['run', 'dev'], worktree, desktopEnv());
+            expect(wrapped.command).to.equal(QAAP_SANDBOX_EXEC_PATH);
+            expect(wrapped.args[0]).to.equal('-p');
+            expect(wrapped.args[1].startsWith('(version 1)')).to.equal(true);
+            expect(wrapped.args.slice(2)).to.deep.equal(['npm', 'run', 'dev']);
+            expect(sandbox.checkedProfiles).to.deep.equal([wrapped.args[1]]);
+        });
+
+        it('fails closed when sandbox-exec is missing', async () => {
+            const { worktree } = makeLinkedWorktree(root);
+            const sandbox = new TestSandbox(root);
+            sandbox.executable = false;
+            const error = await sandbox.wrapArgv('npm', ['start'], worktree, desktopEnv()).then(() => undefined, (e: unknown) => e);
+            expect(error).to.be.instanceOf(QaapDesktopTaskSandboxUnavailableError);
+        });
+    });
+
     describe('enforcement (macOS only, real sandbox-exec)', () => {
         it('allows writes in the worktree and temp, denies the base checkout, its git config, other worktrees and HOME', function (): void {
             if (process.platform !== 'darwin' || !fs.existsSync(QAAP_SANDBOX_EXEC_PATH)) {

@@ -12,6 +12,7 @@ import { qaapPreviewPortNodeImportFlag } from '@theia/qaap-shared-core/lib/commo
 import { rememberAgentProcessIdentity, signalAgentProcessTree } from './qaap-agent-process-signal';
 import {
     pruneRestartHistory,
+    QaapPreviewLogRing,
     QaapStderrRing,
     shouldAutoRestartPreview,
     type QaapPreviewProcessSnapshot,
@@ -20,6 +21,7 @@ import {
 } from '../common/qaap-preview-supervisor-types';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { childProcessEnv } from './qaap-child-process-env';
+import { QaapDesktopTaskSandbox } from './qaap-desktop-task-sandbox';
 
 interface QaapPreviewProcessRecord {
     readonly key: string;
@@ -34,6 +36,12 @@ interface QaapPreviewProcessRecord {
     signal?: string;
     everStarted: boolean;
     readonly stderr: QaapStderrRing;
+    /** Full stdout + stderr of the current child (see {@link QaapPreviewLogRing}). */
+    readonly log: QaapPreviewLogRing;
+    /** Argv actually started (before sandbox wrapping), for status reports. */
+    plan?: QaapPreviewSupervisorLaunch;
+    /** Per-start options; kept so an automatic restart starts the same way. */
+    options: QaapPreviewSupervisorStartOptions;
     /** Timestamps (ms) of automatic restarts within the current window. */
     autoRestartAt: number[];
     /** Structured launch supplied by the shared preview plan (non-Node/custom runtimes). */
@@ -49,6 +57,22 @@ export interface QaapPreviewSupervisorLaunch {
 
 export type QaapPreviewPackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
+/** How one start of a supervised dev server behaves. Every field is optional; the defaults are the historical behaviour. */
+export interface QaapPreviewSupervisorStartOptions {
+    /**
+     * `bounded` (default): a crash is restarted at most {@link QAAP_PREVIEW_AUTO_RESTART_MAX} times per window.
+     * `never`: a crash is reported, not hidden; the agent preview service uses it until the app has answered once.
+     */
+    readonly autoRestart?: 'bounded' | 'never';
+    /**
+     * Start the dev server as the leader of its own process group (POSIX), so a stop reaches the whole tree
+     * (`npm` → `node server.js`) and a listening socket can be attributed to it by process group.
+     */
+    readonly detached?: boolean;
+    /** Extra app environment (already validated: no `QAAP_*`, no reserved or secret-looking names). */
+    readonly extraEnv?: Readonly<Record<string, string>>;
+}
+
 /**
  * Package-manager shims on Windows are usually `.cmd` files. They cannot be started with
  * child_process.spawn(file, args) directly, so run the known-safe manager/script pair through
@@ -56,7 +80,8 @@ export type QaapPreviewPackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
  */
 export function buildQaapPreviewScriptCommand(
     packageManager: QaapPreviewPackageManager,
-    script: 'dev' | 'start',
+    /** A validated `package.json` script name (letters, digits, `:_.-`), so it is safe inside the cmd.exe string. */
+    script: string,
     platform: string = process.platform,
 ): { readonly command: string; readonly args: string[] } {
     if (platform === 'win32') {
@@ -66,6 +91,20 @@ export function buildQaapPreviewScriptCommand(
         };
     }
     return { command: packageManager, args: ['run', script] };
+}
+
+/** Package manager of the project in `cwd`, from its lockfile (npm when none). */
+export function detectQaapPreviewPackageManager(cwd: string): QaapPreviewPackageManager {
+    if (fs.existsSync(path.join(cwd, 'pnpm-lock.yaml'))) {
+        return 'pnpm';
+    }
+    if (fs.existsSync(path.join(cwd, 'yarn.lock'))) {
+        return 'yarn';
+    }
+    if (fs.existsSync(path.join(cwd, 'bun.lockb')) || fs.existsSync(path.join(cwd, 'bun.lock'))) {
+        return 'bun';
+    }
+    return 'npm';
 }
 
 /**
@@ -119,6 +158,8 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
     protected readonly tenantSpawn: QaapTenantSpawnService;
 
     protected readonly records = new Map<string, QaapPreviewProcessRecord>();
+    /** macOS desktop write sandbox for isolated task worktrees (a seam for tests). */
+    protected desktopSandbox: Pick<QaapDesktopTaskSandbox, 'appliesTo' | 'wrapArgv'> = QaapDesktopTaskSandbox.shared;
     /** Starts still spawning, per preview key: a concurrent start reuses the promise instead of a second dev server. */
     protected readonly pendingStarts = new Map<string, Promise<QaapPreviewProcessStatus>>();
     protected cleanupRegistered = false;
@@ -132,6 +173,7 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         port: number,
         identity?: QaapPreviewProcessIdentity,
         launch?: QaapPreviewSupervisorLaunch,
+        options: QaapPreviewSupervisorStartOptions = {},
     ): Promise<QaapPreviewProcessStatus> {
         const key = identity?.previewId ?? `legacy-port-${port}`;
         const pending = this.pendingStarts.get(key);
@@ -147,7 +189,7 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         if (collision) {
             throw new Error(`Preview port ${port} is already reserved by ${collision.identity?.previewId ?? collision.key}.`);
         }
-        const starting = this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity, launch)
+        const starting = this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity, launch, options)
             .finally(() => this.pendingStarts.delete(key));
         this.pendingStarts.set(key, starting);
         return starting;
@@ -211,7 +253,24 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
             stderrTail: record.stderr.snapshot(),
             autoRestartAt: [...record.autoRestartAt],
             processId: record.child?.pid,
+            ...(record.plan ? { launch: { command: record.plan.command, args: [...record.plan.args] } } : {}),
         };
+    }
+
+    /** Full output of a supervised preview (current or last child), or undefined when it was never supervised. */
+    logOf(previewId: string): QaapPreviewLogRing | undefined {
+        return this.records.get(previewId)?.log;
+    }
+
+    /**
+     * Changes the restart policy of a live record: the agent preview service switches a preview to `bounded`
+     * once the app has answered, so a later crash while the user browses recovers once.
+     */
+    setAutoRestart(previewId: string, mode: 'bounded' | 'never'): void {
+        const record = this.records.get(previewId);
+        if (record) {
+            record.options = { ...record.options, autoRestart: mode };
+        }
     }
 
     protected async spawnDevServer(
@@ -220,6 +279,7 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         autoRestartAt: number[],
         identity?: QaapPreviewProcessIdentity,
         launch?: QaapPreviewSupervisorLaunch,
+        options: QaapPreviewSupervisorStartOptions = {},
     ): Promise<QaapPreviewProcessStatus> {
         const key = identity?.previewId ?? `legacy-port-${port}`;
         const plan = launch ?? this.resolveDevCommand(cwd);
@@ -234,10 +294,13 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
                 exitCode: 1,
                 exitedAt: Date.now(),
                 stderr: new QaapStderrRing(),
+                log: new QaapPreviewLogRing(),
+                options,
                 autoRestartAt,
                 launch,
             };
             failed.stderr.push('No runnable preview launch plan was found for this workspace.\n');
+            failed.log.push('qaap', 'No runnable preview launch plan was found for this workspace.\n');
             this.records.set(key, failed);
             return 'exited';
         }
@@ -249,8 +312,17 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         // points HOME/USER at the tenant's writable home. No-op when uid-per-user is off / not root.
         let child: ChildProcess;
         try {
-            const env = this.tenantSpawn.resolveProcessEnv(cwd, buildQaapPreviewProcessEnv(childProcessEnv(), port));
-            child = await this.tenantSpawn.spawnArgvPreparedAsync(plan.command, plan.args, { cwd, env });
+            const env = this.tenantSpawn.resolveProcessEnv(cwd, {
+                ...buildQaapPreviewProcessEnv(childProcessEnv(), port),
+                ...(options.extraEnv ?? {}),
+            });
+            // macOS desktop, isolated task worktree: the dev server runs repo code the agent may have just written,
+            // so it gets the same Seatbelt write sandbox as the agent (fails closed when sandbox-exec is unusable).
+            const spawnPlan = this.desktopSandbox.appliesTo(cwd)
+                ? await this.desktopSandbox.wrapArgv(plan.command, plan.args, cwd, env)
+                : plan;
+            const detached = options.detached === true && process.platform !== 'win32';
+            child = await this.tenantSpawn.spawnArgvPreparedAsync(spawnPlan.command, spawnPlan.args, { cwd, env, ...(detached ? { detached: true } : {}) });
             rememberAgentProcessIdentity(child, this.previewIdentityFor(cwd));
         } catch (error) {
             const refused: QaapPreviewProcessRecord = {
@@ -263,9 +335,13 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
                 exitCode: 1,
                 exitedAt: Date.now(),
                 stderr: new QaapStderrRing(),
+                log: new QaapPreviewLogRing(),
+                options,
                 autoRestartAt,
+                plan,
             };
             refused.stderr.push(`Refusing to start the dev server: ${error instanceof Error ? error.message : String(error)}\n`);
+            refused.log.push('qaap', `Refusing to start the dev server: ${error instanceof Error ? error.message : String(error)}\n`);
             this.records.set(key, refused);
             return 'exited';
         }
@@ -279,14 +355,22 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
             startedAt: Date.now(),
             everStarted: true,
             stderr: new QaapStderrRing(),
+            log: new QaapPreviewLogRing(),
+            options,
             autoRestartAt,
             launch,
+            plan,
         };
         this.records.set(key, record);
 
-        child.stderr?.on('data', (chunk: Buffer) => record.stderr.push(chunk.toString()));
+        child.stderr?.on('data', (chunk: Buffer) => {
+            const text = chunk.toString();
+            record.stderr.push(text);
+            record.log.push('stderr', text);
+        });
         child.stdout?.on('data', (chunk: Buffer) => {
             const text = chunk.toString();
+            record.log.push('stdout', text);
             if (record.status === 'starting') {
                 record.status = 'running';
             }
@@ -317,6 +401,8 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         record.exitCode = exitCode;
         record.signal = signal;
         record.child = undefined;
+        record.log.flush();
+        record.log.push('qaap', `[qaap] the dev server exited (${signal ? `signal ${signal}` : `code ${exitCode ?? '?'}`}).\n`);
         if (record.stopRequested) {
             // Stopped on purpose and confirmed gone: retire the record, which also frees its port. No auto-restart.
             if (this.records.get(record.key) === record) {
@@ -332,6 +418,9 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         if (record.exitCode === 0 && !record.signal) {
             return;
         }
+        if (record.options.autoRestart === 'never') {
+            return;
+        }
         const now = Date.now();
         const history = pruneRestartHistory(record.autoRestartAt, now);
         if (!shouldAutoRestartPreview(history, now)) {
@@ -342,7 +431,7 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         // Small delay so a crash-on-boot app cannot busy-loop between spawns.
         setTimeout(() => {
             if (this.records.get(record.key) === record && record.status === 'exited') {
-                void this.spawnDevServer(record.cwd, record.port, record.autoRestartAt, record.identity, record.launch);
+                void this.spawnDevServer(record.cwd, record.port, record.autoRestartAt, record.identity, record.launch, record.options);
             }
         }, 1500).unref?.();
     }
@@ -365,16 +454,7 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
     }
 
     protected detectPackageManager(cwd: string): QaapPreviewPackageManager {
-        if (fs.existsSync(path.join(cwd, 'pnpm-lock.yaml'))) {
-            return 'pnpm';
-        }
-        if (fs.existsSync(path.join(cwd, 'yarn.lock'))) {
-            return 'yarn';
-        }
-        if (fs.existsSync(path.join(cwd, 'bun.lockb'))) {
-            return 'bun';
-        }
-        return 'npm';
+        return detectQaapPreviewPackageManager(cwd);
     }
 
     /**

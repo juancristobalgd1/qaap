@@ -214,3 +214,101 @@ describe('QaapPreviewSupervisor lifecycle', () => {
         expect(supervisor.pendingCount()).to.equal(0);
     });
 });
+
+describe('QaapPreviewSupervisor start options (agent previews)', () => {
+    class StreamingDevServer extends EventEmitter {
+        exitCode: number | null = null;
+        readonly stdout = new EventEmitter();
+        readonly stderr = new EventEmitter();
+        constructor(readonly pid: number) {
+            super();
+        }
+    }
+
+    class OptionsSupervisor extends QaapPreviewSupervisor {
+        constructor(readonly spawn: sinon.SinonStub, sandbox?: { appliesTo: () => boolean; wrapArgv: (...args: unknown[]) => Promise<{ command: string; args: string[] }> }) {
+            super();
+            (this as unknown as { tenantSpawn: unknown }).tenantSpawn = {
+                resolveProcessEnv: (_cwd: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => env,
+                resolveSpawnIdentity: (): undefined => undefined,
+                spawnArgvPreparedAsync: spawn,
+            };
+            if (sandbox) {
+                (this as unknown as { desktopSandbox: unknown }).desktopSandbox = sandbox;
+            }
+            this.cleanupRegistered = true;
+        }
+    }
+
+    const IDENTITY = { previewId: 'p-agent', workspaceId: 'w', projectId: 'pr', conversationId: 'c' } as never;
+    const LAUNCH = { command: 'npm', args: ['run', 'start'] };
+    let clock: sinon.SinonFakeTimers;
+    let processKill: sinon.SinonStub;
+
+    beforeEach(() => {
+        clock = sinon.useFakeTimers();
+        processKill = sinon.stub(process, 'kill');
+    });
+
+    afterEach(() => {
+        clock.restore();
+        processKill.restore();
+    });
+
+    it('starts detached with the extra app env and keeps the full output in the log ring', async () => {
+        const child = new StreamingDevServer(61001);
+        const spawn = sinon.stub().resolves(child);
+        const supervisor = new OptionsSupervisor(spawn);
+        await supervisor.start('/repo', 4100, IDENTITY, LAUNCH, { detached: true, extraEnv: { API_URL: 'http://api' } });
+        const [command, args, options] = spawn.firstCall.args as [string, string[], { env: NodeJS.ProcessEnv; detached?: boolean }];
+        expect(command).to.equal('npm');
+        expect(args).to.deep.equal(['run', 'start']);
+        expect(options.env.API_URL).to.equal('http://api');
+        expect(options.env.PORT).to.equal('4100');
+        expect(options.detached).to.equal(process.platform !== 'win32' ? true : undefined);
+        child.stdout.emit('data', Buffer.from('listening on 4100\n'));
+        child.stderr.emit('data', Buffer.from('deprecation warning\n'));
+        child.emit('exit', 1, null);
+        const lines = supervisor.logOf('p-agent')!.tail(10).map(line => `${line.stream}:${line.text}`);
+        expect(lines).to.deep.equal(['stdout:listening on 4100', 'stderr:deprecation warning', 'qaap:[qaap] the dev server exited (code 1).']);
+        expect(supervisor.describe('p-agent')?.launch).to.deep.equal(LAUNCH);
+    });
+
+    it('does not restart a crash with autoRestart "never" until switched to bounded', async () => {
+        const first = new StreamingDevServer(61002);
+        const second = new StreamingDevServer(61003);
+        const spawn = sinon.stub();
+        spawn.onFirstCall().resolves(first);
+        spawn.onSecondCall().resolves(second);
+        const supervisor = new OptionsSupervisor(spawn);
+        await supervisor.start('/repo', 4100, IDENTITY, LAUNCH, { autoRestart: 'never' });
+        first.emit('exit', 1, null);
+        await clock.tickAsync(5000);
+        expect(spawn.callCount).to.equal(1);
+
+        await supervisor.start('/repo', 4100, IDENTITY, LAUNCH, { autoRestart: 'never' });
+        supervisor.setAutoRestart('p-agent', 'bounded');
+        second.emit('exit', 1, null);
+        await clock.tickAsync(5000);
+        expect(spawn.callCount).to.equal(3);
+    });
+
+    it('wraps the dev server in the desktop Seatbelt sandbox when the worktree is sandboxed', async () => {
+        const child = new StreamingDevServer(61004);
+        const spawn = sinon.stub().resolves(child);
+        const wrapArgv = sinon.stub().callsFake(async (command: string, args: string[]) => ({ command: '/usr/bin/sandbox-exec', args: ['-p', 'PROFILE', command, ...args] }));
+        const supervisor = new OptionsSupervisor(spawn, { appliesTo: () => true, wrapArgv });
+        await supervisor.start('/wt', 4100, IDENTITY, LAUNCH);
+        expect(spawn.firstCall.args[0]).to.equal('/usr/bin/sandbox-exec');
+        expect(spawn.firstCall.args[1]).to.deep.equal(['-p', 'PROFILE', 'npm', 'run', 'start']);
+        expect(wrapArgv.firstCall.args[2]).to.equal('/wt');
+    });
+
+    it('fails closed when the Seatbelt wrap is unavailable', async () => {
+        const spawn = sinon.stub();
+        const supervisor = new OptionsSupervisor(spawn, { appliesTo: () => true, wrapArgv: async () => { throw new Error('sandbox-exec missing'); } });
+        expect(await supervisor.start('/wt', 4100, IDENTITY, LAUNCH)).to.equal('exited');
+        expect(spawn.called).to.equal(false);
+        expect(supervisor.logOf('p-agent')!.tail(5).map(line => line.text).join('\n')).to.include('sandbox-exec missing');
+    });
+});

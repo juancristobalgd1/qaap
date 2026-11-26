@@ -11,7 +11,11 @@ import { QAAP_AGENT_DELEGATION_MAX_DEPTH } from '../common/qaap-agent-delegation
  * What a token may authenticate. Every token holds `gate`. `delegate` additionally opens the
  * agent-delegation routes, and is granted only to tasks that may delegate (parents at depth 0).
  */
-export type QaapToolGateTokenScope = 'gate' | 'delegate';
+/**
+ * `gate`: the harness's tool gate token. `delegate` / `preview`: the per-task Qaap MCP server's token (agent
+ * delegation, agent preview tools); one MCP token carries whichever of these two the turn gets, never `gate`.
+ */
+export type QaapToolGateTokenScope = 'gate' | 'delegate' | 'preview';
 
 /** What a gate token stands for. The server reads it from here, never from a request body. */
 export interface QaapToolGateTokenGrant {
@@ -102,14 +106,31 @@ export class QaapToolGateTokenService {
      * against which the auto-allow compares tool names. Refused (undefined) for depth ≥ max: children never delegate.
      */
     issueDelegation(taskId: string, owner: string | undefined, workspace: string, delegationDepth: number = 0): QaapDelegationGrantIssued | undefined {
-        if (!Number.isInteger(delegationDepth) || delegationDepth < 0 || delegationDepth >= QAAP_AGENT_DELEGATION_MAX_DEPTH) {
+        return this.issueAgentMcp(taskId, owner, workspace, ['delegate'], delegationDepth);
+    }
+
+    /**
+     * Issues (or replaces) the task's Qaap MCP token holding `scopes` (`delegate` and/or `preview`, never `gate`), with
+     * a fresh random server name. `delegate` is dropped at depth ≥ max (children never delegate); undefined when no
+     * scope is left. It replaces the task's previous MCP token, like {@link issueDelegation}.
+     */
+    issueAgentMcp(
+        taskId: string,
+        owner: string | undefined,
+        workspace: string,
+        scopes: readonly ('delegate' | 'preview')[],
+        delegationDepth: number = 0,
+    ): QaapDelegationGrantIssued | undefined {
+        const depthOk = Number.isInteger(delegationDepth) && delegationDepth >= 0 && delegationDepth < QAAP_AGENT_DELEGATION_MAX_DEPTH;
+        const granted = [...new Set(scopes)].filter(scope => scope === 'preview' || (scope === 'delegate' && depthOk));
+        if (granted.length === 0) {
             return undefined;
         }
         this.revokeDelegation(taskId);
         const token = randomBytes(32).toString('hex');
         const hash = this.hash(token);
         const mcpServerName = `qaaq_${randomBytes(8).toString('hex')}`;
-        this.grants.set(hash, { taskId, owner, workspace, scopes: ['delegate'], mcpServerName, expiresAt: this.now() + QAAP_TOOL_GATE_TOKEN_MAX_AGE_MS });
+        this.grants.set(hash, { taskId, owner, workspace, scopes: granted, mcpServerName, expiresAt: this.now() + QAAP_TOOL_GATE_TOKEN_MAX_AGE_MS });
         this.delegationHashByTask.set(taskId, hash);
         return { token, mcpServerName };
     }
