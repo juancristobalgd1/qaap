@@ -314,6 +314,16 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         expect(linked).to.not.contain('[`http://localhost:5173`](http://localhost:5173)](');
     });
 
+    it('stops preview URL linkification and normalization before JSON quote delimiters', () => {
+        const ui = new MobileProjectsTranscriptMessagesContentUi({} as never);
+        const linked = ui.linkifyTranscriptPreviewUrls('{"url":"http://127.0.0.1:3001/","httpStatus":200}');
+        expect(linked).to.equal('{"url":"[http://127.0.0.1:3001/](http://127.0.0.1:3001/)","httpStatus":200}');
+        expect(normalizeTranscriptPreviewHref('http://127.0.0.1:3001/","httpStatus":200', 'http://localhost:63966'))
+            .to.equal('http://localhost:63966/qaap-dev/3001/');
+        expect(normalizeTranscriptPreviewHref('http://localhost:63966/qaap-dev/3001/%22,%22httpStatus%22:200', 'http://localhost:63966'))
+            .to.equal('http://localhost:63966/qaap-dev/3001/');
+    });
+
     it('validates an isolated-origin link by host label although the probe reports the canonical id', async () => {
         const hostLabel = '0123456789abcdef0123456789abcdef';
         const isolated = `https://${hostLabel}.previews.qaap.example/`;
