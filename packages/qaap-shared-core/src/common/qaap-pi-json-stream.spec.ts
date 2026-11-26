@@ -298,6 +298,10 @@ describe('qaap-pi-json-stream failed turn without assistant text', () => {
         const log = failedTurnLog('openrouter', '~anthropic/claude-sonnet-latest', OPENROUTER_401);
         expect(detectAgentFailureKind(log)).to.equal('provider_key_rejected');
         expect(resolveAgentTurnFailureMessage(log, { state: 'failed', exitCode: 1, agentId: 'pi' })).to.include('OpenRouter');
+        const body = resolveAgentLogDisplayText('pi', log);
+        expect(body).to.include('Pi needs you to sign in again');
+        expect(body).to.include('OpenRouter');
+        expect(body).to.not.include('Settings → Harness');
     });
 
     it('still finds the error when the closing agent_end record is longer than the scanned tail', () => {

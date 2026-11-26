@@ -530,6 +530,7 @@ const PROVIDER_PREFLIGHT_KIND: Readonly<Record<QaapProviderKeyVerdict, QaapAgent
 const PROVIDER_KEY_REJECTED_PATTERNS: readonly RegExp[] = [
     /\bno\s+auth\s+credentials\s+found\b/i,
     /\bkey\s+was\s+rejected\b/i,
+    STORED_PROVIDER_KEY_REJECTED,
 ];
 /** A disabled/revoked/expired key, only on a line that also names a BYOK provider. */
 const PROVIDER_KEY_REVOKED_LINE = /\b(?:api\s+)?key\s+(?:is\s+|has\s+been\s+)?(?:disabled|revoked|expired)\b/i;

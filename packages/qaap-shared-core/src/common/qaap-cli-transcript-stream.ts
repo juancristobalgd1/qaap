@@ -19,7 +19,13 @@ import {
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
 } from './qaap-agent-auth-login';
-import { detectAgentFailureKind, isAgentBillingFailureKind, localizeAgentFailureMessage } from './qaap-agent-failure-message';
+import {
+    detectAgentFailureKind,
+    isAgentBillingFailureKind,
+    isPiSignInRejectedFailure,
+    localizeAgentFailureMessage,
+    resolveAgentTurnFailureMessage,
+} from './qaap-agent-failure-message';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
 import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
@@ -185,6 +191,12 @@ export function resolveAgentLogDisplayText(agentId: string | undefined, log: str
             parts.push(`Code: ${challenge.userCode}`);
         }
         return parts.join('\n');
+    }
+    if (isPiSignInRejectedFailure(agentId, failureKind)) {
+        // Pi signs in to its providers itself (`/login`, kept in `~/.pi/agent/auth.json`). Keep the
+        // Pi sign-in-again copy as the failed turn body instead of the generic Settings → Harness
+        // provider-key sentence (which loses the provider name and suppresses Pi's Sign-in card).
+        return resolveAgentTurnFailureMessage(trimmed, { state: 'failed', agentId });
     }
     if (isAgentBillingFailureKind(failureKind)) {
         // The failure card says what happened (no credits / model access, with the provider's link); the body
