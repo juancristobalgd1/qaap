@@ -355,14 +355,20 @@ export class MobileProjectsAgentsHubInlineUi {
         this.applyAgentsHubExecutionPanelSizing(executionRoot);
         this.host.agentsHubInlineExecutionRoot = executionRoot;
 
+        const sidebar = this.host.executionSurfaceSidebar;
         if (!this.host.transcriptReviewHost) {
             const surfaces = this.host.transcriptSheetUi.createTranscriptSheetSurfaceHosts();
             this.host.transcriptReviewHost = surfaces.reviewHost;
-            this.host.transcriptPreviewHost = surfaces.previewHost;
-            this.host.transcriptFilesHost = surfaces.filesHost;
-            this.host.transcriptTerminalHost = surfaces.terminalHost;
+            this.host.transcriptPreviewHost = sidebar?.activeHost === this.host.transcriptPreviewHost && this.host.transcriptPreviewHost?.isConnected
+                ? this.host.transcriptPreviewHost
+                : surfaces.previewHost;
+            this.host.transcriptFilesHost = sidebar?.activeHost === this.host.transcriptFilesHost && this.host.transcriptFilesHost?.isConnected
+                ? this.host.transcriptFilesHost
+                : surfaces.filesHost;
+            this.host.transcriptTerminalHost = sidebar?.activeHost === this.host.transcriptTerminalHost && this.host.transcriptTerminalHost?.isConnected
+                ? this.host.transcriptTerminalHost
+                : surfaces.terminalHost;
         }
-        const sidebar = this.host.executionSurfaceSidebar;
         for (const surfaceHost of [
             this.host.transcriptReviewHost!,
             this.host.transcriptPreviewHost!,
@@ -662,16 +668,31 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.headerFilesMoreHost.replaceChildren();
         this.host.transcriptSurfacesUi.hideHeaderViewModeSwitch();
         this.host.headerViewModeSwitchHost.replaceChildren();
+        const activeSidebarHost = this.host.executionSurfaceSidebar?.activeHost;
+        const preserveHost = (host: HTMLElement | undefined): boolean =>
+            !!host && host === activeSidebarHost && host.isConnected;
         if (this.host.transcriptReviewHost) {
             this.host.transcriptReviewHost.remove();
-            this.host.transcriptPreviewHost?.remove();
-            this.host.transcriptFilesHost?.remove();
-            this.host.transcriptTerminalHost?.remove();
+            if (!preserveHost(this.host.transcriptPreviewHost)) {
+                this.host.transcriptPreviewHost?.remove();
+            }
+            if (!preserveHost(this.host.transcriptFilesHost)) {
+                this.host.transcriptFilesHost?.remove();
+            }
+            if (!preserveHost(this.host.transcriptTerminalHost)) {
+                this.host.transcriptTerminalHost?.remove();
+            }
         }
         this.host.transcriptReviewHost = undefined;
-        this.host.transcriptPreviewHost = undefined;
-        this.host.transcriptFilesHost = undefined;
-        this.host.transcriptTerminalHost = undefined;
+        if (!preserveHost(this.host.transcriptPreviewHost)) {
+            this.host.transcriptPreviewHost = undefined;
+        }
+        if (!preserveHost(this.host.transcriptFilesHost)) {
+            this.host.transcriptFilesHost = undefined;
+        }
+        if (!preserveHost(this.host.transcriptTerminalHost)) {
+            this.host.transcriptTerminalHost = undefined;
+        }
         this.agentsHubExecutionHeaderProjectId = undefined;
         this.agentsHubExecutionHeaderSummaryId = undefined;
     }

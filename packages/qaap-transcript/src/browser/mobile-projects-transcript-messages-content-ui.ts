@@ -335,6 +335,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
                 verifiedUrl = probe.previewUrl;
             }
         }
+        this.host.transcriptPreviewSuppressedByUser = false;
         this.host.transcriptPreviewRequestPending = false;
         this.host.transcriptPreviewRequestRunning = false;
         const latestProject = { ...project, previewUrl: verifiedUrl };
