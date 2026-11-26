@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
-import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import * as fs from 'fs';
 import * as path from 'path';
 import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
@@ -472,10 +472,16 @@ export class QaapAgentPreviewService implements BackendApplicationContribution {
 
     protected async launch(caller: QaapAgentPreviewCaller, plan: QaapAgentPreviewPlan): Promise<QaapAgentPreviewEntry> {
         const root = canonicalizeQaapPreviewRoot(plan.runDir);
+        // The preview registry stores canonical file:// URIs for workspaceId/projectId so
+        // Work Hub's `/qaap-dev/api/current` and `previewUrlMatchesProject` recognize the claim.
+        // Anchor the project URI at the caller's workspace root so subdirectory previews still
+        // bind to the Work Hub project card.
+        const projectRoot = canonicalizeQaapPreviewRoot(this.safeRealpath(caller.cwd));
+        const projectRootUri = FileUri.create(projectRoot).toString();
         const identity = resolveQaapPreviewIdentity({
             userId: caller.ownerLogin,
-            workspaceId: root,
-            projectId: root,
+            workspaceId: projectRootUri,
+            projectId: projectRootUri,
             conversationId: caller.conversationId,
             processId: QAAP_AGENT_PREVIEW_PROCESS_ID,
         });

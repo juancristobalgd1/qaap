@@ -182,9 +182,15 @@ export function foldQaapPrivatePathAlias(pathOrFileUri: string): string {
     return pathOrFileUri.replace(/^(file:\/\/)?\/private\/(var|tmp|etc)(?=\/|$)/i, '$1/$2');
 }
 
-/** Comparison key of a preview project id: routing prefixes stripped, macOS `/private` alias folded. */
+/** Comparison key of a preview project id: routing prefixes stripped, raw paths coerced to file:// URIs, macOS `/private` alias folded. */
 function previewProjectIdComparisonKey(value: string): string {
-    return foldQaapPrivatePathAlias(normalizeQaapPreviewProjectId(value));
+    let normalized = normalizeQaapPreviewProjectId(value);
+    if (normalized.startsWith('/')) {
+        normalized = `file://${encodeURI(normalized)}`;
+    } else if (/^[a-zA-Z]:[\\/]/.test(normalized)) {
+        normalized = `file:///${encodeURI(normalized.replace(/\\/g, '/'))}`;
+    }
+    return foldQaapPrivatePathAlias(normalized).replace(/\/+$/, '');
 }
 
 /** Matches a registry project id against canonical roots and legacy Work Hub keys. */

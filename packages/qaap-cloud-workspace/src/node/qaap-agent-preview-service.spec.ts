@@ -96,8 +96,10 @@ class FakeRegistry {
 
 class FakePreviewEndpoint {
     allocatedPort: number | undefined = 4100;
+    readonly allocated: Array<{ previewId: string; projectId: string; workspaceId: string; root: string }> = [];
     readonly superseded: string[] = [];
-    async allocatePreviewPort(registration: { previewId: string }): Promise<unknown> {
+    async allocatePreviewPort(registration: { previewId: string; projectId: string; workspaceId: string; root: string }): Promise<unknown> {
+        this.allocated.push(registration);
         return this.allocatedPort === undefined ? undefined : { ...registration, port: this.allocatedPort };
     }
     supersedeConversationPreviews(scope: { previewId: string }): void {
@@ -195,6 +197,8 @@ describe('QaapAgentPreviewService', () => {
         expect(service.fakeSupervisor.autoRestart).to.deep.equal([[start.previewId, 'bounded']]);
         expect(service.fakeRegistry.attached).to.deep.equal([[start.previewId, 4242]]);
         expect(service.fakeEndpoint.superseded).to.deep.equal([start.previewId]);
+        expect(service.fakeEndpoint.allocated[0].projectId).to.match(/^file:\/\//);
+        expect(service.fakeEndpoint.allocated[0].workspaceId).to.equal(service.fakeEndpoint.allocated[0].projectId);
         expect(start.previewId).to.include('agent-dev'.slice(0, 5));
     });
 

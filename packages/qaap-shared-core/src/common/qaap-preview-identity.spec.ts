@@ -137,6 +137,12 @@ describe('qaap-preview-identity', () => {
             projectId: canonical,
             projectName: 'site',
         })).to.equal(false);
+        expect(qaapPreviewProjectIdMatches('/workspace/repos/users/alice/acme/site', `recent:${canonical}`)).to.equal(true);
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: '/workspace/repos/users/alice/acme/site',
+            projectId: `recent:${canonical}`,
+            projectName: 'site',
+        })).to.equal(true);
     });
 
     it('builds and parses the identity-scoped proxy without exposing a port', () => {
