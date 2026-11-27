@@ -172,17 +172,39 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         await this.queuedMessageActionHandler?.(conversationId, pending, action);
     }
 
-    /** Cancel a queued message — removes it from the server-side pending queue. */
+    /** Cancel a queued message — removes it optimistically from the transcript, then from the server queue. */
     async cancelQueuedMessage(conversationId: string, queuedMessageId: string): Promise<void> {
+        const previousConv = this.host.transcriptLastConv?.id === conversationId
+            ? this.host.transcriptLastConv
+            : undefined;
+        const chatHost = this.host.transcriptChatHost;
+        if (previousConv) {
+            const nextPending = (previousConv.pendingUserMessages ?? []).filter(item => item.id !== queuedMessageId);
+            const optimistic: QaapAgentConversationDTO = {
+                ...previousConv,
+                pendingUserMessages: nextPending.length > 0 ? nextPending : undefined,
+            };
+            this.host.conversations?.recordSnapshot(conversationToSummary(optimistic));
+            this.host.transcriptLastConv = optimistic;
+            if (chatHost) {
+                this.renderTranscriptMessages(chatHost, optimistic);
+            }
+        }
         try {
             const updated = await cancelQueuedConversationMessage(conversationId, queuedMessageId);
             this.host.conversations?.recordSnapshot(conversationToSummary(updated));
             this.host.transcriptLastConv = updated;
-            const chatHost = this.host.transcriptChatHost;
             if (chatHost) {
                 this.renderTranscriptMessages(chatHost, updated);
             }
         } catch (error) {
+            if (previousConv) {
+                this.host.conversations?.recordSnapshot(conversationToSummary(previousConv));
+                this.host.transcriptLastConv = previousConv;
+                if (chatHost) {
+                    this.renderTranscriptMessages(chatHost, previousConv);
+                }
+            }
             const detail = error instanceof Error ? error.message : String(error);
             this.host.messageService?.error(
                 nls.localize('qaap/mobileProjects/cancelQueuedFailed', 'Could not cancel queued message: {0}', detail),
@@ -190,21 +212,53 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
     }
 
-    /** Dispatch a queued message immediately with the given delivery mode. */
+    /** Dispatch a queued message immediately with the given delivery mode (optimistic UI with rollback). */
     async dispatchQueuedMessage(
         conversationId: string,
         pending: QaapPendingUserMessageDTO,
         deliveryMode: 'queue' | 'parallel' | 'interrupt',
     ): Promise<void> {
+        const previousConv = this.host.transcriptLastConv?.id === conversationId
+            ? this.host.transcriptLastConv
+            : undefined;
+        const chatHost = this.host.transcriptChatHost;
+        if (previousConv) {
+            const nextPending = (previousConv.pendingUserMessages ?? []).filter(item => item.id !== pending.id);
+            const optimistic: QaapAgentConversationDTO = {
+                ...previousConv,
+                status: 'streaming',
+                pendingUserMessages: nextPending.length > 0 ? nextPending : undefined,
+                messages: [
+                    ...previousConv.messages,
+                    {
+                        id: pending.clientMessageId ?? pending.id,
+                        role: 'user',
+                        content: pending.content,
+                        createdAt: Date.now(),
+                    },
+                ],
+            };
+            this.host.conversations?.recordSnapshot(conversationToSummary(optimistic));
+            this.host.transcriptLastConv = optimistic;
+            if (chatHost) {
+                this.renderTranscriptMessages(chatHost, optimistic);
+            }
+        }
         try {
             const updated = await dispatchQueuedConversationMessage(conversationId, pending.id, deliveryMode);
             this.host.conversations?.recordSnapshot(conversationToSummary(updated));
             this.host.transcriptLastConv = updated;
-            const chatHost = this.host.transcriptChatHost;
             if (chatHost) {
                 this.renderTranscriptMessages(chatHost, updated);
             }
         } catch (error) {
+            if (previousConv) {
+                this.host.conversations?.recordSnapshot(conversationToSummary(previousConv));
+                this.host.transcriptLastConv = previousConv;
+                if (chatHost) {
+                    this.renderTranscriptMessages(chatHost, previousConv);
+                }
+            }
             const detail = error instanceof Error ? error.message : String(error);
             this.host.messageService?.error(
                 nls.localize('qaap/mobileProjects/dispatchQueuedFailed', 'Could not send queued message: {0}', detail),

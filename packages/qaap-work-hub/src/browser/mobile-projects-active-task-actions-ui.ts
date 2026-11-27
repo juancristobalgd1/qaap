@@ -29,6 +29,18 @@ export class MobileProjectsActiveTaskActionsUi {
 
     async cancelActiveTask(taskId: string): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        const existing = this.host.activeTasks?.getAllTasks().find(task => task.id === taskId);
+        if (existing) {
+            this.host.activeTasks?.recordTaskEnded({
+                id: existing.id,
+                cwd: existing.cwd,
+                agentId: existing.agentId,
+                title: existing.title,
+                state: 'cancelled',
+                createdAt: existing.createdAt,
+            });
+            this.host.render();
+        }
         try {
             const response = await fetch(`/qaap/api/agent-tasks/${encodeURIComponent(taskId)}/cancel`, {
                 method: 'POST',
@@ -40,6 +52,26 @@ export class MobileProjectsActiveTaskActionsUi {
                     nls.localize('qaap/mobileProjects/taskCancelled', 'Task cancelled'),
                     { duration: 1400 },
                 );
+            } else if (existing) {
+                this.host.activeTasks?.recordTaskCreated({
+                    id: existing.id,
+                    cwd: existing.cwd,
+                    agentId: existing.agentId,
+                    title: existing.title,
+                    state: existing.state,
+                    createdAt: existing.createdAt,
+                });
+            }
+        } catch {
+            if (existing) {
+                this.host.activeTasks?.recordTaskCreated({
+                    id: existing.id,
+                    cwd: existing.cwd,
+                    agentId: existing.agentId,
+                    title: existing.title,
+                    state: existing.state,
+                    createdAt: existing.createdAt,
+                });
             }
         } finally {
             this.host.projects = await this.host.projectsService.loadProjects();

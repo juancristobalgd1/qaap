@@ -11,6 +11,8 @@ import {
 import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
 import {
     fetchAgentApprovals,
+    markAgentApprovalOptimisticallyResolved,
+    unmarkAgentApprovalOptimisticallyResolved,
     type QaapAgentApprovalRequestDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import { findTranscriptToolApproval, isPendingTranscriptToolSegment, resolveTranscriptInlineApproval } from '../common/qaap-transcript-approval-inline';
@@ -192,6 +194,38 @@ export function getPendingTranscriptToolApprovalExtracted(ctx: MobileProjectsTra
         return findTranscriptToolApproval(ctx.host.cachedAgentApprovals, conversationId, toolUseId);
 }
 
+export function optimisticallyDismissTranscriptApprovalExtracted(
+    ctx: MobileProjectsTranscriptLiveUiContext,
+    approval: QaapAgentApprovalRequestDTO,
+): void {
+    markAgentApprovalOptimisticallyResolved(approval.id);
+    ctx.host.cachedAgentApprovals = ctx.host.cachedAgentApprovals.filter(item => item.id !== approval.id);
+    if (ctx.lastMountedApprovalId === approval.id) {
+        clearTranscriptPendingApprovalBar(ctx.host.transcriptComposerHost);
+        ctx.lastMountedApprovalId = undefined;
+    }
+    ctx.lastInlineApprovalSyncKey = undefined;
+    const latestConv = ctx.host.transcriptLastConv;
+    if (latestConv) {
+        ctx.syncTranscriptPendingApproval(latestConv);
+    }
+}
+
+export function restoreOptimisticallyDismissedTranscriptApprovalExtracted(
+    ctx: MobileProjectsTranscriptLiveUiContext,
+    approval: QaapAgentApprovalRequestDTO,
+): void {
+    unmarkAgentApprovalOptimisticallyResolved(approval.id);
+    if (!ctx.host.cachedAgentApprovals.some(item => item.id === approval.id)) {
+        ctx.host.cachedAgentApprovals = [...ctx.host.cachedAgentApprovals, approval];
+    }
+    ctx.lastInlineApprovalSyncKey = undefined;
+    const latestConv = ctx.host.transcriptLastConv;
+    if (latestConv && latestConv.id === approval.conversationId) {
+        ctx.syncTranscriptPendingApproval(latestConv);
+    }
+}
+
 export function syncTranscriptPendingApprovalExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): void {
         const chatHost = ctx.resolveActiveTranscriptChatHost();
         const pending = resolveTranscriptInlineApproval(ctx.host.cachedAgentApprovals, conv.id);
@@ -228,22 +262,27 @@ export function syncTranscriptPendingApprovalExtracted(ctx: MobileProjectsTransc
             void ctx.refreshTranscriptApprovals();
             ctx.ensureTranscriptConversationRefresh();
         };
+        const submitDecision = (action: 'approve' | 'reject'): void => {
+            if (!pending) {
+                return;
+            }
+            // Optimistically dismiss the banner and any matching inline pill card immediately so
+            // Allow/Deny never feels stuck waiting for two round-trips; restore cleanly on error.
+            const target = pending;
+            optimisticallyDismissTranscriptApprovalExtracted(ctx, target);
+            void respondToTranscriptApproval(target.id, action, {
+                callbacks: {
+                    onSettled,
+                    onRollback: () => restoreOptimisticallyDismissedTranscriptApprovalExtracted(ctx, target),
+                },
+            });
+        };
         mountTranscriptPendingApprovalBar(
             ctx.host.transcriptComposerHost,
             pending,
             {
-                onApprove: () => {
-                    if (!pending) {
-                        return;
-                    }
-                    void respondToTranscriptApproval(pending.id, 'approve', { callbacks: { onSettled } });
-                },
-                onReject: () => {
-                    if (!pending) {
-                        return;
-                    }
-                    void respondToTranscriptApproval(pending.id, 'reject', { callbacks: { onSettled } });
-                },
+                onApprove: () => submitDecision('approve'),
+                onReject: () => submitDecision('reject'),
             },
         );
         if (pending) {

@@ -140,7 +140,16 @@ export function ensurePinnedTranscriptLiveStatusExtracted(ctx: MobileProjectsTra
             ctx.pinnedLiveStatusConvId = undefined;
             ctx.pinnedLiveStatusHoldUntil = 0;
             ctx.pinnedLiveStatusPeakTokens = 0;
+            ctx.pinnedLiveStatusTurnKey = undefined;
             return;
+        }
+        const activeTurnStart = resolveTranscriptTurnStartMs(latestConv.messages) ?? latestConv.createdAt ?? turnStart;
+        const activeTurnKey = `${latestConv.id}:${activeTurnStart}`;
+        if (ctx.pinnedLiveStatusTurnKey !== activeTurnKey) {
+            // Reset peak tokens whenever a new turn starts in the same conversation (e.g. during
+            // the 2s settle hold), so the prior turn's token count never lingers while preparing.
+            ctx.pinnedLiveStatusPeakTokens = 0;
+            ctx.pinnedLiveStatusTurnKey = activeTurnKey;
         }
         const nestedLeak = chatHost.querySelector(
             `.theia-mobile-agent-transcript .theia-mobile-agent-transcript-msg .${TRANSCRIPT_LIVE_STATUS_CLASS}, `
@@ -165,7 +174,7 @@ export function ensurePinnedTranscriptLiveStatusExtracted(ctx: MobileProjectsTra
         const nextTokens = resolveTranscriptLiveStatusTokenCount({ streamChars });
         ctx.pinnedLiveStatusPeakTokens = Math.max(ctx.pinnedLiveStatusPeakTokens, nextTokens);
         syncTranscriptLiveStatusElement(footer, {
-            elapsedMs: Date.now() - turnStart,
+            elapsedMs: Date.now() - activeTurnStart,
             streamChars,
             tokenCount: ctx.pinnedLiveStatusPeakTokens,
             tokenCountEstimated: true,

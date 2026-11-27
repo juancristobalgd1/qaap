@@ -17,10 +17,12 @@ describe('qaap-transcript-stream-status', () => {
 
     it('formats approximate token counts', () => {
         expect(formatTranscriptStreamTokens(0)).to.equal('~0 tokens');
+        expect(formatTranscriptStreamTokens(4)).to.equal('~1 token');
         expect(formatTranscriptStreamTokens(3_480)).to.equal('~870 tokens');
         expect(formatTranscriptStreamTokens(16_800)).to.equal('~4.2k tokens');
         expect(formatTranscriptStreamTokens(48_000)).to.equal('~12k tokens');
         expect(formatTranscriptStreamOutputTokens(3_332)).to.equal('~833 output tokens');
+        expect(formatTranscriptStreamOutputTokens(4)).to.equal('~1 output token');
         expect(formatTranscriptStreamOutputTokens(0)).to.equal('~0 output tokens');
     });
 

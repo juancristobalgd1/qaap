@@ -50,7 +50,7 @@ export function buildTranscriptPendingApprovalBar(
 /** Bring the sticky composer approval bar into view — it sits above the floating input card. */
 export function scrollTranscriptPendingApprovalIntoView(composerHost: HTMLElement | undefined): void {
     const host = composerHost?.querySelector(`.${TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS}`);
-    if (host instanceof HTMLElement) {
+    if (host instanceof HTMLElement && typeof host.scrollIntoView === 'function') {
         host.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 }

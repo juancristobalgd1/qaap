@@ -89,21 +89,27 @@ function formatTranscriptTokenAmount(tokens: number): string | undefined {
     return `${rounded}k`;
 }
 
-/** "~870 tokens", "~4.2k tokens"; "~0 tokens" when count is zero; undefined if not a number. */
+/** "~870 tokens", "~4.2k tokens", "~1 token"; "~0 tokens" when count is zero; undefined if not a number. */
 export function formatTranscriptTokenCount(tokens: number): string | undefined {
     const amount = formatTranscriptTokenAmount(tokens);
-    return amount === undefined ? undefined : `~${amount} tokens`;
+    if (amount === undefined) {
+        return undefined;
+    }
+    return amount === '1' ? '~1 token' : `~${amount} tokens`;
 }
 
 /**
- * "~870 output tokens": a chars/4 estimate of what the in-flight turn has produced so far.
- * Labelled as output so it is not mistaken for the provider context total shown by the
- * context ring (which also counts the prompt, history and cache).
+ * "~870 output tokens" / "~1 output token": a chars/4 estimate of what the in-flight turn has
+ * produced so far. Labelled as output so it is not mistaken for the provider context total shown
+ * by the context ring (which also counts the prompt, history and cache).
  */
 export function formatTranscriptOutputTokenCount(tokens: number): string | undefined {
     const amount = formatTranscriptTokenAmount(tokens);
-    return amount === undefined
-        ? undefined
+    if (amount === undefined) {
+        return undefined;
+    }
+    return amount === '1'
+        ? nls.localize('qaap/transcript/outputTokenEstimateSingular', '~{0} output token', amount)
         : nls.localize('qaap/transcript/outputTokensEstimate', '~{0} output tokens', amount);
 }
 

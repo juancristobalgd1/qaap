@@ -179,6 +179,20 @@ export function createTranscriptToolApprovalActionsExtracted(ctx: MobileProjects
         void ctx.host.transcriptLiveUi.refreshTranscriptApprovals();
         ctx.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
     };
+    const submitDecision = (action: 'approve' | 'reject', event: Event): void => {
+        if (!pending) {
+            return;
+        }
+        const target = pending;
+        ctx.host.transcriptLiveUi.optimisticallyDismissTranscriptApproval?.(target);
+        void respondToTranscriptApproval(target.id, action, {
+            fromEvent: event,
+            callbacks: {
+                onSettled,
+                onRollback: () => ctx.host.transcriptLiveUi.restoreOptimisticallyDismissedTranscriptApproval?.(target),
+            },
+        });
+    };
     const pendingSummary = pending?.summary?.trim();
     return buildTranscriptApprovalCard({
         surface: 'pill',
@@ -197,18 +211,8 @@ export function createTranscriptToolApprovalActionsExtracted(ctx: MobileProjects
                 'Prefer the Allow button above the composer if this one does not respond.',
             ),
     }, {
-        onApprove: event => {
-            if (!pending) {
-                return;
-            }
-            void respondToTranscriptApproval(pending.id, 'approve', { fromEvent: event, callbacks: { onSettled } });
-        },
-        onReject: event => {
-            if (!pending) {
-                return;
-            }
-            void respondToTranscriptApproval(pending.id, 'reject', { fromEvent: event, callbacks: { onSettled } });
-        },
+        onApprove: event => submitDecision('approve', event),
+        onReject: event => submitDecision('reject', event),
     });
 }
 
