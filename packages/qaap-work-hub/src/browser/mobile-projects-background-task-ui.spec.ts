@@ -351,6 +351,34 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect(result).to.not.equal(undefined);
         });
 
+        it('re-seeds the stream progress clock before retrying after the dirty-workspace dialog', async () => {
+            const ui = withAgentSnapshot({ agents: [], agentConfigured: false, qaiqInstalled: false, qaiqModels: [] });
+            let seeded = 0;
+            (ui as unknown as { host: { transcriptLiveUi?: { seedTranscriptSemanticProgressClock: () => void } } }).host.transcriptLiveUi = {
+                seedTranscriptSemanticProgressClock: () => { seeded++; },
+            };
+            const decision = ui as unknown as {
+                askDirtyWorkspaceChoice: () => Promise<'continueHere'>;
+                createWithDirtyWorkspaceDecision: (project: MobileProjectEntry, cwd: string, draft: string, options: { selectedAgentId?: string }) => Promise<unknown>;
+            };
+            decision.askDirtyWorkspaceChoice = async () => 'continueHere';
+            let calls = 0;
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = (async () => {
+                calls++;
+                if (calls === 1) {
+                    return dirtyResponse();
+                }
+                return { ok: true, status: 201, json: async () => ({ id: 'conv-1', cwd: '/repo', status: 'streaming', messages: [], createdAt: 1, updatedAt: 1 }) };
+            }) as unknown as typeof globalThis.fetch;
+            try {
+                await decision.createWithDirtyWorkspaceDecision({ id: 'p', name: 'repo' } as MobileProjectEntry, '/repo', 'fix it', { selectedAgentId: '@shell' });
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+            expect(seeded).to.equal(1);
+        });
+
         it('creates no task when Stop is pressed while the dialog is open, even if the user then chooses Continue here', async () => {
             const { bodies, result, rollbacks } = await submitOnDirtyTree('continueHere', true);
             expect(bodies).to.have.length(1);

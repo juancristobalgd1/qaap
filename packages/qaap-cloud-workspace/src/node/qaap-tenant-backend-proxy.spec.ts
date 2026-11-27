@@ -1027,6 +1027,15 @@ describe('QaapTenantBackendProxyContribution', () => {
             });
         });
 
+        it('raises http.Server keepAliveTimeout above Caddy keepalive and headersTimeout above keepAliveTimeout', () => {
+            const proxy = createProxy() as unknown as { configureServerKeepAlive(server: http.Server): void };
+            const server = http.createServer();
+            expect(server.keepAliveTimeout).to.equal(5_000);
+            proxy.configureServerKeepAlive(server);
+            expect(server.keepAliveTimeout).to.be.at.least(65_000);
+            expect(server.headersTimeout).to.be.greaterThan(server.keepAliveTimeout);
+        });
+
         it('can be switched off for middleware-only routing', () => {
             const previous = process.env.QAAP_TENANT_PROXY_EARLY_ROUTING;
             try {

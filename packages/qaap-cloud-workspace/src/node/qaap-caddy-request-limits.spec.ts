@@ -17,6 +17,11 @@ describe('Caddy request limits', () => {
             expect(config).to.match(/request_body\s*\{\s*max_size \{\$QAAP_REQUEST_BODY_MAX_SIZE:512MB\}\s*\}/);
             expect(config.indexOf('request_body')).to.be.lessThan(config.indexOf('reverse_proxy'));
         });
+
+        it(`closes idle upstream keep-alive sockets before Node keepAliveTimeout in ${site}`, () => {
+            const config = read(site);
+            expect(config).to.match(/transport http\s*\{\s*keepalive 30s\s*\}/);
+        });
     }
 
     it('passes the operator override through to the Caddy container', () => {

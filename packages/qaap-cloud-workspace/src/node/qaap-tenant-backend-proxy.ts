@@ -44,6 +44,15 @@ const HOP_BY_HOP_HEADERS = new Set([
 /** Floor for the response wait when the tenant cold start consumed (almost) the whole budget. */
 const TENANT_PROXY_MIN_RESPONSE_WAIT_MS = 5_000;
 
+/**
+ * HTTP server keep-alive timeout (ms): strictly above Caddy's `transport http { keepalive 30s }`
+ * so the reverse proxy always closes idle connections first instead of writing a POST onto a
+ * socket Node just closed (which produces TCP RST -> HTTP 502 "read: connection reset by peer").
+ */
+export const QAAP_HTTP_SERVER_KEEP_ALIVE_TIMEOUT_MS = 65_000;
+/** Must exceed {@link QAAP_HTTP_SERVER_KEEP_ALIVE_TIMEOUT_MS} per Node's http.Server contract. */
+export const QAAP_HTTP_SERVER_HEADERS_TIMEOUT_MS = 70_000;
+
 /** How long a per-tenant "control plane may serve the static frontend" decision is reused by assets. */
 const STATIC_SERVING_DECISION_TTL_MS = 30_000;
 
@@ -104,12 +113,27 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     }
 
     onStart(server: http.Server): void {
+        this.configureServerKeepAlive(server);
         // Theia and preview contributions register upgrade listeners during startup. Install after
         // those listeners are present, then dispatch non-tenant upgrades back to the original set.
         setImmediate(() => {
             this.installUpgradeRouter(server);
             this.installRequestRouter(server);
         });
+    }
+
+    /**
+     * Raises Node's default 5s `keepAliveTimeout` above Caddy's 30s upstream keepalive (and keeps
+     * `headersTimeout` strictly greater than `keepAliveTimeout`) on both the control plane and
+     * every tenant backend, preventing stale-socket TCP RST -> 502 races on POST requests.
+     */
+    protected configureServerKeepAlive(server: http.Server): void {
+        if (typeof server.keepAliveTimeout === 'number' && server.keepAliveTimeout < QAAP_HTTP_SERVER_KEEP_ALIVE_TIMEOUT_MS) {
+            server.keepAliveTimeout = QAAP_HTTP_SERVER_KEEP_ALIVE_TIMEOUT_MS;
+        }
+        if (typeof server.headersTimeout === 'number' && server.headersTimeout <= server.keepAliveTimeout) {
+            server.headersTimeout = Math.max(QAAP_HTTP_SERVER_HEADERS_TIMEOUT_MS, server.keepAliveTimeout + 5_000);
+        }
     }
 
     /**
@@ -318,7 +342,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             this.forwardHttp(request as Request, response as Response, target, assertion, userLogin,
                 this.remainingTenantProxyBudgetMs(deadline), socketIoHeaders, undefined, retryOnConnectFailure);
         } catch (error) {
-            this.writeProxyError(response as Response, error);
+            this.writeProxyError(response as Response, error, request, userLogin);
         }
     }
 
@@ -361,7 +385,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             this.forwardHttp(request as Request, response as Response, target, undefined, tenantLogin,
                 this.remainingTenantProxyBudgetMs(deadline), undefined, route);
         } catch (error) {
-            this.writeProxyError(response as Response, error);
+            this.writeProxyError(response as Response, error, request, tenantLogin);
         }
     }
 
@@ -514,7 +538,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             this.forwardHttp(req, res, target, assertion, context.userLogin,
                 this.remainingTenantProxyBudgetMs(deadline), undefined, undefined, retryOnConnectFailure);
         } catch (error) {
-            this.writeProxyError(res, error);
+            this.writeProxyError(res, error, req, context.userLogin);
         }
     }
 
@@ -788,12 +812,17 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         if (body) {
             headers['content-length'] = String(body.length);
         }
+        const replayableRead = req.method === 'GET' || req.method === 'HEAD';
+        // Mutations (POST/PUT/PATCH/DELETE) cannot be replayed on a stale pooled socket through the
+        // per-tenant TCP ingress relay: open a fresh loopback connection per mutation (`agent: false`)
+        // so a keep-alive close race on the tenant hop can never produce a spurious 502.
         const upstream = http.request({
             host: target.host,
             port: target.port,
             method: req.method,
             path: req.originalUrl || req.url,
             headers,
+            ...(replayableRead ? {} : { agent: false }),
         }, response => {
             // Headers arrived: streaming / long-lived bodies must not be cut by the wait deadline.
             responseStarted = true;
@@ -861,7 +890,6 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 // Drop the cached target so the next request re-ensures (restarts) the backend.
                 this.docker.invalidateTenantBackendTarget(tenantLogin, target);
             }
-            const replayableRead = req.method === 'GET' || req.method === 'HEAD';
             // Either a connect failure before any TCP connection, or a hang-up before any response
             // (a relay that outlives its stopped backend). One replay only: it is built without a retry.
             if (retryOnConnectFailure && replayableRead && !timedOut
@@ -869,14 +897,15 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 // The target cache can outlive a crashed/restarted tenant. A safe read can recover
                 // in the same request after invalidation rather than surfacing a transient 502 to
                 // the signed-in client.
-                void retryOnConnectFailure().catch(retryError => this.writeProxyError(res, retryError));
+                void retryOnConnectFailure().catch(retryError => this.writeProxyError(res, retryError, req, tenantLogin));
                 return;
             }
             if (timedOut && !res.headersSent) {
+                this.drainUnreadRequestBody(req);
                 this.writeJson(res, 504, { error: 'Tenant backend timed out', detail: error.message.slice(0, 240) });
                 return;
             }
-            this.writeProxyError(res, error);
+            this.writeProxyError(res, error, req, tenantLogin);
         });
         if (body) {
             upstream.end(body);
@@ -1059,13 +1088,27 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         return code === 'ECONNREFUSED' || code === 'EHOSTUNREACH' || code === 'ENOTFOUND' || code === 'ETIMEDOUT';
     }
 
-    protected writeProxyError(res: Response, error: unknown): void {
+    protected writeProxyError(res: Response, error: unknown, req?: http.IncomingMessage, tenantLogin?: string): void {
+        const message = error instanceof Error ? error.message : String(error);
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        const pathname = (req?.url ?? '/').split('?', 1)[0];
+        console.warn(`[qaap-tenant-proxy] ${req?.method ?? 'HTTP'} ${pathname} tenant=${tenantLogin ?? '-'} failed: ${code ? `${code} ` : ''}${message.slice(0, 200)}`);
+        this.drainUnreadRequestBody(req);
         if (res.headersSent) {
             res.end();
             return;
         }
-        const message = error instanceof Error ? error.message : String(error);
         this.writeJson(res, 502, { error: 'Tenant backend unavailable', detail: message.slice(0, 240) });
+    }
+
+    /**
+     * Drain any buffered request body bytes before ending an error response so Node does not reset
+     * the incoming TCP socket (which turns a structured 502/504 JSON body into a Caddy RST).
+     */
+    protected drainUnreadRequestBody(req: http.IncomingMessage | undefined): void {
+        if (req && !req.complete && !req.destroyed && typeof req.resume === 'function') {
+            req.resume();
+        }
     }
 
     /** Works for Express and raw `http.ServerResponse`s (the early request router has no Express). */

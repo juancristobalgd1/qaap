@@ -12,5 +12,11 @@ staging.{$QAAP_PUBLIC_HOST:localhost} {
 	request_body {
 		max_size {$QAAP_REQUEST_BODY_MAX_SIZE:512MB}
 	}
-	reverse_proxy qaap-staging-theia:4874
+	# Close idle keep-alive sockets before Node's 65s keepAliveTimeout so Caddy never writes a
+	# POST onto a socket Node just closed (which causes TCP RST -> HTTP 502).
+	reverse_proxy qaap-staging-theia:4874 {
+		transport http {
+			keepalive 30s
+		}
+	}
 }

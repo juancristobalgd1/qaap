@@ -817,7 +817,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             settleText?.(conv);
             res.status(201).json(conv);
         } catch (error) {
-            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(`[qaap-agent-conversation] create failed owner=${ownerLogin ?? '_'} cwd=${resolvedCwd.cwd}: ${message}`);
+            res.status(400).json({ error: message });
         } finally {
             // No-op when the create succeeded; releases any waiter of a failed create so it can retry.
             settleText?.(undefined);
