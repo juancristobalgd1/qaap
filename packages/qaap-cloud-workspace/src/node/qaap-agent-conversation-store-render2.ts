@@ -86,13 +86,18 @@ function wrapMutatingGit(ctx: QaapAgentConversationStoreContext, cwd: string, ar
     readonly args: string[];
     readonly env: NodeJS.ProcessEnv;
 } {
+    // Forward neutralization flags and throwaway GIT_INDEX_FILE into tenant containers / sandboxes:
+    // `docker exec` and the task sandbox only pass explicit env entries, so dropping GIT_INDEX_FILE
+    // made checkpoint/snapshot `read-tree`/`add -A` mutate the user's real `.git/index`.
+    const forwardedEnv: NodeJS.ProcessEnv = { ...(QaapNeutralGit.forwardedEnv(env) ?? {}) };
+    if (env?.GIT_INDEX_FILE) {
+        forwardedEnv.GIT_INDEX_FILE = env.GIT_INDEX_FILE;
+    }
     const wrapped = ctx.tenantSpawn.wrapShellForTenant(
         cwd,
         'git',
         ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
-        // A run that asked for the user-level git config to be ignored must keep that in every tenant transport
-        // (docker exec / task sandbox only forward the variables they are handed).
-        QaapNeutralGit.forwardedEnv(env),
+        Object.keys(forwardedEnv).length > 0 ? forwardedEnv : undefined,
     );
     const runEnv = childProcessEnv({ ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) });
     return { file: wrapped.file, args: wrapped.args, env: runEnv };

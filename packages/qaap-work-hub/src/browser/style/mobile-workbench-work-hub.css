@@ -2686,6 +2686,7 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-hom
   font-size: 12px;
   line-height: 1.45;
   color: var(--theia-descriptionForeground);
+  white-space: pre-line;
 }
 
 .theia-mobile-agent-approval-card-sep {

@@ -866,6 +866,13 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         if (!cwd) {
             return;
         }
+        const hadPrevious = this.host.composerWorkspaceBranchByProjectId.has(project.id);
+        const previousBranch = this.host.composerWorkspaceBranchByProjectId.get(project.id);
+        // Optimistically switch the visible branch chip and close the sheet immediately; roll back on error.
+        this.host.composerWorkspaceBranchByProjectId.set(project.id, branch);
+        this.composerWorkspaceUncommittedChangeCountByProjectId.delete(project.id);
+        this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+        this.remountComposerWithWorkspaceBar(project);
         try {
             const response = await fetch(`${QAAP_GIT_REVIEW_API_PATH}/checkout`, {
                 method: 'POST',
@@ -877,17 +884,21 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 throw new Error(this.formatComposerWorkspaceBranchApiError(await response.text()));
             }
             const payload = await response.json() as { branch?: string };
-            if (payload.branch) {
+            if (payload.branch && payload.branch !== branch) {
                 this.host.composerWorkspaceBranchByProjectId.set(project.id, payload.branch);
+                this.remountComposerWithWorkspaceBar(project);
             }
-            this.composerWorkspaceUncommittedChangeCountByProjectId.delete(project.id);
-            this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
-            this.remountComposerWithWorkspaceBar(project);
             MobileSnackbar.show(
                 nls.localize('qaap/composerWorkspace/branchSwitched', 'Switched to {0}', payload.branch ?? branch),
                 { kind: 'success', duration: 1600 },
             );
         } catch (error) {
+            if (hadPrevious && previousBranch !== undefined) {
+                this.host.composerWorkspaceBranchByProjectId.set(project.id, previousBranch);
+            } else {
+                this.host.composerWorkspaceBranchByProjectId.delete(project.id);
+            }
+            this.remountComposerWithWorkspaceBar(project);
             const raw = error instanceof Error ? error.message : String(error);
             const detail = this.formatComposerWorkspaceBranchApiError(raw);
             MobileSnackbar.show(

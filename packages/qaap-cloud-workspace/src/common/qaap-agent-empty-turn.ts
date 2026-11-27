@@ -38,6 +38,38 @@ export interface QaapEmptyAgentTurnOptions {
 
 const NOT_EMPTY: QaapEmptyAgentTurnResult = { empty: false };
 
+/** True when a streamed assistant reply is just a raw JSON tool-call object printed as prose. */
+function looksLikePlainTextToolCallPayload(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+        return false;
+    }
+    try {
+        const parsed = JSON.parse(trimmed) as { readonly type?: unknown; readonly name?: unknown; readonly parameters?: unknown; readonly arguments?: unknown };
+        return typeof parsed === 'object' && parsed !== null
+            && typeof parsed.name === 'string'
+            && (parsed.type === 'function' || parsed.type === 'tool_use' || parsed.parameters !== undefined || parsed.arguments !== undefined);
+    } catch {
+        return false;
+    }
+}
+
+function extractAssistantTextFromRecord(parsed: { readonly message?: unknown }): string {
+    const message = parsed.message as { readonly content?: unknown } | undefined;
+    if (!Array.isArray(message?.content)) {
+        return '';
+    }
+    const parts: string[] = [];
+    for (const block of message.content) {
+        if (block && typeof block === 'object'
+            && (block as { readonly type?: unknown }).type === 'text'
+            && typeof (block as { readonly text?: unknown }).text === 'string') {
+            parts.push((block as { readonly text: string }).text);
+        }
+    }
+    return parts.join('');
+}
+
 /**
  * @param log raw agent stdout/stderr (JSONL for the claude-code stream format).
  */
@@ -49,7 +81,9 @@ export function detectEmptyAgentTurn(
         return NOT_EMPTY;
     }
     let sawResult = false;
+    let isAcpTransport = false;
     let resultText = '';
+    let acpAssistantText = '';
     for (const line of log.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed.startsWith('{')) {
@@ -59,10 +93,21 @@ export function detectEmptyAgentTurn(
         if (trimmed.includes('"tool_use"') || trimmed.includes('"tool_result"')) {
             return NOT_EMPTY;
         }
-        let parsed: { readonly type?: unknown; readonly result?: unknown };
+        let parsed: { readonly type?: unknown; readonly result?: unknown; readonly qaap_transport?: unknown; readonly message?: unknown };
         try {
             parsed = JSON.parse(trimmed) as typeof parsed;
         } catch {
+            continue;
+        }
+        if (parsed.type === 'system' && parsed.qaap_transport === 'acp') {
+            isAcpTransport = true;
+            continue;
+        }
+        if (isAcpTransport && parsed.type === 'assistant') {
+            const text = extractAssistantTextFromRecord(parsed);
+            if (text.trim().length > 0) {
+                acpAssistantText = acpAssistantText ? `${acpAssistantText}\n${text}` : text;
+            }
             continue;
         }
         if (parsed.type === 'result') {
@@ -78,6 +123,11 @@ export function detectEmptyAgentTurn(
     if (resultText.trim().length > 0) {
         return NOT_EMPTY;
     }
+    // `qaap-acp-bridge.mjs` deliberately writes `result: ""` on the terminal record so streamed text
+    // is not duplicated in the transcript. Count genuine prose from the ACP `assistant` record.
+    if (isAcpTransport && acpAssistantText.trim().length > 0 && !looksLikePlainTextToolCallPayload(acpAssistantText)) {
+        return NOT_EMPTY;
+    }
     return {
         empty: true,
         reason: 'The agent ran no tools and produced no final message, so nothing was done. '
@@ -87,29 +137,42 @@ export function detectEmptyAgentTurn(
 
 /**
  * The turn's final visible message, or '' when the log carries no terminal record. Reads the same
- * `result` field {@link detectEmptyAgentTurn} judges, so "empty turn" and "nothing to hand on to
- * the next node" can never disagree.
+ * `result` field {@link detectEmptyAgentTurn} judges (falling back to ACP `assistant` text blocks
+ * when the ACP bridge wrote `result: ""`), so "empty turn" and "nothing to hand on to the next
+ * node" can never disagree.
  */
 export function extractAgentFinalMessage(log: string | undefined): string {
     if (!log?.trim()) {
         return '';
     }
     let final = '';
+    let isAcpTransport = false;
+    let acpAssistantText = '';
     for (const line of log.split('\n')) {
         const trimmed = line.trim();
-        if (!trimmed.startsWith('{') || !trimmed.includes('"result"')) {
+        if (!trimmed.startsWith('{')) {
             continue;
         }
         try {
-            const parsed = JSON.parse(trimmed) as { readonly type?: unknown; readonly result?: unknown };
-            if (parsed.type === 'result' && typeof parsed.result === 'string') {
+            const parsed = JSON.parse(trimmed) as { readonly type?: unknown; readonly result?: unknown; readonly qaap_transport?: unknown; readonly message?: unknown };
+            if (parsed.type === 'system' && parsed.qaap_transport === 'acp') {
+                isAcpTransport = true;
+            } else if (isAcpTransport && parsed.type === 'assistant') {
+                const text = extractAssistantTextFromRecord(parsed);
+                if (text.trim().length > 0) {
+                    acpAssistantText = acpAssistantText ? `${acpAssistantText}\n${text}` : text;
+                }
+            } else if (parsed.type === 'result' && typeof parsed.result === 'string') {
                 final = parsed.result;
             }
         } catch {
             continue;
         }
     }
-    return final;
+    if (final.trim().length > 0) {
+        return final;
+    }
+    return isAcpTransport && !looksLikePlainTextToolCallPayload(acpAssistantText) ? acpAssistantText : final;
 }
 
 /** Shortened `result` text for diagnostics, never the whole blob. */

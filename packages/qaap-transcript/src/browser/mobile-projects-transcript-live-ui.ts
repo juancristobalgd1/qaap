@@ -42,7 +42,7 @@ import { applyOptimisticConversationCancelExtracted, applyOptimisticRunCancelExt
 import { onTranscriptPreviewStartStalledExtracted } from './mobile-projects-transcript-live-ui-streaming';
 import { QaapPreviewStartingWatchdog } from './qaap-preview-starting-watchdog';
 import { applyTranscriptSseRenderExtracted, ensureBootstrapPreviewListenerExtracted, ensureTranscriptDevPreviewWatchExtracted, finalizeTranscriptDevPreviewAfterSettleExtracted, kickoffTranscriptDevPreviewBootstrapExtracted, maybeActivateTranscriptDevPreviewExtracted, maybeReportTranscriptPreviewBootstrapFailureExtracted, maybeSyncTranscriptVisuallySettledChromeExtracted, onTranscriptUserMessageSubmittedExtracted, openReadyTranscriptPreviewUrlExtracted, resolveTranscriptRefreshContextExtracted, scheduleTranscriptComposerActivityRefreshExtracted, stopTranscriptComposerActivityRefreshExtracted, syncTranscriptConversationSettledChromeExtracted } from './mobile-projects-transcript-live-ui-streaming';
-import { buildTranscriptApprovalSyncKeyExtracted, ensureTranscriptConversationRefreshExtracted, ensureTranscriptLiveControllerExtracted, findTranscriptToolSegmentExtracted, getPendingTranscriptToolApprovalExtracted, reconcileTranscriptInlineToolApprovalCardsExtracted, refreshTranscriptApprovalsExtracted, refreshTranscriptPreviewOfferExtracted, resolveReadyTranscriptPreviewUrlExtracted, resolveTranscriptPreviewPollIntervalMsExtracted, scheduleTranscriptApprovalRefreshExtracted, scheduleTranscriptPreviewOfferRefreshExtracted, scheduleTranscriptVisualVerificationPollExtracted, stopTranscriptApprovalRefreshExtracted, stopTranscriptLiveWatchExtracted, stopTranscriptPreviewOfferRefreshExtracted, stopTranscriptVisualVerificationPollExtracted, syncTranscriptPendingApprovalExtracted } from './mobile-projects-transcript-live-ui-timeline';
+import { buildTranscriptApprovalSyncKeyExtracted, ensureTranscriptConversationRefreshExtracted, ensureTranscriptLiveControllerExtracted, findTranscriptToolSegmentExtracted, getPendingTranscriptToolApprovalExtracted, optimisticallyDismissTranscriptApprovalExtracted, reconcileTranscriptInlineToolApprovalCardsExtracted, refreshTranscriptApprovalsExtracted, refreshTranscriptPreviewOfferExtracted, resolveReadyTranscriptPreviewUrlExtracted, resolveTranscriptPreviewPollIntervalMsExtracted, restoreOptimisticallyDismissedTranscriptApprovalExtracted, scheduleTranscriptApprovalRefreshExtracted, scheduleTranscriptPreviewOfferRefreshExtracted, scheduleTranscriptVisualVerificationPollExtracted, stopTranscriptApprovalRefreshExtracted, stopTranscriptLiveWatchExtracted, stopTranscriptPreviewOfferRefreshExtracted, stopTranscriptVisualVerificationPollExtracted, syncTranscriptPendingApprovalExtracted } from './mobile-projects-transcript-live-ui-timeline';
 
 /** Panel surface for SSE live watch, debounced refetch, and inline approval refresh. */
 export interface MobileProjectsTranscriptLiveHost {
@@ -421,6 +421,14 @@ export class MobileProjectsTranscriptLiveUi {
 
     syncTranscriptPendingApproval(conv: QaapAgentConversationDTO): void {
         syncTranscriptPendingApprovalExtracted(this, conv);
+    }
+
+    optimisticallyDismissTranscriptApproval(approval: QaapAgentApprovalRequestDTO): void {
+        optimisticallyDismissTranscriptApprovalExtracted(this, approval);
+    }
+
+    restoreOptimisticallyDismissedTranscriptApproval(approval: QaapAgentApprovalRequestDTO): void {
+        restoreOptimisticallyDismissedTranscriptApprovalExtracted(this, approval);
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */

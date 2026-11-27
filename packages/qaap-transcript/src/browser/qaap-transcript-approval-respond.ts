@@ -4,12 +4,19 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { approveAgentRequest, rejectAgentRequest } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import {
+    approveAgentRequest,
+    markAgentApprovalOptimisticallyResolved,
+    rejectAgentRequest,
+    unmarkAgentApprovalOptimisticallyResolved,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { setTranscriptApprovalCardBusy, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 
 export interface TranscriptApprovalRespondCallbacks {
     readonly onSettled?: () => void;
+    /** Called when the decision fails (and was not expired) so callers can restore an optimistically dismissed card. */
+    readonly onRollback?: () => void;
 }
 
 /** Approve or reject a VPS tool permission and surface failures in the mobile snackbar. */
@@ -24,6 +31,7 @@ export async function respondToTranscriptApproval(
 ): Promise<boolean> {
     options.fromEvent?.stopPropagation();
     options.fromEvent?.preventDefault();
+    markAgentApprovalOptimisticallyResolved(approvalId);
     const card = options.card ?? (options.fromEvent?.currentTarget instanceof HTMLElement
         ? options.fromEvent.currentTarget.closest<HTMLElement>(`.${TRANSCRIPT_APPROVAL_CARD_CLASS}`) ?? undefined
         : undefined);
@@ -47,6 +55,7 @@ export async function respondToTranscriptApproval(
             options.callbacks?.onSettled?.();
             return false;
         }
+        unmarkAgentApprovalOptimisticallyResolved(approvalId);
         const fallback = action === 'approve'
             ? nls.localize(
                 'qaap/mobileProjects/transcriptApprovalApproveFailed',
@@ -60,8 +69,10 @@ export async function respondToTranscriptApproval(
         if (card) {
             setTranscriptApprovalCardBusy(card, false);
         }
+        options.callbacks?.onRollback?.();
         return false;
     } catch (error) {
+        unmarkAgentApprovalOptimisticallyResolved(approvalId);
         const detail = error instanceof Error ? error.message : String(error);
         MobileSnackbar.show(nls.localize(
             'qaap/mobileProjects/transcriptApprovalTransportFailed',
@@ -71,6 +82,7 @@ export async function respondToTranscriptApproval(
         if (card) {
             setTranscriptApprovalCardBusy(card, false);
         }
+        options.callbacks?.onRollback?.();
         return false;
     }
 }

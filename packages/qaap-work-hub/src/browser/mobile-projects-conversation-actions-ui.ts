@@ -239,14 +239,25 @@ export class MobileProjectsConversationActionsUi {
         }
         this.host.cardMenuUi.closeCardMenu();
         this.host.transcriptAutoApproveBusy = true;
+        // The switch and the approval policy are one setting: apply both optimistically so the
+        // chip and list update immediately on tap, and roll back cleanly on failure.
+        const previousPolicyId = summary.approvalPolicyId
+            ?? (isConversationAutoApproveEnabled(summary) ? 'approve-for-me' : 'request-approval');
+        const { autoApprove: patchAutoApprove, approvalPolicyId } = buildAutoApprovePatch(autoApprove);
+        this.host.conversations?.recordSnapshot({
+            ...summary,
+            autoApprove: patchAutoApprove,
+            approvalPolicyId,
+            updatedAt: Date.now(),
+        });
+        this.host.syncOpenTranscriptApprovalPolicy(summary.id, approvalPolicyId);
+        this.refreshConversationLists();
         try {
-            // The switch and the approval policy are one setting: the conversation stores both, and the open chip follows.
-            const { autoApprove: patchAutoApprove, approvalPolicyId } = buildAutoApprovePatch(autoApprove);
             const full = await updateConversation(summary.id, { autoApprove: patchAutoApprove, approvalPolicyId });
             const next = conversationToSummary(full);
             this.host.conversations?.recordSnapshot(next);
             this.host.syncOpenTranscriptApprovalPolicy(summary.id, approvalPolicyId);
-            this.host.renderList();
+            this.refreshConversationLists();
             MobileSnackbar.show(
                 autoApprove
                     ? nls.localize('qaap/mobileProjects/taskAutoApproveEnabled', 'Auto-approve enabled for this task')
@@ -254,6 +265,11 @@ export class MobileProjectsConversationActionsUi {
                 { kind: 'success', duration: 2200 },
             );
         } catch (error) {
+            this.host.conversations?.recordSnapshot(summary);
+            if (previousPolicyId === 'approve-for-me' || previousPolicyId === 'request-approval') {
+                this.host.syncOpenTranscriptApprovalPolicy(summary.id, previousPolicyId);
+            }
+            this.refreshConversationLists();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskAutoApproveFailed',
                 'Could not update auto-approve: {0}',
@@ -266,10 +282,16 @@ export class MobileProjectsConversationActionsUi {
 
     async onSetConversationTaskPullRequest(summary: QaapAgentConversationSummaryDTO, enabled: boolean): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        this.host.conversations?.recordSnapshot({
+            ...summary,
+            taskPullRequestEnabled: enabled,
+            updatedAt: Date.now(),
+        });
+        this.refreshConversationLists();
         try {
             const full = await updateConversation(summary.id, { taskPullRequestEnabled: enabled });
             this.host.conversations?.recordSnapshot(conversationToSummary(full));
-            this.host.renderList();
+            this.refreshConversationLists();
             MobileSnackbar.show(
                 enabled
                     ? nls.localize('qaap/mobileProjects/taskPrEnabled', 'Qaap will open a pull request when this task is done')
@@ -277,6 +299,8 @@ export class MobileProjectsConversationActionsUi {
                 { kind: 'success', duration: 2200 },
             );
         } catch (error) {
+            this.host.conversations?.recordSnapshot(summary);
+            this.refreshConversationLists();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskPrToggleFailed',
                 'Could not change "Create PR when done": {0}',
@@ -287,15 +311,27 @@ export class MobileProjectsConversationActionsUi {
 
     async onRespondTaskPullRequestConsent(summary: QaapAgentConversationSummaryDTO, allow: boolean): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        const optimisticPr = allow && summary.taskPullRequest
+            ? { ...summary.taskPullRequest, state: 'open' as const, updatedAt: Date.now() }
+            : undefined;
+        this.host.conversations?.recordSnapshot({
+            ...summary,
+            taskPullRequest: optimisticPr,
+            ...(allow ? {} : { taskPullRequestEnabled: false }),
+            updatedAt: Date.now(),
+        });
+        this.refreshConversationLists();
         try {
             const full = await respondTaskPullRequestConsent(summary.id, allow);
             this.host.conversations?.recordSnapshot(conversationToSummary(full));
-            this.host.renderList();
+            this.refreshConversationLists();
             if (allow) {
                 MobileSnackbar.show(nls.localize('qaap/mobileProjects/taskPrAllowed', 'Allowed: Qaap is opening the pull request'),
                     { kind: 'success', duration: 2200 });
             }
         } catch (error) {
+            this.host.conversations?.recordSnapshot(summary);
+            this.refreshConversationLists();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskPrConsentFailed',
                 'Could not answer the pull request question: {0}',

@@ -157,28 +157,38 @@ export class MobileProjectsProjectActionsUi {
         if (!confirmed) {
             return;
         }
-        try {
-            for (const summary of conversations) {
-                this.host.releasePreviewForConversation?.(project, summary);
-                if (summary.source === 'theia-chat') {
-                    if (summary.sessionId && this.host.chatService) {
-                        await this.host.chatService.deleteSession(summary.sessionId);
-                        this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
-                    }
-                } else {
-                    await deleteConversation(summary.id);
-                    this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+        // Optimistically remove all target conversations from the UI immediately, then persist in parallel
+        // and restore any individual item whose delete fails.
+        for (const summary of conversations) {
+            this.host.releasePreviewForConversation?.(project, summary);
+            this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+        }
+        this.host.transcriptSheetUi.closeTranscriptSheet();
+        this.host.renderList();
+        const results = await Promise.allSettled(conversations.map(async summary => {
+            if (summary.source === 'theia-chat') {
+                if (summary.sessionId && this.host.chatService) {
+                    await this.host.chatService.deleteSession(summary.sessionId);
                 }
+            } else {
+                await deleteConversation(summary.id);
             }
-            await this.host.conversations?.refreshTheiaChatSessionsForProjects(this.host.projects);
-            this.host.transcriptSheetUi.closeTranscriptSheet();
-            await this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries();
-            this.host.renderList();
-        } catch (error) {
+        }));
+        let firstError: unknown;
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                firstError ??= result.reason;
+                this.host.conversations?.restoreSnapshot(conversations[index]);
+            }
+        });
+        await this.host.conversations?.refreshTheiaChatSessionsForProjects(this.host.projects).catch(() => undefined);
+        await this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries().catch(() => undefined);
+        this.host.renderList();
+        if (firstError !== undefined) {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/clearAllTasksFailed',
                 'Could not clear tasks: {0}',
-                error instanceof Error ? error.message : String(error)
+                firstError instanceof Error ? firstError.message : String(firstError)
             ));
         }
     }
@@ -213,23 +223,30 @@ export class MobileProjectsProjectActionsUi {
         if (!confirmed) {
             return false;
         }
-        try {
-            for (const summary of targets) {
-                this.host.releasePreviewForConversation?.(project, summary);
-                await deleteConversation(summary.id);
-                this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+        for (const summary of targets) {
+            this.host.releasePreviewForConversation?.(project, summary);
+            this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+        }
+        this.host.transcriptSheetUi.closeTranscriptSheet();
+        this.host.renderList();
+        const results = await Promise.allSettled(targets.map(summary => deleteConversation(summary.id)));
+        let firstError: unknown;
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                firstError ??= result.reason;
+                this.host.conversations?.restoreSnapshot(targets[index]);
             }
-            this.host.transcriptSheetUi.closeTranscriptSheet();
+        });
+        if (firstError !== undefined) {
             this.host.renderList();
-            return true;
-        } catch (error) {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/clearFailedTasksFailed',
                 'Could not clear failed runs: {0}',
-                error instanceof Error ? error.message : String(error)
+                firstError instanceof Error ? firstError.message : String(firstError)
             ));
             return false;
         }
+        return true;
     }
 
     /**

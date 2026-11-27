@@ -813,16 +813,16 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             headers['content-length'] = String(body.length);
         }
         const replayableRead = req.method === 'GET' || req.method === 'HEAD';
-        // Mutations (POST/PUT/PATCH/DELETE) cannot be replayed on a stale pooled socket through the
-        // per-tenant TCP ingress relay: open a fresh loopback connection per mutation (`agent: false`)
-        // so a keep-alive close race on the tenant hop can never produce a spurious 502.
+        // Open a fresh loopback connection per request through the per-tenant TCP ingress relay
+        // (`agent: false`) so an idle keep-alive close race on the tenant hop can never produce
+        // a spurious ECONNRESET / 502 or evict a healthy tenant target from the cache.
         const upstream = http.request({
             host: target.host,
             port: target.port,
             method: req.method,
             path: req.originalUrl || req.url,
             headers,
-            ...(replayableRead ? {} : { agent: false }),
+            agent: false,
         }, response => {
             // Headers arrived: streaming / long-lived bodies must not be cut by the wait deadline.
             responseStarted = true;
@@ -884,6 +884,11 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         });
         upstream.once('error', error => {
             clearTimeout(responseTimer);
+            if (clientAborted) {
+                // Browser/Caddy already closed the request (navigation, AbortController, tab close);
+                // we destroyed upstream ourselves — do not log a spurious proxy error or write 502.
+                return;
+            }
             const connected = isConnected();
             const hangUp = this.isTenantBackendHangUp(error, responseStarted, clientAborted);
             if (this.shouldEvictTenantBackendTarget(error, timedOut, connected, responseStarted, clientAborted)) {

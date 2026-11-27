@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { detectEmptyAgentTurn, summarizeAgentResultText } from './qaap-agent-empty-turn';
+import { detectEmptyAgentTurn, extractAgentFinalMessage, summarizeAgentResultText } from './qaap-agent-empty-turn';
 
 /** Shapes below are trimmed copies of real `~/.qaap/agent-tasks/<id>.log` records. */
 const INIT = JSON.stringify({ type: 'system', subtype: 'init', cwd: '/tmp/repo' });
@@ -78,6 +78,28 @@ describe('detectEmptyAgentTurn', () => {
     it('sees a tool_result even when the tool_use itself is outside the log', () => {
         const log = [INIT, JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } }), resultLine('')].join('\n');
         expect(detectEmptyAgentTurn(log, { complete: true }).empty).to.equal(false);
+    });
+
+    it('accepts ACP prose turns where qaap-acp-bridge leaves result empty to avoid duplicating streamed text', () => {
+        const acpInit = JSON.stringify({ type: 'system', subtype: 'init', qaap_transport: 'acp', flavor: 'opencode' });
+        const assistant = JSON.stringify({
+            type: 'assistant',
+            message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'Simple reply.' }, { type: 'text', text: 'adios' }] },
+        });
+        const log = [acpInit, assistant, resultLine('')].join('\n');
+        expect(detectEmptyAgentTurn(log, { complete: true }).empty).to.equal(false);
+        expect(extractAgentFinalMessage(log)).to.equal('adios');
+    });
+
+    it('still flags an ACP turn that emitted a bare JSON tool call as prose with no tools', () => {
+        const acpInit = JSON.stringify({ type: 'system', subtype: 'init', qaap_transport: 'acp', flavor: 'opencode' });
+        const assistant = JSON.stringify({
+            type: 'assistant',
+            message: { role: 'assistant', content: [{ type: 'text', text: '{"type": "function", "name": "Edit", "parameters": {}}' }] },
+        });
+        const log = [acpInit, assistant, resultLine('')].join('\n');
+        expect(detectEmptyAgentTurn(log, { complete: true }).empty).to.equal(true);
+        expect(extractAgentFinalMessage(log)).to.equal('');
     });
 });
 

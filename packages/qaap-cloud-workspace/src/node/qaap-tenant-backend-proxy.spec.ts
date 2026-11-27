@@ -1036,6 +1036,49 @@ describe('QaapTenantBackendProxyContribution', () => {
             expect(server.headersTimeout).to.be.greaterThan(server.keepAliveTimeout);
         });
 
+        it('does not log a spurious proxy error when the browser aborts an in-flight proxied request', async () => {
+            let releaseTenant!: () => void;
+            let tenantReached!: () => void;
+            const reached = new Promise<void>(resolve => { tenantReached = resolve; });
+            const tenant = http.createServer((_req, res) => {
+                tenantReached();
+                new Promise<void>(resolve => { releaseTenant = resolve; }).then(() => {
+                    if (!res.destroyed) {
+                        res.end('late');
+                    }
+                });
+            });
+            await new Promise<void>(resolve => tenant.listen(0, '127.0.0.1', resolve));
+            const proxy = createProxy() as unknown as Record<string, unknown> & {
+                forwardHttp(req: http.IncomingMessage, res: http.ServerResponse, target: typeof TARGET, assertion: string, tenantLogin: string): void;
+            };
+            proxy.docker = { invalidateTenantBackendTarget: () => undefined };
+            proxy.previewRoutes = { record: () => undefined };
+            const front = http.createServer((req, res) => {
+                proxy.forwardHttp(req, res, { ...TARGET, port: (tenant.address() as net.AddressInfo).port }, 'assertion', 'alice');
+            });
+            await new Promise<void>(resolve => front.listen(0, '127.0.0.1', resolve));
+            const warnings: string[] = [];
+            const originalWarn = console.warn;
+            console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+            try {
+                const clientReq = http.request({ host: '127.0.0.1', port: (front.address() as net.AddressInfo).port, path: '/qaap/api/test' });
+                clientReq.on('error', () => undefined);
+                clientReq.end();
+                await reached;
+                clientReq.destroy();
+                await new Promise(resolve => setTimeout(resolve, 60));
+                expect(warnings.filter(line => line.includes('[qaap-tenant-proxy]'))).to.deep.equal([]);
+            } finally {
+                console.warn = originalWarn;
+                releaseTenant?.();
+                front.closeAllConnections();
+                tenant.closeAllConnections();
+                await new Promise<void>(resolve => front.close(() => resolve()));
+                await new Promise<void>(resolve => tenant.close(() => resolve()));
+            }
+        });
+
         it('can be switched off for middleware-only routing', () => {
             const previous = process.env.QAAP_TENANT_PROXY_EARLY_ROUTING;
             try {

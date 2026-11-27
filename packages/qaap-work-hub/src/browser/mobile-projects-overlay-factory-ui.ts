@@ -5,7 +5,13 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { approveAgentRequest, rejectAgentRequest } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import {
+    approveAgentRequest,
+    markAgentApprovalOptimisticallyResolved,
+    rejectAgentRequest,
+    unmarkAgentApprovalOptimisticallyResolved,
+    type QaapAgentApprovalRequestDTO,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
@@ -26,12 +32,15 @@ export interface MobileProjectsOverlayFactoryHost {
     visible: boolean;
     projects: MobileProjectEntry[];
     activeTasks: MobileProjectsActiveTasks | undefined;
+    cachedAgentApprovals?: QaapAgentApprovalRequestDTO[];
     transcriptComposerProject: MobileProjectEntry | undefined;
     transcriptLastConv: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
     transcriptChatHost: HTMLElement | undefined;
     messageService: MessageService | undefined;
 
     applyActiveTasksRefresh(): Promise<void>;
+    refreshTasksHubApprovals?(forceRender?: boolean): void;
+    updateTasksAttentionChrome?(): void;
     openWorkHubSessionsSidebar(): void;
     createTaskItem(
         project: MobileProjectEntry,
@@ -102,32 +111,10 @@ export class MobileProjectsOverlayFactoryUi {
                 void this.host.toggleConversationAutoApproveById(member.conversationId);
             },
             onApproveRequest: (approvalId, _member) => {
-                void approveAgentRequest(approvalId).then(result => {
-                    if (!result.ok) {
-                        this.host.messageService?.error(result.error ?? nls.localize(
-                            'qaap/mobileProjects/teamApprovalApproveFailed',
-                            'Could not approve this action.',
-                        ));
-                        return;
-                    }
-                    this.host.renderList();
-                }).catch(error => {
-                    this.host.messageService?.error(error instanceof Error ? error.message : String(error));
-                });
+                this.submitOptimisticTeamApproval(approvalId, 'approve');
             },
             onRejectRequest: (approvalId, _member) => {
-                void rejectAgentRequest(approvalId).then(result => {
-                    if (!result.ok) {
-                        this.host.messageService?.error(result.error ?? nls.localize(
-                            'qaap/mobileProjects/teamApprovalRejectFailed',
-                            'Could not reject this action.',
-                        ));
-                        return;
-                    }
-                    this.host.renderList();
-                }).catch(error => {
-                    this.host.messageService?.error(error instanceof Error ? error.message : String(error));
-                });
+                this.submitOptimisticTeamApproval(approvalId, 'reject');
             },
         });
         this.host.overlayUi = {
@@ -136,6 +123,41 @@ export class MobileProjectsOverlayFactoryUi {
             teamHub,
         };
         return this.host.overlayUi;
+    }
+
+    /** Dismiss a Team Hub approval card immediately on click and roll back cleanly on failure. */
+    protected submitOptimisticTeamApproval(approvalId: string, action: 'approve' | 'reject'): void {
+        markAgentApprovalOptimisticallyResolved(approvalId);
+        const removed = this.host.cachedAgentApprovals?.find(item => item.id === approvalId);
+        if (this.host.cachedAgentApprovals) {
+            this.host.cachedAgentApprovals = this.host.cachedAgentApprovals.filter(item => item.id !== approvalId);
+        }
+        this.host.updateTasksAttentionChrome?.();
+        this.host.renderList();
+
+        const rollback = (errorMessage: string): void => {
+            unmarkAgentApprovalOptimisticallyResolved(approvalId);
+            if (removed && this.host.cachedAgentApprovals
+                && !this.host.cachedAgentApprovals.some(item => item.id === removed.id)) {
+                this.host.cachedAgentApprovals = [...this.host.cachedAgentApprovals, removed];
+            }
+            this.host.updateTasksAttentionChrome?.();
+            this.host.renderList();
+            this.host.messageService?.error(errorMessage);
+        };
+
+        const request = action === 'approve' ? approveAgentRequest(approvalId) : rejectAgentRequest(approvalId);
+        void request.then(result => {
+            if (result.ok || result.expired) {
+                this.host.refreshTasksHubApprovals?.(true);
+                return;
+            }
+            rollback(result.error ?? (action === 'approve'
+                ? nls.localize('qaap/mobileProjects/teamApprovalApproveFailed', 'Could not approve this action.')
+                : nls.localize('qaap/mobileProjects/teamApprovalRejectFailed', 'Could not reject this action.')));
+        }).catch(error => {
+            rollback(error instanceof Error ? error.message : String(error));
+        });
     }
 
     appendTranscriptHeaderActions(header: HTMLElement, title: HTMLElement): HTMLButtonElement {

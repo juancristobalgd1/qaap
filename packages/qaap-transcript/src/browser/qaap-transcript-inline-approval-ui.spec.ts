@@ -5,13 +5,23 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import type { QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import {
+    resetOptimisticallyResolvedApprovalsForTests,
+    type QaapAgentApprovalRequestDTO,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { TRANSCRIPT_APPROVAL_CARD_ALLOW_CLASS } from './qaap-transcript-approval-card-ui';
 import {
     clearTranscriptPendingApprovalBar,
     mountTranscriptPendingApprovalBar,
     TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS,
 } from './qaap-transcript-inline-approval-ui';
+import {
+    optimisticallyDismissTranscriptApprovalExtracted,
+    restoreOptimisticallyDismissedTranscriptApprovalExtracted,
+    syncTranscriptPendingApprovalExtracted,
+} from './mobile-projects-transcript-live-ui-timeline';
+import type { MobileProjectsTranscriptLiveUiContext } from './mobile-projects-transcript-live-ui-context';
 
 describe('qaap-transcript-inline-approval-ui', () => {
     let disableJSDOM: () => void;
@@ -59,5 +69,50 @@ describe('qaap-transcript-inline-approval-ui', () => {
         });
         clearTranscriptPendingApprovalBar(composerHost);
         expect(composerHost.querySelector(`.${TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS}`)).to.equal(null);
+    });
+
+    it('optimistically dismisses the approval bar immediately and restores it on rollback', () => {
+        resetOptimisticallyResolvedApprovalsForTests();
+        const composerHost = document.createElement('div');
+        composerHost.innerHTML = '<div class="theia-mobile-projects-sticky-composer-column"></div>';
+        const conv: QaapAgentConversationDTO = {
+            id: 'conv-1',
+            cwd: '/tmp/repo',
+            agentId: 'qaiq',
+            title: 'Test task',
+            status: 'streaming',
+            approvalPolicyId: 'request-approval',
+            createdAt: 1,
+            updatedAt: 1,
+            messages: [],
+        };
+        const ctx = {
+            host: {
+                cachedAgentApprovals: [pending],
+                transcriptComposerHost: composerHost,
+                transcriptLastConv: conv,
+            },
+            lastInlineApprovalSyncKey: undefined as string | undefined,
+            lastMountedApprovalId: undefined as string | undefined,
+            resolveActiveTranscriptChatHost: () => undefined,
+            buildTranscriptApprovalSyncKey: (_chat: HTMLElement | undefined, c: QaapAgentConversationDTO, pendingId: string | undefined) => `${c.id}|${pendingId ?? ''}`,
+            reconcileTranscriptInlineToolApprovalCards: () => undefined,
+            stopTranscriptApprovalRefresh: () => undefined,
+            refreshTranscriptApprovals: async () => undefined,
+            ensureTranscriptConversationRefresh: () => undefined,
+            syncTranscriptPendingApproval: (c: QaapAgentConversationDTO) => syncTranscriptPendingApprovalExtracted(ctx, c),
+        } as unknown as MobileProjectsTranscriptLiveUiContext;
+
+        syncTranscriptPendingApprovalExtracted(ctx, conv);
+        expect(composerHost.querySelector(`.${TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS}`)).to.not.equal(null);
+
+        optimisticallyDismissTranscriptApprovalExtracted(ctx, pending);
+        expect(composerHost.querySelector(`.${TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS}`)).to.equal(null);
+        expect(ctx.host.cachedAgentApprovals).to.deep.equal([]);
+
+        restoreOptimisticallyDismissedTranscriptApprovalExtracted(ctx, pending);
+        expect(composerHost.querySelector(`.${TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS}`)).to.not.equal(null);
+        expect(ctx.host.cachedAgentApprovals.map(item => item.id)).to.deep.equal([pending.id]);
+        resetOptimisticallyResolvedApprovalsForTests();
     });
 });
