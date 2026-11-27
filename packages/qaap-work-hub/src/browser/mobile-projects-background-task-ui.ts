@@ -473,6 +473,9 @@ export class MobileProjectsBackgroundTaskUi {
                     if (startup?.stopRequested) {
                         return undefined;
                     }
+                    // Reset the 90s first-output watchdog after the user confirms the modal so time spent
+                    // reading the dirty-workspace prompt does not trigger a premature stream timeout.
+                    this.host.transcriptLiveUi?.seedTranscriptSemanticProgressClock?.();
                     return this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions });
                 },
                 (files, total) => this.askDirtyWorkspaceChoice(files, total),

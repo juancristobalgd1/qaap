@@ -143,7 +143,8 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         return;
     }
     const sendModel = modelResolution.model;
-    if (!await confirmPaidModelSend(sendCwd, sendModel)) {
+    const paidGateCwd = isNewTask ? (chipCwd || sendCwd) : sendCwd;
+    if (!await confirmPaidModelSend(paidGateCwd, sendModel)) {
         restoreComposerSubmission();
         ctx.remountTranscriptStickyComposer();
         return;

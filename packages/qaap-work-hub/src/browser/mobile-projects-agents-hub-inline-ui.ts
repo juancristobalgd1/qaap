@@ -569,6 +569,8 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.transcriptLastConv = undefined;
         }
         this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptLiveUi?.stopTranscriptLiveWatch?.();
+        this.host.transcriptLiveUi?.clearTranscriptSemanticProgressClock?.();
         // Repaint only when the inline shell is mounted — ensureAgentsHubExecutionShell then takes
         // its reuse branch (no new root is appended to the scroll host).
         if (this.host.agentsHubInlineExecutionRoot?.isConnected && this.host.agentsHubInlineChatHost?.isConnected) {

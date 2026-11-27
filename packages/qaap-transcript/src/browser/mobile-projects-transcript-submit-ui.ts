@@ -43,6 +43,7 @@ import {
     resolveConversationContextWindowSize,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import { QaapTurnSettleNotifier } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
+import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
@@ -297,9 +298,14 @@ export class MobileProjectsTranscriptSubmitUi {
             await this.submitTranscriptViaBackendConversationInner(project, summary, content, options, submitAt);
             return true;
         } catch (error) {
-            if (error instanceof QaapDirtyWorkspaceCancelledError) {
-                // The user cancelled the dirty-workspace dialog: nothing was created, so the pending paint goes.
+            if (this.host.transcriptHeaderUi.isPendingNewChatSummary(summary)) {
+                // Any failed or cancelled create on a pending-new-chat placeholder must drop the
+                // optimistic "Starting the agent…" paint and clear its 90s watchdog; otherwise a
+                // 502/400 lingers until "didn't respond in time" fires with a dead Retry button.
                 this.rollbackPendingNewChatPaint(summary);
+                if (!(error instanceof QaapDirtyWorkspaceCancelledError)) {
+                    reportQaapClientError('transcript-new-chat-submit', error);
+                }
             }
             throw error;
         } finally {
@@ -309,12 +315,16 @@ export class MobileProjectsTranscriptSubmitUi {
         }
     }
 
-    /** Repaints the transcript from the cached conversation, dropping the optimistic row of a cancelled new task. */
+    /** Repaints the transcript from the cached conversation, dropping the optimistic row of a failed or cancelled new task. */
     protected rollbackPendingNewChatPaint(summary: QaapAgentConversationSummaryDTO): void {
+        this.host.transcriptLastFingerprint = undefined;
         const chatHost = this.host.resolveActiveTranscriptChatHost();
         if (chatHost) {
             this.renderTranscriptSubmitMessages(chatHost, resolveQueuedFollowUpBaseConversation(this.host.transcriptLastConv, summary), summary);
         }
+        // Clear AFTER renderTranscriptSubmitMessages (which seeds the clock for streaming submits)
+        // so the 90s first-output watchdog stays stopped on the rolled-back idle placeholder.
+        this.host.transcriptLiveUi?.clearTranscriptSemanticProgressClock?.();
     }
 
     protected async submitTranscriptViaBackendConversationInner(

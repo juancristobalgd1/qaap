@@ -54,4 +54,53 @@ describe('mobile-projects-transcript-submit-ui follow-up approval', () => {
         const result = resolve(summaryWith(undefined), { autoApprove: true }, undefined);
         expect(result).to.deep.equal({ autoApprove: true, approvalPolicyId: 'approve-for-me' });
     });
+
+    it('rolls back optimistic paint and clears the stream clock when a pending-new-chat create fails', async () => {
+        const events: string[] = [];
+        const host = {
+            conversations: {
+                recordSubmitLatencyMark: () => undefined,
+                getSubmitLatencyMarks: () => undefined,
+                findSummaryById: () => undefined,
+            },
+            transcriptHeaderUi: { isPendingNewChatSummary: (s: { id: string }) => s.id.startsWith('pending-new-chat-') },
+            transcriptLiveUi: {
+                seedTranscriptSemanticProgressClock: () => { events.push('seed'); },
+                clearTranscriptSemanticProgressClock: () => { events.push('clear'); },
+            },
+            transcriptMessagesUi: {
+                renderTranscriptMessages: () => { events.push('render'); },
+            },
+            resolveActiveTranscriptChatHost: () => ({} as HTMLElement),
+            createProjectChatSession: async () => {
+                throw new Error('Something went wrong (error 502). Please try again.');
+            },
+            transcriptLastConv: undefined,
+            transcriptLastFingerprint: 'stale',
+            transcriptOpenSummaryId: 'pending-new-chat-1',
+            transcriptOpenSummary: undefined,
+            transcriptComposerSummary: undefined,
+        };
+        const ui = new MobileProjectsTranscriptSubmitUi(host as never);
+        const pendingSummary = {
+            id: 'pending-new-chat-1',
+            cwd: '/repo',
+            agentId: 'pi',
+            title: 'New task',
+            status: 'idle' as const,
+            createdAt: 1,
+            updatedAt: 1,
+            messageCount: 0,
+        };
+        let caught: unknown;
+        try {
+            await ui.submitTranscriptViaBackendConversation({ id: 'p1', name: 'repo' } as never, pendingSummary, 'hello', {});
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).to.be.instanceOf(Error);
+        expect(host.transcriptLastFingerprint).to.equal(undefined);
+        expect(events.filter(event => event === 'render')).to.have.length(2);
+        expect(events[events.length - 1]).to.equal('clear');
+    });
 });

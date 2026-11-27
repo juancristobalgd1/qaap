@@ -374,3 +374,61 @@ describe('side chat fields in conversation summaries', () => {
         expect('sideChatParentId' in summary).to.equal(false);
     });
 });
+
+describe('createConversation idempotent transient retry', () => {
+    const originalFetch = globalThis.fetch;
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    it('retries transient 502 responses when clientRequestId is provided and succeeds on retry', async () => {
+        let calls = 0;
+        const created = { id: 'conv-retry-1', cwd: '/repo', agentId: 'pi', title: 'hi', status: 'streaming', createdAt: 1, updatedAt: 1, messages: [] };
+        globalThis.fetch = (async () => {
+            calls++;
+            if (calls === 1) {
+                return { ok: false, status: 502, statusText: 'Bad Gateway', text: async () => '', clone() { return this; } } as unknown as Response;
+            }
+            return { ok: true, status: 201, json: async () => created } as unknown as Response;
+        }) as unknown as typeof fetch;
+        const result = await createConversation({ cwd: '/repo', clientRequestId: 'req-502', message: 'hi' }, undefined, {
+            wait: async () => undefined,
+        });
+        expect(calls).to.equal(2);
+        expect(result.id).to.equal('conv-retry-1');
+    });
+
+    it('does not retry a 502 when clientRequestId is absent', async () => {
+        let calls = 0;
+        globalThis.fetch = (async () => {
+            calls++;
+            return { ok: false, status: 502, statusText: 'Bad Gateway', text: async () => '', clone() { return this; } } as unknown as Response;
+        }) as unknown as typeof fetch;
+        const error = await createConversation({ cwd: '/repo', message: 'hi' }, undefined, {
+            wait: async () => undefined,
+        }).catch((e: Error) => e);
+        expect(error).to.be.instanceOf(Error);
+        expect(calls).to.equal(1);
+    });
+
+    it('does not retry 409 dirty_workspace even with clientRequestId', async () => {
+        let calls = 0;
+        globalThis.fetch = (async () => {
+            calls++;
+            const resp = {
+                ok: false,
+                status: 409,
+                statusText: 'Conflict',
+                json: async () => ({ code: 'dirty_workspace', files: ['a.ts'], total: 1 }),
+                clone: () => resp,
+            };
+            return resp as unknown as Response;
+        }) as unknown as typeof fetch;
+        const error = await createConversation({ cwd: '/repo', clientRequestId: 'req-409', message: 'hi' }, undefined, {
+            wait: async () => undefined,
+        }).catch((e: Error) => e);
+        expect(error).to.be.instanceOf(Error);
+        expect(calls).to.equal(1);
+    });
+});

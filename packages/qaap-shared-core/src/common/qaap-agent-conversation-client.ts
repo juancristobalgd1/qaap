@@ -16,6 +16,7 @@ import {
 import type { QaapAgentEffortLevel } from './qaap-agent-effort';
 import type { QaapTaskPlan, QaapTaskPlanEditRequest } from './qaap-task-plan';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
+import { resolveQaapRetryBackoffDelayMs } from '@theia/qaap-adapters/lib/common/qaap-retry-backoff';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
 import { buildConversationListMetrics, type QaapSidebarGitActionKind } from './qaap-agent-conversation-list-metrics';
 import {
@@ -863,21 +864,77 @@ export function createConversationRequestId(): string {
     return `qaap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Bounded retry budget for idempotent conversation creates (carrying `clientRequestId`) on transient gateway 502/503/504 or connection reset. */
+const CREATE_CONVERSATION_TRANSIENT_MAX_RETRIES = 2;
+
 export async function createConversation(
     body: QaapCreateConversationBody,
     signal?: AbortSignal,
+    options?: {
+        readonly maxTransientRetries?: number;
+        readonly wait?: (delayMs: number) => Promise<void>;
+        readonly random?: () => number;
+    },
 ): Promise<QaapAgentConversationDTO> {
-    const response = await fetch(QAAP_AGENT_CONVERSATION_API_PATH, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal,
-    });
-    if (!response.ok) {
-        throw await buildCreateConversationError(response);
+    const idempotent = typeof body.clientRequestId === 'string' && body.clientRequestId.trim().length > 0;
+    const maxRetries = idempotent ? Math.max(0, options?.maxTransientRetries ?? CREATE_CONVERSATION_TRANSIENT_MAX_RETRIES) : 0;
+    const wait = options?.wait ?? (delayMs => waitForCreateRetryDelay(delayMs, signal));
+    const serializedBody = JSON.stringify(body);
+    for (let attempt = 0; ; attempt++) {
+        let response: Response;
+        try {
+            response = await fetch(QAAP_AGENT_CONVERSATION_API_PATH, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: serializedBody,
+                signal,
+            });
+        } catch (error) {
+            if (signal?.aborted || isCreateAbortError(error) || attempt >= maxRetries) {
+                throw error;
+            }
+            await wait(resolveQaapRetryBackoffDelayMs(attempt, { baseDelayMs: 300, maxDelayMs: 2_000, random: options?.random }));
+            continue;
+        }
+        const transientGateway = response.status === 502 || response.status === 503 || response.status === 504;
+        if (transientGateway && attempt < maxRetries) {
+            await response.body?.cancel?.().catch(() => undefined);
+            await wait(resolveQaapRetryBackoffDelayMs(attempt, { baseDelayMs: 300, maxDelayMs: 2_000, random: options?.random }));
+            continue;
+        }
+        if (!response.ok) {
+            throw await buildCreateConversationError(response);
+        }
+        return response.json() as Promise<QaapAgentConversationDTO>;
     }
-    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+function isCreateAbortError(error: unknown): boolean {
+    return typeof error === 'object' && error !== undefined && error !== null
+        && (error as { readonly name?: unknown }).name === 'AbortError';
+}
+
+function waitForCreateRetryDelay(delayMs: number, signal: AbortSignal | undefined): Promise<void> {
+    if (!signal) {
+        return new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    if (signal.aborted) {
+        return Promise.reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'));
+    }
+    return new Promise((resolve, reject) => {
+        const finish = (): void => {
+            signal.removeEventListener('abort', abort);
+            resolve();
+        };
+        const timer = setTimeout(finish, delayMs);
+        const abort = (): void => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', abort);
+            reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'));
+        };
+        signal.addEventListener('abort', abort, { once: true });
+    });
 }
 
 export interface QaapPostConversationMessageOptions {
