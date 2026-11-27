@@ -71,19 +71,98 @@ export function openQaapDirtyWorkspaceDialog(files: readonly string[], total: nu
 /** The create options a dirty-workspace choice retries with. */
 export type QaapDirtyWorkspaceRetryOptions = { readonly isolation?: QaapAgentConversationIsolation; readonly acceptDirty?: boolean };
 
+const DIRTY_WORKSPACE_CHOICE_KEY_PREFIX = 'qaap.dirtyWorkspaceChoice:';
+
+function dirtyWorkspaceStorageKey(cwd: string | undefined): string | undefined {
+    const normalized = cwd?.trim().replace(/[\\/]+$/, '');
+    return normalized ? `${DIRTY_WORKSPACE_CHOICE_KEY_PREFIX}${normalized}` : undefined;
+}
+
+/** Reads the dirty-workspace decision remembered for `cwd` in this browser tab (`sessionStorage`). */
+export function readRememberedDirtyWorkspaceChoice(cwd: string | undefined): QaapDirtyWorkspaceChoice | undefined {
+    const key = dirtyWorkspaceStorageKey(cwd);
+    if (!key || typeof sessionStorage === 'undefined') {
+        return undefined;
+    }
+    try {
+        const value = sessionStorage.getItem(key);
+        return value === 'startClean' || value === 'continueHere' ? value : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** Remembers the user's dirty-workspace decision for `cwd` for the rest of this browser tab session. */
+export function rememberDirtyWorkspaceChoice(cwd: string | undefined, choice: QaapDirtyWorkspaceChoice): void {
+    const key = dirtyWorkspaceStorageKey(cwd);
+    if (!key || typeof sessionStorage === 'undefined') {
+        return;
+    }
+    try {
+        sessionStorage.setItem(key, choice);
+    } catch {
+        // Storage disabled or full: fall back to prompting on the next create.
+    }
+}
+
+/** Clears the remembered dirty-workspace choice for `cwd` (or all entries when omitted). */
+export function clearRememberedDirtyWorkspaceChoice(cwd?: string): void {
+    if (typeof sessionStorage === 'undefined') {
+        return;
+    }
+    try {
+        if (cwd !== undefined) {
+            const key = dirtyWorkspaceStorageKey(cwd);
+            if (key) {
+                sessionStorage.removeItem(key);
+            }
+            return;
+        }
+        const toRemove: string[] = [];
+        for (let i = 0; i < sessionStorage.length; i++) {
+            const k = sessionStorage.key(i);
+            if (k && k.startsWith(DIRTY_WORKSPACE_CHOICE_KEY_PREFIX)) {
+                toRemove.push(k);
+            }
+        }
+        for (const k of toRemove) {
+            sessionStorage.removeItem(k);
+        }
+    } catch {
+        // Ignore storage errors.
+    }
+}
+
 /**
- * Handles a create refused with 409 `dirty_workspace`: asks the user, then retries once. "Start clean"
- * retries in a worktree; "Continue here" retries sharing the tree. Resolves `undefined` when the user
- * cancels, in which case nothing was created.
+ * Handles a create refused with 409 `dirty_workspace`: reuses the remembered session choice for
+ * `cwd` when present, otherwise asks the user once, remembers their choice for the session, and
+ * retries. "Start clean" retries in a worktree; "Continue here" retries sharing the tree. Resolves
+ * `undefined` when the user cancels, in which case nothing was created.
  */
 export async function retryAfterDirtyWorkspace<T>(
     error: QaapDirtyWorkspaceError,
     retry: (options: QaapDirtyWorkspaceRetryOptions) => Promise<T>,
     ask: (files: readonly string[], total: number) => Promise<QaapDirtyWorkspaceChoice | undefined> = openQaapDirtyWorkspaceDialog,
+    cwd?: string,
 ): Promise<T | undefined> {
-    const choice = await ask(error.files, error.total);
+    const remembered = readRememberedDirtyWorkspaceChoice(cwd);
+    const choice = remembered ?? await ask(error.files, error.total);
     if (!choice) {
         return undefined;
     }
-    return choice === 'startClean' ? retry({ isolation: 'worktree' }) : retry({ acceptDirty: true });
+    let result: T | undefined;
+    try {
+        result = choice === 'startClean'
+            ? await retry({ isolation: 'worktree' })
+            : await retry({ acceptDirty: true });
+    } catch (retryError) {
+        if (remembered) {
+            clearRememberedDirtyWorkspaceChoice(cwd);
+        }
+        throw retryError;
+    }
+    if (!remembered && cwd && result !== undefined) {
+        rememberDirtyWorkspaceChoice(cwd, choice);
+    }
+    return result;
 }

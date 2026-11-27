@@ -441,4 +441,41 @@ describe('mobile-projects-pull-requests-sidebar-ui', () => {
         expect(stats(3)).to.equal('#3 · Made by mystery-harness');
         expect(!!byNumber(3).querySelector('.theia-mobile-work-hub-pull-request-harness .codicon-hubot')).to.equal(true);
     });
+
+    it('reuses an in-flight first-page search on non-forced reload and shows errors instead of skeletons while inbox loads', async () => {
+        let searchCalls = 0;
+        let rejectSearch!: (error: Error) => void;
+        const host: MobileProjectsPullRequestsSidebarHost = {
+            inboxPullRequests: [],
+            inboxPullRequestsLoading: true,
+            inboxPullRequestsLoaded: false,
+            inboxGithubSignedIn: true,
+            refreshInboxPullRequests: async () => undefined,
+            openPullRequestDetail: () => undefined,
+            searchPullRequests: () => {
+                searchCalls++;
+                return new Promise<QaapGithubPullRequestSearchResponse>((_resolve, reject) => {
+                    rejectSearch = reject;
+                });
+            },
+        };
+        const ui = new MobileProjectsPullRequestsSidebarUi(host);
+        const container = document.createElement('div');
+        document.body.append(container);
+
+        ui.render(container);
+        expect(searchCalls).to.equal(1);
+        expect(container.querySelector('.q-skeleton')).to.not.equal(null);
+
+        // Non-forced reload while page 1 is already in flight must not launch a duplicate search.
+        await ui.reloadSearch(false);
+        expect(searchCalls).to.equal(1);
+
+        // Once search fails, render the error state rather than staying stuck on skeletons while inbox is still loading.
+        rejectSearch(new Error('GitHub search timed out'));
+        await flush();
+
+        expect(container.querySelector('.q-skeleton')).to.equal(null);
+        expect(container.textContent).to.contain('GitHub search timed out');
+    });
 });

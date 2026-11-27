@@ -21,6 +21,7 @@ import { goalLoopSummaryFields } from '../common/qaap-agent-goal-loop-labels';
 import { normalizeCwd } from './mobile-projects-active-tasks';
 import { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, WS_RECONNECT_MAX_MS } from './mobile-projects-conversations';
 import { resolveQaapRetryBackoffDelayMs } from '@theia/qaap-adapters/lib/common/qaap-retry-backoff';
+import { refreshControlPlaneConnectionToken } from './qaap-ws-connection-token-refresh';
 import type { ConversationMessageDeltaEvent, ConversationMessageEvent, ConversationServerEvent } from './mobile-projects-conversations';
 import type { BinaryBuffer } from '@theia/core/lib/common/buffer';
 
@@ -127,6 +128,9 @@ export function scheduleWebSocketReconnectExtracted(ctx: MobileProjectsConversat
         if (ctx.wsReconnectHandle !== undefined || typeof WebSocket === 'undefined') {
             return;
         }
+        // Best-effort refresh of the control-plane connection token cookie before opening the next
+        // socket so tabs left open across a deploy do not race a slow health GET on reconnect.
+        const refreshed = refreshControlPlaneConnectionToken();
         const delay = resolveQaapRetryBackoffDelayMs(ctx.wsReconnectAttempt, {
             baseDelayMs: 1_000,
             maxDelayMs: WS_RECONNECT_MAX_MS,
@@ -134,7 +138,11 @@ export function scheduleWebSocketReconnectExtracted(ctx: MobileProjectsConversat
         ctx.wsReconnectAttempt++;
         ctx.wsReconnectHandle = window.setTimeout(() => {
             ctx.wsReconnectHandle = undefined;
-            ctx.openWebSocket();
+            void refreshed.finally(() => {
+                if (ctx.wsReconnectHandle === undefined) {
+                    ctx.openWebSocket();
+                }
+            });
         }, delay);
 }
 

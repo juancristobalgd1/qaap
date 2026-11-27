@@ -35,6 +35,9 @@ describe('QaapTenantBackendProxyContribution', () => {
         expect(proxy.isControlPlanePath('/qaap/api/tenant-update')).to.equal(true);
         expect(proxy.isControlPlanePath('/qaap/api/tenant-update?x=1')).to.equal(true);
         expect(proxy.isControlPlanePath('/qaap/api/tenant-update-other')).to.equal(false);
+        expect(proxy.isControlPlanePath('/qaap/api/client-errors')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/client-errors?x=1')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/client-errors/extra')).to.equal(false);
         expect(proxy.isControlPlanePath('/services')).to.equal(false);
     });
 
@@ -709,6 +712,76 @@ describe('QaapTenantBackendProxyContribution', () => {
             });
             expect(seen[0].headers.cookie).to.equal('app_session=abc');
             expect(seen[1].headers.cookie).to.equal(undefined);
+        });
+
+        it('refreshes the control-plane connection token cookie on proxied IDE responses when missing or stale and rejects invalid WS upgrades with 403', async () => {
+            const tenant = http.createServer((_req, res) => {
+                res.setHeader('Set-Cookie', ['theia-connection-token=tenant-only; Path=/']);
+                res.end('ok');
+            });
+            await new Promise<void>(resolve => tenant.listen(0, '127.0.0.1', resolve));
+            const proxy = createProxy() as unknown as Record<string, unknown> & {
+                installRequestRouter(server: http.Server): void;
+                installUpgradeRouter(server: http.Server): void;
+            };
+            const front = http.createServer((_req, res) => res.end('control-plane'));
+            proxy.auth = {
+                authenticate: () => ({ kind: 'authenticated', userLogin: 'alice', sessionId: 's', session: SESSION }),
+                userWorkspaceRoot: () => '/srv/qaap/users/alice',
+                logSecurityEvent: () => undefined,
+            };
+            proxy.activity = { touch: () => undefined, beginOperation: () => () => undefined };
+            proxy.wsRequestValidator = { allowWsUpgrade: async () => false };
+            proxy.browserConnectionToken = { value: 'cp-fresh-token' };
+            proxy.docker = {
+                isBackendPerTenantEnabled: () => true,
+                ensureTenantBackend: async () => ({ ...TARGET, port: (tenant.address() as net.AddressInfo).port }),
+                getTenantBackendConnectionToken: () => 'tenant-token',
+                getTenantBackendAssertionSecret: () => SECRET,
+                invalidateTenantBackendTarget: () => undefined,
+                warmTenantBackend: () => undefined,
+                predictTenantBackendBuild: async () => undefined,
+            };
+            proxy.installUpgradeRouter(front);
+            proxy.installRequestRouter(front);
+            await new Promise<void>(resolve => front.listen(0, '127.0.0.1', resolve));
+            const frontPort = (front.address() as net.AddressInfo).port;
+            try {
+                const stale = await request(frontPort, '/qaap/api/projects', { cookie: 'theia-connection-token=old-token' });
+                expect(stale.headers['set-cookie']).to.deep.equal([
+                    'theia-connection-token=cp-fresh-token; Path=/; HttpOnly; SameSite=Strict',
+                ]);
+                const fresh = await request(frontPort, '/qaap/api/projects', { cookie: 'theia-connection-token=cp-fresh-token' });
+                expect(fresh.headers['set-cookie']).to.equal(undefined);
+                const preview = await request(frontPort, '/qaap-preview/u-alice-x/', { cookie: 'theia-connection-token=old-token' });
+                expect(preview.headers['set-cookie']).to.equal(undefined);
+
+                const upgradeStatus = await new Promise<number>((resolve, reject) => {
+                    const req = http.request({
+                        host: '127.0.0.1',
+                        port: frontPort,
+                        path: '/qaap/api/agent-conversations/ws?v=2',
+                        headers: {
+                            Connection: 'Upgrade',
+                            Upgrade: 'websocket',
+                            'Sec-WebSocket-Version': '13',
+                            'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+                        },
+                    });
+                    req.on('response', res => {
+                        res.resume();
+                        resolve(res.statusCode ?? 0);
+                    });
+                    req.on('error', reject);
+                    req.end();
+                });
+                expect(upgradeStatus).to.equal(403);
+            } finally {
+                front.closeAllConnections();
+                tenant.closeAllConnections();
+                await new Promise<void>(resolve => front.close(() => resolve()));
+                await new Promise<void>(resolve => tenant.close(() => resolve()));
+            }
         });
 
         describe('static frontend from the control plane while the tenant backend warms', () => {

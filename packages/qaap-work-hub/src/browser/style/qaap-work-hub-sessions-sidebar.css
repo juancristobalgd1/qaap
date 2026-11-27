@@ -70,7 +70,7 @@
   height: 100% !important;
   min-height: 0 !important;
   max-height: 100% !important;
-  z-index: 80;
+  z-index: 250;
 }
 
 .theia-mobile-projects>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel,
@@ -1089,10 +1089,10 @@
   padding: 0 5px;
   border-radius: 999px;
   font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
-  color: var(--theia-errorForeground, #f14c4c);
-  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 14%, transparent);
+  font-weight: 500;
+  line-height: 15px;
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
 }
 
 /* Side chat marker: quiet text on the row's own surface, so it never competes with the title or the status glyph. */

@@ -15,6 +15,7 @@ const QAAP_AGENT_CONFIRMATION_NEEDED_EVENT = 'qaap-agent-confirmation-needed';
 import { fetchQaapPushVapid, sendQaapPushNotify, subscribeQaapWebPush } from './qaap-cloud-workspace-client';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { QaapDeferredStartup } from './qaap-deferred-startup';
+import { canAttemptWebPushSubscription } from './qaap-web-push-permission';
 import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
 
 @injectable()
@@ -136,7 +137,7 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
     /** Turning notifications off drops the browser subscription; turning them back on re-subscribes. */
     protected onNotificationSettingsChanged(): void {
         if (this.notificationSettings.systemNotifications) {
-            void this.registerWebPushSubscription();
+            void this.registerWebPushSubscription({ userGesture: true });
         } else {
             void this.unsubscribeWebPush();
         }
@@ -155,11 +156,19 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         }
     }
 
-    protected async registerWebPushSubscription(): Promise<void> {
+    protected async registerWebPushSubscription(options?: { readonly userGesture?: boolean }): Promise<void> {
         if (!this.notificationSettings.systemNotifications) {
             return;
         }
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            return;
+        }
+        // Never call pushManager.subscribe() when notification permission is denied, or on boot /
+        // cross-tab storage sync before the user has granted permission with an active gesture.
+        const permission = typeof Notification !== 'undefined' ? Notification.permission : undefined;
+        const userActivation = (navigator as Navigator & { userActivation?: { isActive?: boolean } }).userActivation;
+        const activeUserGesture = !!options?.userGesture && (userActivation ? userActivation.isActive === true : true);
+        if (!canAttemptWebPushSubscription(permission, { userGesture: activeUserGesture })) {
             return;
         }
         const vapid = await fetchQaapPushVapid();

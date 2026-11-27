@@ -2299,11 +2299,22 @@ export class QaapDockerOrchestrator {
             && labels['com.qaap.tenant-login'] === ownerLogin.toLowerCase();
     }
 
+    /** Default wait for a `runc` tenant backend to boot; real 2-vCPU cold boots can take ~55 s loading modules. */
+    static readonly DEFAULT_RUNC_BACKEND_READY_TIMEOUT_MS = 90_000;
+
+    protected resolveTenantBackendReadyTimeoutMs(tenantLogin: string): number {
+        const configuredTimeout = Number.parseInt(process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS?.trim() ?? '', 10);
+        if (Number.isInteger(configuredTimeout) && configuredTimeout > 0) {
+            return configuredTimeout;
+        }
+        return this.getTenantRuntime(tenantLogin) === 'runsc'
+            ? QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS
+            : QaapDockerOrchestrator.DEFAULT_RUNC_BACKEND_READY_TIMEOUT_MS;
+    }
+
     /** Do not route the first browser request into a Theia process that is still deploying plugins. */
     protected async waitForTenantBackendReady(target: QaapTenantBackendTarget): Promise<void> {
-        const configuredTimeout = Number.parseInt(process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS?.trim() ?? '', 10);
-        const defaultTimeout = this.getTenantRuntime(target.tenantLogin) === 'runsc' ? QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS : 30_000;
-        const timeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : defaultTimeout;
+        const timeoutMs = this.resolveTenantBackendReadyTimeoutMs(target.tenantLogin);
         const deadline = Date.now() + timeoutMs;
         let lastFailure = 'no response';
         while (Date.now() < deadline) {

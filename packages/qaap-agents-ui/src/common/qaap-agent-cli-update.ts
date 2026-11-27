@@ -19,6 +19,9 @@ export const QAAP_AGENT_CLI_UPDATE_DISMISS_KEY = 'qaap.agentCliUpdate.dismissed'
 /** After "Later", no CLI update toast is shown for this long, even when a newer version appears. */
 export const QAAP_AGENT_CLI_UPDATE_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Automatic boot notices appear at most once per day even when ignored without clicking "Later". */
+export const QAAP_AGENT_CLI_UPDATE_DAILY_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Display priority when several CLIs are outdated — show one toast at a time.
  * Product focus first (Codex / Claude / QAIQ), then other npm-backed CLIs.
@@ -72,13 +75,15 @@ export interface QaapAgentCliUpdateResult {
 export type QaapAgentCliUpdateDismissMap = Readonly<Record<string, string>>;
 
 /**
- * Persisted notice state. Stored as `{ dismissed, snoozedUntil? }`; the legacy shape (a flat
+ * Persisted notice state. Stored as `{ dismissed, snoozedUntil?, lastShownAt? }`; the legacy shape (a flat
  * agentId → latestVersion map written before the snooze existed) is still read.
  */
 export interface QaapAgentCliUpdateStoredState {
     readonly dismissed: QaapAgentCliUpdateDismissMap;
     /** Epoch milliseconds until which no CLI update toast is shown. */
     readonly snoozedUntil?: number;
+    /** Epoch milliseconds when an automatic CLI update toast was last surfaced. */
+    readonly lastShownAt?: number;
 }
 
 /**
@@ -223,9 +228,14 @@ export function readAgentCliUpdateState(
             const snoozedUntil = typeof record.snoozedUntil === 'number' && Number.isFinite(record.snoozedUntil)
                 ? record.snoozedUntil
                 : undefined;
-            return snoozedUntil === undefined
-                ? { dismissed: collectDismissedVersions(nested as Record<string, unknown>) }
-                : { dismissed: collectDismissedVersions(nested as Record<string, unknown>), snoozedUntil };
+            const lastShownAt = typeof record.lastShownAt === 'number' && Number.isFinite(record.lastShownAt)
+                ? record.lastShownAt
+                : undefined;
+            return {
+                dismissed: collectDismissedVersions(nested as Record<string, unknown>),
+                ...(snoozedUntil !== undefined ? { snoozedUntil } : {}),
+                ...(lastShownAt !== undefined ? { lastShownAt } : {}),
+            };
         }
         return { dismissed: collectDismissedVersions(record) };
     } catch {
@@ -261,7 +271,8 @@ export function rememberAgentCliUpdateDismiss(
     const current = readAgentCliUpdateState(storage);
     writeAgentCliUpdateState({
         dismissed: { ...current.dismissed, [agentId]: latestVersion },
-        snoozedUntil: current.snoozedUntil,
+        ...(current.snoozedUntil !== undefined ? { snoozedUntil: current.snoozedUntil } : {}),
+        ...(current.lastShownAt !== undefined ? { lastShownAt: current.lastShownAt } : {}),
     }, storage);
 }
 
@@ -277,13 +288,34 @@ export function snoozeAgentCliUpdates(
     if (!storage) {
         return;
     }
-    const dismissed: Record<string, string> = { ...readAgentCliUpdateState(storage).dismissed };
+    const current = readAgentCliUpdateState(storage);
+    const dismissed: Record<string, string> = { ...current.dismissed };
     for (const info of pending) {
         if (info.updateAvailable && info.id && info.latestVersion) {
             dismissed[info.id] = info.latestVersion;
         }
     }
-    writeAgentCliUpdateState({ dismissed, snoozedUntil: now + QAAP_AGENT_CLI_UPDATE_SNOOZE_MS }, storage);
+    writeAgentCliUpdateState({
+        dismissed,
+        snoozedUntil: now + QAAP_AGENT_CLI_UPDATE_SNOOZE_MS,
+        ...(current.lastShownAt !== undefined ? { lastShownAt: current.lastShownAt } : {}),
+    }, storage);
+}
+
+/** Record that an automatic CLI update notice was shown at `now` (enforces the once-per-day cap). */
+export function rememberAgentCliUpdateShown(
+    now: number,
+    storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = defaultAgentCliUpdateStorage(),
+): void {
+    if (!storage || !Number.isFinite(now)) {
+        return;
+    }
+    const current = readAgentCliUpdateState(storage);
+    writeAgentCliUpdateState({
+        dismissed: current.dismissed,
+        ...(current.snoozedUntil !== undefined ? { snoozedUntil: current.snoozedUntil } : {}),
+        lastShownAt: now,
+    }, storage);
 }
 
 /** True while a "Later" snooze is in effect at `now`. */
@@ -293,6 +325,15 @@ export function isAgentCliUpdateSnoozed(
 ): boolean {
     const { snoozedUntil } = readAgentCliUpdateState(storage);
     return snoozedUntil !== undefined && now < snoozedUntil;
+}
+
+/** True when an automatic CLI update notice was already shown within the last 24 hours. */
+export function isAgentCliUpdateInDailyCooldown(
+    now: number,
+    storage: Pick<Storage, 'getItem'> | undefined = defaultAgentCliUpdateStorage(),
+): boolean {
+    const { lastShownAt } = readAgentCliUpdateState(storage);
+    return lastShownAt !== undefined && now >= lastShownAt && now - lastShownAt < QAAP_AGENT_CLI_UPDATE_DAILY_COOLDOWN_MS;
 }
 
 /** Fetch outdated agent CLIs from the backend (auth cookie required). */

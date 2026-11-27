@@ -211,8 +211,9 @@ export class MobileWorkHubSessionsSidebar {
             return;
         }
         // The click that opened the sidebar is still bubbling to `document` when show() registers
-        // this listener; it predates the open, so it must not count as an outside click.
-        if (event.timeStamp < this.shownAt) {
+        // this listener; it predates (or shares a coarsened timestamp with) the open, so it must
+        // not count as an outside click.
+        if (event.timeStamp <= this.shownAt) {
             return;
         }
         // Settings stays docked beside its content on wide layouts; only the overlay drawer
@@ -232,7 +233,7 @@ export class MobileWorkHubSessionsSidebar {
         // collapses the drawer (hide() routes to the sheet's onClose) — except the control that opened it.
         const keepOpenSelector = settings
             ? '.theia-qaap-account-menu, .theia-mobile-work-hub-settings-sidebar-toggle-open'
-            : '.theia-qaap-account-menu, .theia-mobile-work-hub-preferences';
+            : '.theia-qaap-account-menu, .theia-mobile-work-hub-preferences, .theia-mobile-projects-sessions-menu, .theia-mobile-work-hub-pull-request-header-sidebar-toggle';
         if (path.some(node => node instanceof Element && node.matches(keepOpenSelector))) {
             return;
         }
@@ -532,6 +533,11 @@ export class MobileWorkHubSessionsSidebar {
 
     show(): void {
         if (this.visible) {
+            this.shownAt = performance.now();
+            this.root.hidden = false;
+            this.root.setAttribute('aria-hidden', 'false');
+            this.syncEmbeddedState(this.delegate.isEmbedded?.() === true);
+            this.root.classList.add('theia-mod-visible');
             if (this.sidebarMode === 'settings') {
                 this.renderSettingsSidebar();
             } else {

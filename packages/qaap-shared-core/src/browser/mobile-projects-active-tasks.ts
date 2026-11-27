@@ -18,6 +18,7 @@ import {
     seedWorkingDetailTaskLog,
     WORKING_DETAIL_TASK_LOG_MAX_BYTES,
 } from './qaap-sticky-composer-working-detail-task-log';
+import { refreshControlPlaneConnectionToken } from './qaap-ws-connection-token-refresh';
 
 /**
  * HTTP contract with `@theia/qaap-cloud-workspace`. The string is duplicated here on purpose:
@@ -397,11 +398,17 @@ export class MobileProjectsActiveTasks {
         }
         this.socket = undefined;
         this.setTransportState('reconnecting');
+        // Refresh the control-plane connection token cookie and let it settle before opening the socket.
+        const refreshed = refreshControlPlaneConnectionToken();
         const delay = Math.min(RECONNECT_MAX_MS, 1_000 * (2 ** this.reconnectAttempt));
         this.reconnectAttempt++;
         this.reconnectHandle = window.setTimeout(() => {
             this.reconnectHandle = undefined;
-            this.openSocket();
+            void refreshed.finally(() => {
+                if (this.started && this.reconnectHandle === undefined) {
+                    this.openSocket();
+                }
+            });
         }, delay);
     }
 

@@ -1914,7 +1914,7 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
    Bottom follows reserved chrome + keyboard inset so zones stay above the keyboard. */
 .theia-mobile-edgeSwipeZone {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + var(--theia-private-menubar-height, 40px));
+  top: calc(env(safe-area-inset-top, 0px) + max(var(--theia-private-menubar-height, 40px), 56px));
   bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px));
   width: 20px;
   z-index: 9650;

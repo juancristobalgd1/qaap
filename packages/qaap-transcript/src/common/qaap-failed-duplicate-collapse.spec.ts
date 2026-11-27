@@ -44,4 +44,24 @@ describe('collapseOlderFailedDuplicateTitles', () => {
         expect(result.conversations.map(row => row.id)).to.deep.equal(['a', 'b']);
         expect(result.hiddenFailedByKeptId.size).to.equal(0);
     });
+
+    it('hides older failed duplicates when a newer non-failed run shares the title and hideSupersededBySuccess is set', () => {
+        const rows = [
+            summary({ id: 'fail-old', title: 'De que va esta app', updatedAt: 10, createdAt: 10 }),
+            summary({ id: 'ok-new', status: 'idle', title: 'De que va esta app', updatedAt: 20, createdAt: 20 }),
+            summary({ id: 'fail-newer', title: 'Other task', updatedAt: 30, createdAt: 30 }),
+            // An older successful chat that later got a follow-up (updatedAt=50) must NOT hide a newer failed run.
+            summary({ id: 'ok-older', status: 'idle', title: 'Other task', updatedAt: 50, createdAt: 10 }),
+        ];
+        const result = collapseOlderFailedDuplicateTitles(rows, { hideSupersededBySuccess: true });
+        expect(result.conversations.map(row => row.id)).to.deep.equal(['ok-new', 'fail-newer', 'ok-older']);
+        expect(result.hiddenFailedByKeptId.size).to.equal(0);
+
+        // A failed row that is currently open (keepIds) stays visible even when a newer success exists.
+        const keepingOpen = collapseOlderFailedDuplicateTitles(rows, {
+            hideSupersededBySuccess: true,
+            keepIds: new Set(['fail-old']),
+        });
+        expect(keepingOpen.conversations.map(row => row.id)).to.deep.equal(['fail-old', 'ok-new', 'fail-newer', 'ok-older']);
+    });
 });

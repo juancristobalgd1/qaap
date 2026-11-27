@@ -70,6 +70,8 @@ const QAAP_GITHUB_WORKSPACE_TIMEOUT_MS = 210_000;
 const QAAP_GITHUB_LIST_TIMEOUT_MS = 30_000;
 /** Pull request listing fans out over several repositories (server deadline 45 s). */
 const QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS = 60_000;
+/** Paged PR search for the sidebar stays just above the 30 s server GitHub API timeout. */
+const QAAP_GITHUB_PULL_REQUEST_SEARCH_TIMEOUT_MS = 35_000;
 /**
  * The server merges (GitHub timeout 30 s) and, when the outcome is unknown, re-reads the pull request
  * (15 s) before answering, so this stays above that worst case.
@@ -424,7 +426,7 @@ export async function searchQaapGithubPullRequests(request: QaapGithubPullReques
     const response = await fetchQaapOrTimeoutError(
         `${QAAP_GITHUB_API_PATH}/pull-requests/search?${params.toString()}`,
         qaapAuthenticatedFetchInit(),
-        QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS,
+        QAAP_GITHUB_PULL_REQUEST_SEARCH_TIMEOUT_MS,
         () => nls.localize(
             'qaap/githubPullRequests/timedOut',
             'Loading GitHub pull requests took too long. Please try again.'

@@ -1129,6 +1129,36 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-brand')).to.not.equal(null);
         expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-close')).to.not.equal(null);
     });
+
+    it('keeps the embedded mobile sidebar open when opened from the mobile menu button', () => {
+        (global as { window?: Window }).window = {
+            ...(global as { window?: Window }).window,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+            isEmbedded: () => true,
+        });
+        const menuBtn = document.createElement('button');
+        menuBtn.type = 'button';
+        menuBtn.className = 'theia-mobile-projects-sessions-menu';
+        menuBtn.addEventListener('click', () => {
+            sidebar.show();
+        });
+        document.body.append(menuBtn, sidebar.node);
+
+        // Even without stopPropagation or with a matching click timestamp, opening from the menu
+        // button must not immediately dismiss the embedded drawer via document onOutsideClick.
+        menuBtn.click();
+        expect(sidebar.isVisible()).to.equal(true);
+        expect(sidebar.node.hidden).to.equal(false);
+        expect(sidebar.node.classList.contains('theia-mod-visible')).to.equal(true);
+        sidebar.hide();
+    });
 });
 
 /** Lets the chained promise callbacks of a click settle. */

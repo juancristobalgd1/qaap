@@ -2800,33 +2800,47 @@ footer { border-top: 1px solid var(--line); }
             });
         }, { rootMargin: '0px 0px -10% 0px' });
         heads.forEach(function (el) { io.observe(el); });
-        var countUp = function (el) {
-            var m = el.textContent.match(/\$(\d+(?:\.\d+)?)/);
-            if (!m) { return; }
-            var target = parseFloat(m[1]);
-            var decimals = (m[1].split('.')[1] || '').length;
+        var countUp = function (el, target, decimals, node, tmpl, matchText) {
+            if (!(target > 0)) { return; }
+            var t0 = performance.now();
+            var step = function (now) {
+                var p = Math.min(1, (now - t0) / 1100);
+                var e = 1 - Math.pow(1 - p, 3);
+                node.textContent = p >= 1 ? tmpl : tmpl.replace(matchText, '$' + (target * e).toFixed(decimals));
+                if (p < 1) { requestAnimationFrame(step); }
+            };
+            requestAnimationFrame(step);
+        };
+        var priceEntries = [];
+        document.querySelectorAll('.plan .price').forEach(function (el) {
             var node = null;
             for (var i = 0; i < el.childNodes.length; i++) {
                 if (el.childNodes[i].nodeType === 3 && el.childNodes[i].textContent.indexOf('$') >= 0) { node = el.childNodes[i]; break; }
             }
             if (!node) { return; }
             var tmpl = node.textContent;
-            var t0 = performance.now();
-            var step = function (now) {
-                var p = Math.min(1, (now - t0) / 1100);
-                var e = 1 - Math.pow(1 - p, 3);
-                node.textContent = tmpl.replace(m[0], '$' + (target * e).toFixed(decimals));
-                if (p < 1) { requestAnimationFrame(step); }
-            };
-            requestAnimationFrame(step);
-        };
-        var prices = document.querySelectorAll('.plan .price');
-        var pio = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) { countUp(entry.target); pio.unobserve(entry.target); }
-            });
-        }, { threshold: 0.6 });
-        prices.forEach(function (el) { if (/\$\d/.test(el.textContent)) { pio.observe(el); } });
+            var m = tmpl.match(/\$(\d+(?:\.\d+)?)/);
+            if (!m) { return; }
+            var target = parseFloat(m[1]);
+            if (!(target > 0)) { return; }
+            priceEntries.push({ el: el, target: target, decimals: (m[1].split('.')[1] || '').length, node: node, tmpl: tmpl, matchText: m[0] });
+        });
+        if (priceEntries.length > 0) {
+            var pio = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (!entry.isIntersecting) { return; }
+                    for (var i = 0; i < priceEntries.length; i++) {
+                        var item = priceEntries[i];
+                        if (item.el === entry.target) {
+                            countUp(item.el, item.target, item.decimals, item.node, item.tmpl, item.matchText);
+                            pio.unobserve(entry.target);
+                            break;
+                        }
+                    }
+                });
+            }, { threshold: 0.6 });
+            priceEntries.forEach(function (item) { pio.observe(item.el); });
+        }
     }
     if (finePointer && !reduceMotion) {
         document.querySelectorAll('.bento .card').forEach(function (card) {
@@ -2917,37 +2931,6 @@ footer { border-top: 1px solid var(--line); }
     set();
     window.addEventListener('resize', set);
     if (document.fonts && document.fonts.ready) { document.fonts.ready.then(set); }
-})();
-</script>
-<script>
-/* Number ticker: plan prices count up the first time they scroll into view. */
-(function () {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) { return; }
-    document.querySelectorAll('.plan .price').forEach(function (el) {
-        var node = el.firstChild;
-        if (!node || node.nodeType !== 3) { return; }
-        var m = /^(\D*)([\d.]+)/.exec(node.nodeValue);
-        if (!m) { return; }
-        var prefix = m[1];
-        var target = parseFloat(m[2]);
-        var decimals = (m[2].split('.')[1] || '').length;
-        var done = false;
-        var io = new IntersectionObserver(function (entries) {
-            if (!entries[0].isIntersecting || done) { return; }
-            done = true;
-            io.disconnect();
-            var t0 = performance.now();
-            var step = function (now) {
-                var k = Math.min(1, (now - t0) / 1100);
-                k = 1 - Math.pow(1 - k, 4);
-                node.nodeValue = prefix + (target * k).toFixed(decimals);
-                if (k < 1) { requestAnimationFrame(step); }
-            };
-            node.nodeValue = prefix + (0).toFixed(decimals);
-            requestAnimationFrame(step);
-        }, { threshold: 0.6 });
-        io.observe(el);
-    });
 })();
 </script>
 </body>
