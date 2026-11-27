@@ -42,6 +42,12 @@ import { createPreviewEditButton } from './qaap-preview-edit-menu';
 import { createPreviewMaximizeControl } from './qaap-preview-maximize';
 import { QaapPreviewFrameHistory } from './qaap-preview-frame-history';
 import {
+    getQaapNativeBrowserBridge,
+    isPreviewElementVisible,
+    isPreviewSlotOccludedByOverlay,
+} from './qaap-native-browser-bridge';
+import { QAAP_NATIVE_BROWSER_MIN_VISIBLE_PX } from '../common/qaap-native-browser-protocol';
+import {
     mountPreviewOverflowMenu,
     previewNotify,
 } from './qaap-preview-overflow-actions';
@@ -525,9 +531,13 @@ export interface EmbeddedAgentPreviewChrome extends Disposable {
     getCurrentUrl(): string;
     /** True while the URL field is focused or holds an uncommitted user edit (survives transient blur). */
     hasUnsavedUrlDraft(): boolean;
+    /** True while the user is focused/typing inside the previewed page (iframe or Electron WebContentsView). */
+    isFrameFocused(): boolean;
     navigate(url: string): void | Promise<void>;
     reload(): void;
 }
+
+let nativeBrowserViewCounter = 0;
 
 /** Full preview chrome for embedded hosts (e.g. mobile transcript Preview tab). */
 export function mountEmbeddedAgentPreviewChrome(
@@ -687,7 +697,27 @@ export function mountEmbeddedAgentPreviewChrome(
         urlInput.value = value;
     };
 
+    const nativeBridge = getQaapNativeBrowserBridge();
+    const nativeViewId = nativeBridge ? `qaap-nb-${++nativeBrowserViewCounter}` : undefined;
+    let nativeViewEnsured = false;
+    let nativeTitle: string | undefined;
+    let nativeFocused = false;
+    let nativeCanGoBack = false;
+    let nativeCanGoForward = false;
+    let nativeBoundsRaf: number | undefined;
+    let lastNativeBoundsSig = '';
+    if (nativeBridge) {
+        // Native WebContentsView paints over frameSlot; keep the fallback iframe hidden to avoid double loads.
+        frame.style.display = 'none';
+        root.classList.add('qaap-mod-native-browser');
+    }
+
     const syncHistoryButtons = (): void => {
+        if (nativeBridge) {
+            backBtn.disabled = !nativeCanGoBack;
+            forwardBtn.disabled = !nativeCanGoForward;
+            return;
+        }
         backBtn.disabled = !frameHistory.canGoBack();
         forwardBtn.disabled = !frameHistory.canGoForward();
     };
@@ -698,6 +728,101 @@ export function mountEmbeddedAgentPreviewChrome(
         toolbar.classList.toggle('qaap-mod-frame-loading', loading);
     };
 
+    const hasLocalSlotOverlay = (): boolean => Boolean(
+        frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay, .theia-mobile-transcript-preview-empty-overlay, .qaap-preview-annotation-canvas, .qaap-preview-picker-overlay')
+    );
+
+    const syncNativeBoundsNow = (): void => {
+        nativeBoundsRaf = undefined;
+        if (!nativeBridge || !nativeViewId || !nativeViewEnsured) {
+            return;
+        }
+        const isRealUrl = !!currentUrl && currentUrl !== 'about:blank' && !root.classList.contains('theia-mod-empty-preview');
+        const rect = frameSlot.getBoundingClientRect();
+        const visible = isRealUrl
+            && isPreviewElementVisible(frameSlot)
+            && rect.width >= QAAP_NATIVE_BROWSER_MIN_VISIBLE_PX
+            && rect.height >= QAAP_NATIVE_BROWSER_MIN_VISIBLE_PX
+            && !hasLocalSlotOverlay()
+            && !isPreviewSlotOccludedByOverlay(rect, document, root);
+        const bounds = {
+            x: Math.max(0, Math.round(rect.left)),
+            y: Math.max(0, Math.round(rect.top)),
+            width: Math.max(0, Math.round(rect.width)),
+            height: Math.max(0, Math.round(rect.height)),
+        };
+        const sig = visible
+            ? `1:${bounds.x},${bounds.y},${bounds.width},${bounds.height}`
+            : '0';
+        if (sig === lastNativeBoundsSig) {
+            return;
+        }
+        lastNativeBoundsSig = sig;
+        void nativeBridge.setBounds(nativeViewId, bounds, visible);
+    };
+
+    const scheduleNativeBoundsSync = (): void => {
+        if (!nativeBridge || !nativeViewId || !nativeViewEnsured || nativeBoundsRaf !== undefined) {
+            return;
+        }
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+            nativeBoundsRaf = window.requestAnimationFrame(syncNativeBoundsNow);
+        } else {
+            syncNativeBoundsNow();
+        }
+    };
+
+    if (nativeBridge && nativeViewId) {
+        disposables.push(nativeBridge.subscribe(nativeViewId, event => {
+            if (event.url && event.url !== 'about:blank') {
+                currentUrl = event.url;
+                syncUrlInput(sanitizePreviewDisplayUrl(event.url));
+            }
+            if (event.title !== undefined) {
+                nativeTitle = event.title;
+            }
+            nativeCanGoBack = event.canGoBack;
+            nativeCanGoForward = event.canGoForward;
+            nativeFocused = Boolean(event.focused);
+            syncHistoryButtons();
+            setFrameLoading(event.loading);
+            if (!event.loading && currentUrl && currentUrl !== 'about:blank') {
+                previewController?.recordVisit();
+            }
+        }));
+        if (typeof ResizeObserver !== 'undefined') {
+            const resizeObserver = new ResizeObserver(() => scheduleNativeBoundsSync());
+            resizeObserver.observe(frameSlot);
+            if (document.body) {
+                resizeObserver.observe(document.body);
+            }
+            disposables.push({ dispose: () => resizeObserver.disconnect() });
+        }
+        if (typeof MutationObserver !== 'undefined' && document.body) {
+            const mutationObserver = new MutationObserver(() => scheduleNativeBoundsSync());
+            mutationObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'],
+            });
+            disposables.push({ dispose: () => mutationObserver.disconnect() });
+        }
+        const onViewportChange = (): void => scheduleNativeBoundsSync();
+        window.addEventListener('resize', onViewportChange);
+        window.addEventListener('scroll', onViewportChange, true);
+        disposables.push({
+            dispose: () => {
+                window.removeEventListener('resize', onViewportChange);
+                window.removeEventListener('scroll', onViewportChange, true);
+                if (nativeBoundsRaf !== undefined && typeof window.cancelAnimationFrame === 'function') {
+                    window.cancelAnimationFrame(nativeBoundsRaf);
+                    nativeBoundsRaf = undefined;
+                }
+            },
+        });
+    }
+
     const navigateInternal = (
         url: string,
         navOptions: { readonly hard?: boolean } | undefined,
@@ -705,7 +830,7 @@ export function mountEmbeddedAgentPreviewChrome(
     ): void => {
         const next = normalizePreviewNavigateUrl(url);
         if (!isQaapPreviewNavigableUrl(next, window.location.href)) {
-            if (frameHistory.isApplyingHistoryNav) {
+            if (!nativeBridge && frameHistory.isApplyingHistoryNav) {
                 frameHistory.finishHistoryNav();
                 syncHistoryButtons();
             }
@@ -717,7 +842,7 @@ export function mountEmbeddedAgentPreviewChrome(
             return;
         }
         if (isQaapIdeShellUrl(next)) {
-            if (frameHistory.isApplyingHistoryNav) {
+            if (!nativeBridge && frameHistory.isApplyingHistoryNav) {
                 frameHistory.finishHistoryNav();
                 syncHistoryButtons();
             }
@@ -736,6 +861,23 @@ export function mountEmbeddedAgentPreviewChrome(
             urlDraftDirty = false;
         }
         syncUrlInput(sanitizePreviewDisplayUrl(next), source === 'user');
+        if (nativeBridge && nativeViewId) {
+            if (next && next !== 'about:blank') {
+                setFrameLoading(true);
+                if (!nativeViewEnsured) {
+                    nativeViewEnsured = true;
+                    void nativeBridge.ensureView(nativeViewId, next).then(() => scheduleNativeBoundsSync());
+                } else {
+                    void nativeBridge.navigate(nativeViewId, next, navOptions);
+                    scheduleNativeBoundsSync();
+                }
+            } else {
+                scheduleNativeBoundsSync();
+            }
+            previewController?.recordNavigationIntent(url);
+            options.onNavigate?.(next, { source });
+            return;
+        }
         if (!frameHistory.isApplyingHistoryNav) {
             frameHistory.record(sanitizePreviewDisplayUrl(next));
             syncHistoryButtons();
@@ -758,6 +900,9 @@ export function mountEmbeddedAgentPreviewChrome(
         getFrame: () => frame,
         getCurrentUrl: () => currentUrl,
         getPageTitle: () => {
+            if (nativeBridge) {
+                return nativeTitle;
+            }
             try {
                 return frame.contentDocument?.title || undefined;
             } catch {
@@ -767,6 +912,10 @@ export function mountEmbeddedAgentPreviewChrome(
         navigate: (url, navOptions) => navigateInternal(url, navOptions, 'user'),
         reload: () => {
             setFrameLoading(true);
+            if (nativeBridge && nativeViewId && nativeViewEnsured) {
+                void nativeBridge.reload(nativeViewId, false);
+                return;
+            }
             try {
                 frame.contentWindow?.location.reload();
             } catch {
@@ -783,10 +932,14 @@ export function mountEmbeddedAgentPreviewChrome(
                 );
                 return;
             }
+            setFrameLoading(true);
+            if (nativeBridge && nativeViewId && nativeViewEnsured) {
+                void nativeBridge.reload(nativeViewId, true);
+                return;
+            }
             const bust = url.includes('?')
                 ? `${url}&_qaap_cache_bust=${Date.now()}`
                 : `${url}?_qaap_cache_bust=${Date.now()}`;
-            setFrameLoading(true);
             try {
                 frame.contentWindow?.location.replace(bust);
             } catch {
@@ -819,6 +972,11 @@ export function mountEmbeddedAgentPreviewChrome(
     disposables.push(addEventListener(backBtn, 'click', (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (nativeBridge && nativeViewId && nativeViewEnsured) {
+            urlDraftDirty = false;
+            void nativeBridge.goBack(nativeViewId);
+            return;
+        }
         const target = frameHistory.back();
         syncHistoryButtons();
         if (!target) {
@@ -829,6 +987,11 @@ export function mountEmbeddedAgentPreviewChrome(
     disposables.push(addEventListener(forwardBtn, 'click', (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (nativeBridge && nativeViewId && nativeViewEnsured) {
+            urlDraftDirty = false;
+            void nativeBridge.goForward(nativeViewId);
+            return;
+        }
         const target = frameHistory.forward();
         syncHistoryButtons();
         if (!target) {
@@ -873,7 +1036,12 @@ export function mountEmbeddedAgentPreviewChrome(
                 syncUrlInput(formatUrlForInput(currentUrl), true);
             };
             if (address.kind === 'search') {
-                // Search engines never allow framing: open the results in a real tab right away.
+                // Native Electron WebContentsView can load search engines directly (no X-Frame-Options
+                // limit); web iframes open results in a real browser tab instead.
+                if (nativeBridge) {
+                    go(typed);
+                    return;
+                }
                 urlDraftDirty = false;
                 openExternalUrl(typed);
                 urlInput.blur();
@@ -944,9 +1112,14 @@ export function mountEmbeddedAgentPreviewChrome(
         },
         getCurrentUrl: () => currentUrl,
         hasUnsavedUrlDraft: () => urlDraftDirty || document.activeElement === urlInput,
+        isFrameFocused: () => nativeFocused || document.activeElement === frame,
         navigate: (url: string) => adapter.navigate(url),
         reload: () => adapter.reload(),
         dispose: () => {
+            if (nativeBridge && nativeViewId && nativeViewEnsured) {
+                nativeViewEnsured = false;
+                void nativeBridge.destroyView(nativeViewId);
+            }
             disposables.dispose();
             host.replaceChildren();
         },

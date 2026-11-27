@@ -642,11 +642,17 @@ export class MobileProjectsTranscriptSurfacesUi {
         return false;
     }
 
-    /** True while the user is focused/typing inside the previewed page's iframe. */
+    /** True while the user is focused/typing inside the previewed page (iframe or Electron WebContentsView). */
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public isTranscriptPreviewFrameActive(): boolean {
-        const frame = this.host.transcriptEmbeddedPreview?.frame;
-        return !!frame && frame.isConnected && document.activeElement === frame;
+        const chrome = this.host.transcriptEmbeddedPreview;
+        if (!chrome) {
+            return false;
+        }
+        if (chrome.isFrameFocused?.()) {
+            return true;
+        }
+        return !!chrome.frame && chrome.frame.isConnected && document.activeElement === chrome.frame;
     }
 
     mountTranscriptEmptyPreview(host: HTMLElement, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
