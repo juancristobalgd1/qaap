@@ -7,7 +7,7 @@ The desktop app (`examples/electron`) is packaged with electron-builder and publ
 
 1. Crea y empuja un tag `desktop-vX.Y.Z` (solo números; p. ej. `git tag desktop-v0.1.0 && git push origin desktop-v0.1.0`),
    o lanza el workflow a mano (`workflow_dispatch`, campo `tag`).
-2. El workflow compila, empaqueta en 4 runners (macos-14 arm64, macos-15-intel x64, windows-2022, ubuntu-22.04), sube todo a un
+2. El workflow compila, empaqueta en 4 runners (macos-15 arm64, macos-15-intel x64, windows-2022, ubuntu-22.04), sube todo a un
    borrador de release y, al final, lo publica **marcado como pre-release**. La versión de la app sale del tag (`X.Y.Z`).
 
 ## Artefactos (nombres fijos, sin versión)
