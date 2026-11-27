@@ -13,7 +13,7 @@ asar: false
 npmRebuild: false
 nodeGypRebuild: false
 buildDependenciesFromSource: false
-electronVersion: 42.8.1
+electronVersion: 42.11.18
 
 directories:
   output: build/installers
