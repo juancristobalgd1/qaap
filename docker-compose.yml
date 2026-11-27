@@ -261,6 +261,10 @@ services:
       # Billing shows checkoutEnabled=false and POST /qaap/api/billing/checkout returns 503.
       # Public origin for checkout return URLs (prefer the Caddy HTTPS host).
       QAAP_PUBLIC_URL: ${QAAP_PUBLIC_URL:-}
+      # Public desktop installer URLs served by GET /qaap/desktop-downloads.json for the landing page.
+      QAAP_DESKTOP_DOWNLOAD_URL_MAC: ${QAAP_DESKTOP_DOWNLOAD_URL_MAC:-}
+      QAAP_DESKTOP_DOWNLOAD_URL_WIN: ${QAAP_DESKTOP_DOWNLOAD_URL_WIN:-}
+      QAAP_DESKTOP_DOWNLOAD_URL_LINUX: ${QAAP_DESKTOP_DOWNLOAD_URL_LINUX:-}
       QAAP_BILLING_DEFAULT_PLAN: ${QAAP_BILLING_DEFAULT_PLAN:-}
       QAAP_BILLING_STORE_PATH: ${QAAP_BILLING_STORE_PATH:-}
       # Local-only plan preview when Airwallex is not configured. Must stay unset on a public VPS.
