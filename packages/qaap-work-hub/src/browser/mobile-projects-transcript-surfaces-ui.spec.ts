@@ -37,7 +37,7 @@ import {
     findTranscriptPreviewPortHint,
     resetTranscriptPreviewHintStateForTests,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
-import { USER_NAVIGATED_PREVIEW_CLASS } from './mobile-projects-transcript-surfaces-ui-tool-pills';
+import { resetTranscriptPreviewToEmptyExtracted, USER_NAVIGATED_PREVIEW_CLASS } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 import { TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS, TRANSCRIPT_PREVIEW_TAB_PROBE_MS } from './mobile-projects-transcript-surfaces-ui-activity';
 import { firstInPriorityOrder } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS } from './mobile-projects-transcript-surfaces-ui-timeline';
@@ -1244,5 +1244,73 @@ describe('MobileProjectsTranscriptSurfacesUi — execution host resolution with 
         const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
 
         expect(ui.executionTerminalHost()).to.equal(dockedHost);
+    });
+});
+
+describe('MobileProjectsTranscriptSurfacesUi — browser input persistence across re-renders', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('keeps an uncommitted URL draft even after blur and never tears down the empty toolbar DOM', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        const previewHost = host.transcriptPreviewHost!;
+        const root = document.createElement('div');
+        root.className = 'qaap-agent-preview-embedded theia-mod-empty-preview';
+        const urlField = document.createElement('div');
+        urlField.className = 'theia-mini-browser-url-field';
+        const input = document.createElement('input');
+        input.value = 'http://localhost:5173/login';
+        urlField.append(input);
+        const frame = document.createElement('iframe');
+        root.append(urlField, frame);
+        previewHost.append(root);
+        let dirty = true;
+        host.transcriptEmbeddedPreview = {
+            root,
+            frame,
+            hasUnsavedUrlDraft: () => dirty,
+            dispose: () => root.remove(),
+        } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+
+        // Even unfocused (document.activeElement === document.body), uncommitted draft blocks reset.
+        expect(ui.isTranscriptPreviewUrlFieldActive()).to.equal(true);
+        expect(resetTranscriptPreviewToEmptyExtracted(ui, previewHost, host.projects[0], sampleSummary())).to.equal(false);
+        expect(previewHost.contains(input)).to.equal(true);
+        expect(input.value).to.equal('http://localhost:5173/login');
+
+        // Even when draft is cleared and empty, resetting an already-empty preview updates in place
+        // instead of destroying and recreating the <input> node.
+        dirty = false;
+        input.value = '';
+        expect(resetTranscriptPreviewToEmptyExtracted(ui, previewHost, host.projects[0], sampleSummary())).to.equal(true);
+        expect(previewHost.contains(input)).to.equal(true);
+    });
+
+    it('refuses to reset the preview while the user is typing inside the iframe', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        const previewHost = host.transcriptPreviewHost!;
+        const root = document.createElement('div');
+        root.className = 'qaap-agent-preview-embedded';
+        const frame = document.createElement('iframe');
+        frame.tabIndex = 0;
+        root.append(frame);
+        previewHost.append(root);
+        host.transcriptEmbeddedPreview = {
+            root,
+            frame,
+            hasUnsavedUrlDraft: () => false,
+            dispose: () => root.remove(),
+        } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+
+        frame.focus();
+        expect(ui.isTranscriptPreviewFrameActive()).to.equal(true);
+        expect(resetTranscriptPreviewToEmptyExtracted(ui, previewHost, host.projects[0], sampleSummary())).to.equal(false);
+        expect(previewHost.contains(frame)).to.equal(true);
     });
 });

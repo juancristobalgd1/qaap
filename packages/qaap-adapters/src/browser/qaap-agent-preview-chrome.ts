@@ -496,7 +496,7 @@ export type { QaapPreviewInspectorDeps } from './qaap-preview-inline-inspector';
 export interface EmbeddedAgentPreviewChromeOptions extends QaapAgentPreviewChromeOptions {
     readonly url: string;
     readonly readOnlyUrl?: boolean;
-    readonly onNavigate?: (url: string) => void;
+    readonly onNavigate?: (url: string, meta?: { readonly source: 'user' | 'programmatic' }) => void;
     /**
      * Resolves a URL the user typed before navigating (e.g. claims a `/qaap-dev/:port` target for
      * this workspace and returns its identity URL). Without it an unclaimed port answered 403.
@@ -523,6 +523,8 @@ export interface EmbeddedAgentPreviewChrome extends Disposable {
     setUrl(url: string): void;
     /** URL actually loaded in the frame — never the (possibly half-typed) URL field value. */
     getCurrentUrl(): string;
+    /** True while the URL field is focused or holds an uncommitted user edit (survives transient blur). */
+    hasUnsavedUrlDraft(): boolean;
     navigate(url: string): void | Promise<void>;
     reload(): void;
 }
@@ -669,11 +671,17 @@ export function mountEmbeddedAgentPreviewChrome(
     });
     disposables.push(blockedFrameGuard);
 
-    // The dev-server holding page reloads itself every couple of seconds, and each iframe load
-    // used to rewrite the URL field — wiping whatever the user was typing mid-load. Never touch
-    // the field while it owns focus; it resyncs on the next programmatic update after blur.
-    const syncUrlInput = (value: string): void => {
-        if (document.activeElement === urlInput) {
+    // Separate committed frame URL from the user's in-progress URL draft (dirty latch):
+    // background polls, iframe reloads, or transient blurs (e.g. clicking the history popover
+    // or switching windows) must never overwrite text the user is typing in the address bar.
+    // Only an explicit user commit (Enter, history/back/forward navigation) or Escape clears it.
+    let urlDraftDirty = false;
+    const formatUrlForInput = (value: string): string => {
+        const sanitized = sanitizePreviewDisplayUrl(value);
+        return sanitized === 'about:blank' ? '' : sanitized;
+    };
+    const syncUrlInput = (value: string, force = false): void => {
+        if (!force && (document.activeElement === urlInput || urlDraftDirty)) {
             return;
         }
         urlInput.value = value;
@@ -690,6 +698,61 @@ export function mountEmbeddedAgentPreviewChrome(
         toolbar.classList.toggle('qaap-mod-frame-loading', loading);
     };
 
+    const navigateInternal = (
+        url: string,
+        navOptions: { readonly hard?: boolean } | undefined,
+        source: 'user' | 'programmatic',
+    ): void => {
+        const next = normalizePreviewNavigateUrl(url);
+        if (!isQaapPreviewNavigableUrl(next, window.location.href)) {
+            if (frameHistory.isApplyingHistoryNav) {
+                frameHistory.finishHistoryNav();
+                syncHistoryButtons();
+            }
+            previewNotify(
+                { messageService: options.messageService, notify: options.notify },
+                nls.localize('qaap/preview/unsupportedScheme', 'The preview only opens http and https addresses.'),
+                'warn',
+            );
+            return;
+        }
+        if (isQaapIdeShellUrl(next)) {
+            if (frameHistory.isApplyingHistoryNav) {
+                frameHistory.finishHistoryNav();
+                syncHistoryButtons();
+            }
+            previewNotify(
+                { messageService: options.messageService, notify: options.notify },
+                nls.localize(
+                    'qaap/preview/ideShellBlocked',
+                    'That URL points to Qaap itself, not your app. Use "Open preview" or enter your application URL.',
+                ),
+                'warn',
+            );
+            return;
+        }
+        currentUrl = next;
+        if (source === 'user') {
+            urlDraftDirty = false;
+        }
+        syncUrlInput(sanitizePreviewDisplayUrl(next), source === 'user');
+        if (!frameHistory.isApplyingHistoryNav) {
+            frameHistory.record(sanitizePreviewDisplayUrl(next));
+            syncHistoryButtons();
+        }
+        // Before `src`: sandbox changes only apply to the next navigation.
+        blockedFrameGuard.arm(next);
+        setFrameLoading(true);
+        if (navOptions?.hard) {
+            const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
+            frame.src = bust;
+        } else {
+            frame.src = next;
+        }
+        previewController?.recordNavigationIntent(url);
+        options.onNavigate?.(next, { source });
+    };
+
     const adapter: QaapAgentPreviewChromeHost = {
         getRoot: () => root,
         getFrame: () => frame,
@@ -701,53 +764,7 @@ export function mountEmbeddedAgentPreviewChrome(
                 return undefined;
             }
         },
-        navigate: (url, navOptions) => {
-            const next = normalizePreviewNavigateUrl(url);
-            if (!isQaapPreviewNavigableUrl(next, window.location.href)) {
-                if (frameHistory.isApplyingHistoryNav) {
-                    frameHistory.finishHistoryNav();
-                    syncHistoryButtons();
-                }
-                previewNotify(
-                    { messageService: options.messageService, notify: options.notify },
-                    nls.localize('qaap/preview/unsupportedScheme', 'The preview only opens http and https addresses.'),
-                    'warn',
-                );
-                return;
-            }
-            if (isQaapIdeShellUrl(next)) {
-                if (frameHistory.isApplyingHistoryNav) {
-                    frameHistory.finishHistoryNav();
-                    syncHistoryButtons();
-                }
-                previewNotify(
-                    { messageService: options.messageService, notify: options.notify },
-                    nls.localize(
-                        'qaap/preview/ideShellBlocked',
-                        'That URL points to Qaap itself, not your app. Use "Open preview" or enter your application URL.',
-                    ),
-                    'warn',
-                );
-                return;
-            }
-            currentUrl = next;
-            syncUrlInput(sanitizePreviewDisplayUrl(next));
-            if (!frameHistory.isApplyingHistoryNav) {
-                frameHistory.record(sanitizePreviewDisplayUrl(next));
-                syncHistoryButtons();
-            }
-            // Before `src`: sandbox changes only apply to the next navigation.
-            blockedFrameGuard.arm(next);
-            setFrameLoading(true);
-            if (navOptions?.hard) {
-                const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
-                frame.src = bust;
-            } else {
-                frame.src = next;
-            }
-            previewController?.recordNavigationIntent(url);
-            options.onNavigate?.(next);
-        },
+        navigate: (url, navOptions) => navigateInternal(url, navOptions, 'user'),
         reload: () => {
             setFrameLoading(true);
             try {
@@ -825,6 +842,14 @@ export function mountEmbeddedAgentPreviewChrome(
         adapter.openExternal();
     }));
     disposables.push(addEventListener(urlInput, 'keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            urlDraftDirty = false;
+            controller.toggleHistory(false);
+            syncUrlInput(formatUrlForInput(currentUrl), true);
+            urlInput.blur();
+            return;
+        }
         if (e.key === 'Enter') {
             const address = resolveQaapPreviewAddressInput(urlInput.value);
             controller.toggleHistory(false);
@@ -840,17 +865,19 @@ export function mountEmbeddedAgentPreviewChrome(
                 return;
             }
             const typed = address.url;
-            // Then leave the field so it shows the URL actually loaded (it never syncs while focused).
+            // Then leave the field so it shows the URL actually loaded (it never syncs while focused or dirty).
             const go = (target: string): void => {
+                urlDraftDirty = false;
                 void adapter.navigate(target);
                 urlInput.blur();
-                syncUrlInput(sanitizePreviewDisplayUrl(currentUrl));
+                syncUrlInput(formatUrlForInput(currentUrl), true);
             };
             if (address.kind === 'search') {
                 // Search engines never allow framing: open the results in a real tab right away.
+                urlDraftDirty = false;
                 openExternalUrl(typed);
                 urlInput.blur();
-                syncUrlInput(sanitizePreviewDisplayUrl(currentUrl));
+                syncUrlInput(formatUrlForInput(currentUrl), true);
                 return;
             }
             if (!options.resolveTypedUrl) {
@@ -864,6 +891,7 @@ export function mountEmbeddedAgentPreviewChrome(
     }));
     controller.setHistoryCombobox(urlInput);
     disposables.push(addEventListener(urlInput, 'input', () => {
+        urlDraftDirty = true;
         controller.updateHistoryPopoverQuery(urlInput.value);
     }));
     disposables.push(addEventListener(urlInput, 'click', () => {
@@ -912,9 +940,10 @@ export function mountEmbeddedAgentPreviewChrome(
         frame,
         controller,
         setUrl: (url: string) => {
-            void adapter.navigate(url);
+            navigateInternal(url, undefined, 'programmatic');
         },
         getCurrentUrl: () => currentUrl,
+        hasUnsavedUrlDraft: () => urlDraftDirty || document.activeElement === urlInput,
         navigate: (url: string) => adapter.navigate(url),
         reload: () => adapter.reload(),
         dispose: () => {

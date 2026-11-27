@@ -56,6 +56,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'hideHeaderViewModeSwitch'
     | 'host'
     | 'isProjectBootstrapPreviewActive'
+    | 'isTranscriptPreviewFrameActive'
     | 'isTranscriptPreviewStoppable'
     | 'isTranscriptPreviewUrlFieldActive'
     | 'isTranscriptPreviewWaiting'

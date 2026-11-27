@@ -619,11 +619,34 @@ export class MobileProjectsTranscriptSurfacesUi {
         ensureTranscriptPreviewServingExtracted(this, project, summary, previewUrl, options);
     }
 
-    /** True while the user is typing in the mounted preview's URL field. */
+    /**
+     * True while the user is typing in or has an uncommitted draft in the mounted preview's URL
+     * field (survives transient blur so background polls never wipe what they typed).
+     */
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public isTranscriptPreviewUrlFieldActive(): boolean {
-        const input = this.host.transcriptEmbeddedPreview?.root.querySelector('.theia-mini-browser-url-field input');
-        return !!input && input === document.activeElement;
+        const chrome = this.host.transcriptEmbeddedPreview;
+        if (!chrome) {
+            return false;
+        }
+        if (chrome.hasUnsavedUrlDraft?.()) {
+            return true;
+        }
+        const input = chrome.root.querySelector<HTMLInputElement>('.theia-mini-browser-url-field input');
+        if (input && input === document.activeElement) {
+            return true;
+        }
+        if (chrome.root.classList.contains('theia-mod-empty-preview') && input && input.value.trim().length > 0) {
+            return true;
+        }
+        return false;
+    }
+
+    /** True while the user is focused/typing inside the previewed page's iframe. */
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public isTranscriptPreviewFrameActive(): boolean {
+        const frame = this.host.transcriptEmbeddedPreview?.frame;
+        return !!frame && frame.isConnected && document.activeElement === frame;
     }
 
     mountTranscriptEmptyPreview(host: HTMLElement, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
