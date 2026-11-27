@@ -11,11 +11,13 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
 import {
     fetchAgentCliUpdates,
+    isAgentCliUpdateInDailyCooldown,
     isAgentCliUpdateSnoozed,
     pickNextAgentUpdateToShow,
     countAgentUpdatesToShow,
     readAgentCliUpdateDismissMap,
     rememberAgentCliUpdateDismiss,
+    rememberAgentCliUpdateShown,
     snoozeAgentCliUpdates,
     type QaapAgentCliUpdateInfo,
 } from '../common/qaap-agent-cli-update';
@@ -28,8 +30,8 @@ import { QaapAgentCliUpdateTracker } from './qaap-agent-cli-update-tracker';
 
 export { presentableAgentCliUpdateFailure } from '../common/qaap-agent-cli-update';
 
-/** Defer slightly so Work Hub / splash finish painting before the toast competes for attention. */
-const BOOT_DELAY_MS = 2_500;
+/** Defer so Work Hub / initial paint settle before the non-critical update notice competes for attention. */
+const BOOT_DELAY_MS = 8_000;
 
 /**
  * On app start, ask the backend which agent CLIs are outdated and surface a T3-like toast
@@ -82,7 +84,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         this.toast = undefined;
     }
 
-    protected async checkAndShow(): Promise<void> {
+    protected async checkAndShow(trigger: 'boot' | 'afterUpdate' = 'boot'): Promise<void> {
         let updates: readonly QaapAgentCliUpdateInfo[] = [];
         try {
             updates = (await fetchAgentCliUpdates()).updates;
@@ -94,7 +96,12 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             return;
         }
         this.pendingUpdates = updates;
-        if (this.laterChosenThisSession || isAgentCliUpdateSnoozed(Date.now())) {
+        const now = Date.now();
+        if (
+            this.laterChosenThisSession
+            || isAgentCliUpdateSnoozed(now)
+            || (trigger === 'boot' && isAgentCliUpdateInDailyCooldown(now))
+        ) {
             return;
         }
         // At most one notice on screen: a visible toast keeps the queue.
@@ -105,6 +112,9 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         const next = pickNextAgentUpdateToShow(updates, dismissed);
         if (!next) {
             return;
+        }
+        if (trigger === 'boot') {
+            rememberAgentCliUpdateShown(now);
         }
         this.present(next, countAgentUpdatesToShow(updates, dismissed));
     }
@@ -164,7 +174,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         this.toast = undefined;
         void this.tracker.start(info).then(job => {
             if (!this.disposed && job.status === 'succeeded') {
-                void this.checkAndShow();
+                void this.checkAndShow('afterUpdate');
             }
         });
     }

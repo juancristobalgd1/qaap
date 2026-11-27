@@ -239,10 +239,13 @@ let cachedPendingRow: { readonly conversationId: string; readonly key: string; r
  * switch is unchanged so the virtual footer's identity check keeps it mounted.
  */
 export function resolveTranscriptPendingHarnessSwitchRow(
-    conv: Pick<QaapAgentConversationDTO, 'id' | 'messages'>,
+    conv: Pick<QaapAgentConversationDTO, 'id' | 'messages'> & Partial<Pick<QaapAgentConversationDTO, 'status' | 'agentId'>>,
     selection: TranscriptHarnessTurnRef | undefined,
 ): HTMLElement | undefined {
-    const harnessSwitch = resolveTranscriptPendingHarnessSwitch(conv.messages, selection);
+    const harnessSwitch = resolveTranscriptPendingHarnessSwitch(conv.messages, selection, {
+        conversationStatus: conv.status,
+        conversationAgentId: conv.agentId,
+    });
     if (!harnessSwitch) {
         return undefined;
     }
@@ -269,7 +272,7 @@ function resolveScroller(chatHost: HTMLElement): HTMLElement {
  */
 export function syncTranscriptPendingHarnessSwitchRow(
     chatHost: HTMLElement | undefined,
-    conv: Pick<QaapAgentConversationDTO, 'id' | 'messages'> | undefined,
+    conv: (Pick<QaapAgentConversationDTO, 'id' | 'messages'> & Partial<Pick<QaapAgentConversationDTO, 'status' | 'agentId'>>) | undefined,
     selection: TranscriptHarnessTurnRef | undefined,
 ): void {
     if (!chatHost) {

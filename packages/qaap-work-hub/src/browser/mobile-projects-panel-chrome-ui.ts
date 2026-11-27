@@ -190,6 +190,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.sessionsMenuBtn.setAttribute('aria-label', this.host.sessionsMenuBtn.title);
         this.host.sessionsMenuBtn.innerHTML = '<svg class="theia-mobile-projects-sessions-menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="2"></rect><path d="M6 2v12"></path></svg>';
         this.host.sessionsMenuBtn.addEventListener('click', ev => {
+            ev.preventDefault();
             ev.stopPropagation();
             this.host.openWorkHubSessionsSidebar();
         });

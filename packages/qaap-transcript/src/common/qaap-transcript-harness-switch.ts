@@ -72,16 +72,27 @@ export function resolveTranscriptHarnessSwitches(
 /**
  * The switch the composer has queued for the next turn: the harness selected in the composer differs
  * from the harness of the last sealed turn. Undefined when the conversation has no sealed turn yet
- * (nothing to hand off from), when the selection is the same harness (a model-only change), or while
+ * (nothing to hand off from), when the selection is the same harness (a model-only change), while
  * the latest user turn is still unsealed — that turn is already on its way and its own divider appears
- * once the backend records which harness ran it.
+ * once the backend records which harness ran it — or when a turn failed after the conversation already
+ * switched to the selected harness.
  */
 export function resolveTranscriptPendingHarnessSwitch(
     messages: readonly TranscriptHarnessMessage[],
     selection: TranscriptHarnessTurnRef | undefined,
+    options?: {
+        readonly conversationStatus?: string;
+        readonly conversationAgentId?: string;
+    },
 ): TranscriptHarnessSwitch | undefined {
     const selectedId = normalizeTranscriptHarnessId(selection?.agentId);
     if (!selection || !selectedId) {
+        return undefined;
+    }
+    if (
+        options?.conversationStatus === 'failed'
+        && normalizeTranscriptHarnessId(options.conversationAgentId) === selectedId
+    ) {
         return undefined;
     }
     for (let index = messages.length - 1; index >= 0; index--) {

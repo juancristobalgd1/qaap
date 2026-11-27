@@ -447,9 +447,14 @@ export function collapseSessionsSidebarFailedDuplicates(
     project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
 ): ReturnType<typeof collapseOlderFailedDuplicateTitles> {
-    return isSessionsSidebarClearFailedModeProject(ctx, project)
-        ? { conversations: [...conversations], hiddenFailedByKeptId: new Map<string, number>() }
-        : collapseOlderFailedDuplicateTitles(conversations);
+    if (isSessionsSidebarClearFailedModeProject(ctx, project)) {
+        return { conversations: [...conversations], hiddenFailedByKeptId: new Map<string, number>() };
+    }
+    const openId = ctx.host.transcriptOpenSummaryId;
+    return collapseOlderFailedDuplicateTitles(conversations, {
+        hideSupersededBySuccess: true,
+        ...(openId ? { keepIds: new Set([openId]) } : {}),
+    });
 }
 
 export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, listHost: HTMLElement,

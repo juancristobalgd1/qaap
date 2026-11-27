@@ -5,8 +5,9 @@
 
 import * as http from 'http';
 import type { Duplex } from 'stream';
-import { injectable, inject } from '@theia/core/shared/inversify';
+import { injectable, inject, optional } from '@theia/core/shared/inversify';
 import { WsRequestValidator } from '@theia/core/lib/node/ws-request-validators';
+import { BrowserConnectionToken, BROWSER_TOKEN_COOKIE_NAME } from '@theia/core/lib/node/hosting/browser-connection-token';
 import type { BackendApplicationContribution } from '@theia/core/lib/node';
 import type { Application, Request, Response, NextFunction } from '@theia/core/shared/express';
 import { QAAP_AUTH_API_PATH, QAAP_GITHUB_API_PATH, QAAP_HEALTH_API_PATH, QAAP_GITHUB_OAUTH_CALLBACK_PATH, QAAP_GITHUB_OAUTH_START_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -17,6 +18,7 @@ import {
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { filterQaapReservedSetCookies, QAAP_PREVIEW_ACCESS_COOKIE_NAME, stripQaapReservedCookies } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forward-headers';
 import { QAAP_DEV_PREVIEW_PREFIX, QAAP_IDENTITY_PREVIEW_PREFIX } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
+import { QAAP_CLIENT_ERROR_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { QAAP_PUSH_NOTIFY_PATH, QAAP_PUSH_SUBSCRIBE_PATH, QAAP_PUSH_VAPID_PATH, QAAP_TENANT_RUNTIME_API_PATH, QAAP_TENANT_UPDATE_API_PATH, type QaapTenantActivityReason } from '../common/qaap-cloud-api-types';
 import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
 import { QAAP_PREVIEW_ROUTE_HEADER, parseQaapPreviewRoutes, type QaapPreviewRoute } from '@theia/qaap-shared-core/lib/common/qaap-preview-route';
@@ -83,6 +85,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
 
     @inject(QaapFrontendStaticManifest)
     protected readonly staticManifest: QaapFrontendStaticManifest;
+
+    @inject(BrowserConnectionToken) @optional()
+    protected readonly browserConnectionToken: BrowserConnectionToken | undefined;
 
     /** Per-tenant "same build as the control plane" decisions (see {@link staticServingAllowed}). */
     protected readonly staticServingDecisions = new Map<string, { readonly allowed: boolean; readonly at: number }>();
@@ -572,7 +577,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     ): Promise<void> {
         QaapControlPlaneRpcGuard.markRoutedToTenantBackend(request);
         if (this.wsRequestValidator && !await this.wsRequestValidator.allowWsUpgrade(request)) {
-            socket.destroy();
+            this.rejectUpgrade(socket, 403, 'Forbidden');
             return;
         }
         await this.proxyWebSocket(request, socket, head, userLogin, session, originalListeners, server);
@@ -815,6 +820,15 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 : previewTraffic ? filterQaapReservedSetCookies(response.headers['set-cookie']) : undefined;
             if (appSetCookies) {
                 responseHeaders['set-cookie'] = appSetCookies;
+            } else if (!publicRoute && !previewTraffic) {
+                // Early tenant routing bypasses Express (where BrowserConnectionTokenBackendContribution runs),
+                // and tenant Set-Cookie headers are stripped above. Issue or refresh the control plane's own
+                // connection token cookie here so stale post-deploy tabs or tenants on an older build still
+                // receive a valid cookie for subsequent WebSocket upgrades.
+                const controlPlaneTokenCookie = this.buildControlPlaneConnectionTokenSetCookie(req);
+                if (controlPlaneTokenCookie) {
+                    responseHeaders['set-cookie'] = [controlPlaneTokenCookie];
+                }
             }
             res.writeHead(response.statusCode ?? 502, responseHeaders);
             response.pipe(res);
@@ -921,6 +935,43 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         return headers;
     }
 
+    /**
+     * Returns a `Set-Cookie` header for the control plane's `theia-connection-token` when the
+     * incoming browser request is missing it or carries a stale value (e.g. after a deploy).
+     */
+    protected buildControlPlaneConnectionTokenSetCookie(req: http.IncomingMessage): string | undefined {
+        const expected = this.browserConnectionToken?.value;
+        if (!expected) {
+            return undefined;
+        }
+        const existing = this.readCookieValue(req.headers.cookie, BROWSER_TOKEN_COOKIE_NAME);
+        if (existing === expected) {
+            return undefined;
+        }
+        return `${BROWSER_TOKEN_COOKIE_NAME}=${encodeURIComponent(expected)}; Path=/; HttpOnly; SameSite=Strict`;
+    }
+
+    protected readCookieValue(cookieHeader: string | undefined, name: string): string | undefined {
+        if (!cookieHeader) {
+            return undefined;
+        }
+        for (const segment of cookieHeader.split(';')) {
+            const eq = segment.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            if (segment.slice(0, eq).trim() === name) {
+                const raw = segment.slice(eq + 1).trim();
+                try {
+                    return decodeURIComponent(raw);
+                } catch {
+                    return raw;
+                }
+            }
+        }
+        return undefined;
+    }
+
     protected isControlPlanePath(url: string | undefined): boolean {
         const pathname = (url ?? '/').split('?', 1)[0];
         return pathname === QAAP_HEALTH_API_PATH
@@ -930,6 +981,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             || pathname === QAAP_TENANT_RUNTIME_API_PATH
             || pathname.startsWith(`${QAAP_TENANT_RUNTIME_API_PATH}/`)
             || pathname === QAAP_TENANT_UPDATE_API_PATH
+            // Client failure breadcrumbs always land in the control-plane log, even while a tenant
+            // backend is cold-starting, restarting, or returning errors.
+            || pathname === QAAP_CLIENT_ERROR_API_PATH
             // Web Push: subscriptions and VAPID keys live only on the control plane (per owner session).
             || pathname === QAAP_PUSH_VAPID_PATH
             || pathname === QAAP_PUSH_SUBSCRIBE_PATH

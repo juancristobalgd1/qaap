@@ -291,7 +291,9 @@ export class MobileProjectsBackgroundTaskUi {
             try {
                 resolvedAgentId = await this.routeSubmitAgent(cwd, draft, options.selectedAgentId);
             } catch (error) {
-                // Routing failed: abort rather than gate and send with different agents. The draft is restored by the caller.
+                // Routing failed: abort rather than gate and send with different agents. Roll back the
+                // optimistic paint so "Starting the agent…" does not linger; the draft is restored by the caller.
+                this.host.rollbackTranscriptOptimisticSubmit?.();
                 const reason = error instanceof Error ? error.message : String(error);
                 MobileSnackbar.show(
                     nls.localize('qaap/mobileProjects/routingFailed', 'Could not choose an agent for this task: {0}', reason),
@@ -317,6 +319,7 @@ export class MobileProjectsBackgroundTaskUi {
                 return undefined;
             }
             if (!await this.confirmPaidSend(cwd, modelResolution.model)) {
+                this.host.rollbackTranscriptOptimisticSubmit?.();
                 return undefined;
             }
             return await this.submitBackgroundAgentTaskInner(project, draft, {
@@ -473,6 +476,7 @@ export class MobileProjectsBackgroundTaskUi {
                     return this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions });
                 },
                 (files, total) => this.askDirtyWorkspaceChoice(files, total),
+                cwd,
             );
             if (!retried) {
                 // The server refused the create and the user cancelled (or stopped): the pre-create optimistic paint goes.

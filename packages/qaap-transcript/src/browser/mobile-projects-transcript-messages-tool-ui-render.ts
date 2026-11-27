@@ -307,17 +307,43 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                 });
                 body.append(retryBtn);
             }
-        } else if (isProviderKeyFailure && options?.onOpenAiFeaturesSettings) {
-            const settingsBtn = document.createElement('button');
-            settingsBtn.type = 'button';
-            settingsBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-settings-gear';
-            settingsBtn.textContent = nls.localize('qaap/mobileProjects/openHarnessSettings', 'Open Harness settings');
-            settingsBtn.addEventListener('click', event => {
-                event.stopPropagation();
-                event.preventDefault();
-                void Promise.resolve(options.onOpenAiFeaturesSettings!());
-            });
-            body.append(settingsBtn);
+        } else if (isProviderKeyFailure && (options?.onOpenAiFeaturesSettings || options?.onOpenAgentSignIn)) {
+            const actions = document.createElement('div');
+            actions.className = 'theia-mobile-agent-auth-login-actions';
+            if (options?.onOpenAiFeaturesSettings) {
+                const settingsBtn = document.createElement('button');
+                settingsBtn.type = 'button';
+                settingsBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-settings-gear';
+                settingsBtn.textContent = nls.localize('qaap/mobileProjects/openHarnessSettings', 'Open Harness settings');
+                settingsBtn.addEventListener('click', event => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    void Promise.resolve(options.onOpenAiFeaturesSettings!());
+                });
+                actions.append(settingsBtn);
+            }
+            const normalizedAgentId = options?.agentId?.trim().toLowerCase();
+            if (options?.onOpenAgentSignIn && normalizedAgentId && normalizedAgentId !== 'qaiq') {
+                const signInBtn = document.createElement('button');
+                signInBtn.type = 'button';
+                signInBtn.className = 'theia-mobile-agent-auth-login-action codicon codicon-terminal';
+                signInBtn.textContent = options.agentLabel
+                    ? nls.localize(
+                        'qaap/mobileProjects/authLoginOpenTerminalNamed',
+                        'Sign in with {0} via terminal',
+                        options.agentLabel,
+                    )
+                    : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in via terminal');
+                signInBtn.addEventListener('click', event => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    void Promise.resolve(options.onOpenAgentSignIn!());
+                });
+                actions.append(signInBtn);
+            }
+            if (actions.childElementCount > 0) {
+                body.append(actions);
+            }
         } else if (billingFailure?.url) {
             const billingUrl = billingFailure.url;
             const billingBtn = document.createElement('button');

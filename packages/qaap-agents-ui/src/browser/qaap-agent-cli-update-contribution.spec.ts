@@ -140,5 +140,42 @@ describe('QaapAgentCliUpdateContribution update action', () => {
             expect(contribution.laterChosenThisSession).to.equal(true);
             expect(presented).to.deep.equal([]);
         });
+
+        it('surfaces at most one automatic notice per day across reloads even when ignored', async () => {
+            const presented: string[] = [];
+            Object.defineProperty(globalThis, 'fetch', {
+                value: async () => ({ ok: true, json: async () => ({ updates: [codexLater] }) }) as unknown as Response,
+                configurable: true,
+                writable: true,
+            });
+            const makeContribution = (): Record<string, unknown> => {
+                const instance = Object.create(contributionModule.QaapAgentCliUpdateContribution.prototype) as Record<string, unknown>;
+                Object.assign(instance, {
+                    disposed: false,
+                    pendingUpdates: [],
+                    laterChosenThisSession: false,
+                    present: (info: QaapAgentCliUpdateInfo) => { presented.push(info.id); },
+                });
+                return instance;
+            };
+
+            const firstBoot = makeContribution();
+            await (firstBoot as unknown as { checkAndShow(): Promise<void> }).checkAndShow();
+            expect(presented).to.deep.equal(['codex']);
+
+            // User reloads without clicking Later: the second boot within 24h stays quiet.
+            const secondBoot = makeContribution();
+            await (secondBoot as unknown as { checkAndShow(): Promise<void> }).checkAndShow();
+            expect(presented).to.deep.equal(['codex']);
+
+            // Explicitly completing an update still advances to the next pending CLI without being blocked by the 24h boot cap.
+            Object.defineProperty(globalThis, 'fetch', {
+                value: async () => ({ ok: true, json: async () => ({ updates: [claude] }) }) as unknown as Response,
+                configurable: true,
+                writable: true,
+            });
+            await (firstBoot as unknown as { checkAndShow(trigger?: 'boot' | 'afterUpdate'): Promise<void> }).checkAndShow('afterUpdate');
+            expect(presented).to.deep.equal(['codex', 'claude']);
+        });
     });
 });

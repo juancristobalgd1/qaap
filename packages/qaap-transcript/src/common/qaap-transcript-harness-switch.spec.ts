@@ -98,6 +98,18 @@ describe('qaap-transcript-harness-switch', () => {
             expect(resolveTranscriptPendingHarnessSwitch(messages, { agentId: 'codex' })).to.equal(undefined);
             expect([...resolveTranscriptHarnessSwitches(messages).keys()]).to.deep.equal([2]);
         });
+
+        it('does not stay pending after a failed turn on the selected harness', () => {
+            expect(resolveTranscriptPendingHarnessSwitch(history, { agentId: 'opencode' }, {
+                conversationStatus: 'failed',
+                conversationAgentId: 'opencode',
+            })).to.equal(undefined);
+            // Switching to a third harness to recover from a failed turn still previews the new handoff.
+            expect(resolveTranscriptPendingHarnessSwitch(history, { agentId: 'codex' }, {
+                conversationStatus: 'failed',
+                conversationAgentId: 'opencode',
+            })?.to.agentId).to.equal('codex');
+        });
     });
 
     it('keys distinguish pending from settled and different models', () => {

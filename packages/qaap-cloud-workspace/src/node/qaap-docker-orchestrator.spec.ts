@@ -2485,4 +2485,21 @@ describe('QaapDockerOrchestrator tenant backend wake measurement', () => {
         // Three waits: 750 ms at the previous 250 ms interval.
         expect(Date.now() - startedAt).to.be.lessThan(700);
     });
+
+    it('defaults the runc tenant backend ready timeout to 90 s and honours QAAP_TENANT_BACKEND_READY_TIMEOUT_MS', () => {
+        const orchestrator = create() as unknown as { resolveTenantBackendReadyTimeoutMs(login: string): number };
+        const previous = process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS;
+        try {
+            delete process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS;
+            expect(orchestrator.resolveTenantBackendReadyTimeoutMs('alice')).to.equal(90_000);
+            process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS = '45000';
+            expect(orchestrator.resolveTenantBackendReadyTimeoutMs('alice')).to.equal(45_000);
+        } finally {
+            if (previous === undefined) {
+                delete process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS;
+            } else {
+                process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS = previous;
+            }
+        }
+    });
 });

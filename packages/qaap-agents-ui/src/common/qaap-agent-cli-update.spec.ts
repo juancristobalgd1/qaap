@@ -6,15 +6,18 @@
 import { expect } from 'chai';
 import {
     compareSemver,
+    isAgentCliUpdateInDailyCooldown,
     isAgentCliUpdateSnoozed,
     isVersionOutdated,
     parseCliVersion,
     pickNextAgentUpdateToShow,
+    QAAP_AGENT_CLI_UPDATE_DAILY_COOLDOWN_MS,
     QAAP_AGENT_CLI_UPDATE_DISMISS_KEY,
     QAAP_AGENT_CLI_UPDATE_SNOOZE_MS,
     readAgentCliUpdateDismissMap,
     readAgentCliUpdateState,
     rememberAgentCliUpdateDismiss,
+    rememberAgentCliUpdateShown,
     requestAgentCliUpdate,
     shouldShowAgentUpdateNotification,
     snoozeAgentCliUpdates,
@@ -159,6 +162,17 @@ describe('qaap-agent-cli-update', () => {
             expect(isAgentCliUpdateSnoozed(now, createMemoryStorage('not json'))).to.equal(false);
             expect(readAgentCliUpdateState(createMemoryStorage('not json'))).to.deep.equal({ dismissed: {} });
             expect(isAgentCliUpdateSnoozed(now, createMemoryStorage(JSON.stringify({ dismissed: {}, snoozedUntil: 'soon' })))).to.equal(false);
+        });
+
+        it('enforces a once-per-day cooldown after an automatic notice is shown', () => {
+            const storage = createMemoryStorage();
+            expect(QAAP_AGENT_CLI_UPDATE_DAILY_COOLDOWN_MS).to.equal(day);
+            expect(isAgentCliUpdateInDailyCooldown(now, storage)).to.equal(false);
+
+            rememberAgentCliUpdateShown(now, storage);
+            expect(readAgentCliUpdateState(storage).lastShownAt).to.equal(now);
+            expect(isAgentCliUpdateInDailyCooldown(now + 23 * 60 * 60 * 1000, storage)).to.equal(true);
+            expect(isAgentCliUpdateInDailyCooldown(now + day, storage)).to.equal(false);
         });
     });
 

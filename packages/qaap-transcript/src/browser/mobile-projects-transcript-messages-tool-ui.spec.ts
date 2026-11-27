@@ -139,6 +139,26 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
             button!.click();
             expect(opened).to.equal(1);
         });
+
+        it('offers both Open Harness settings and a 1-click sign-in CTA for interactive harnesses like OpenCode', () => {
+            let openedSettings = 0;
+            let openedSignIn = 0;
+            const error = 'The provider refused this turn. Connect a harness in Settings → Harness, then retry.';
+            const card = createTranscriptAgentFailureDialogExtracted(ctx, error, error, {
+                agentId: 'opencode',
+                agentLabel: 'OpenCode',
+                onOpenAiFeaturesSettings: () => { openedSettings++; },
+                onOpenAgentSignIn: () => { openedSignIn++; },
+            });
+            const settingsBtn = card.querySelector<HTMLButtonElement>('.codicon-settings-gear');
+            const signInBtn = card.querySelector<HTMLButtonElement>('.codicon-terminal');
+            expect(settingsBtn?.textContent).to.equal('Open Harness settings');
+            expect(signInBtn?.textContent).to.equal('Sign in with OpenCode via terminal');
+            settingsBtn!.click();
+            signInBtn!.click();
+            expect(openedSettings).to.equal(1);
+            expect(openedSignIn).to.equal(1);
+        });
     });
 
     describe('formatTranscriptExecutionTime', () => {

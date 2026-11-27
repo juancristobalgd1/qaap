@@ -248,6 +248,12 @@ export class MobileProjectsPullRequestsSidebarUi {
 
     /** Re-runs the first search page of the active chip; `force` bypasses the backend cache. */
     reloadSearch(force = true): Promise<void> {
+        if (!force) {
+            const existing = this.searchLists.get(this.searchListKey(this.activeTab, this.stateFilter));
+            if (existing?.loading && existing.page <= 1) {
+                return Promise.resolve();
+            }
+        }
         return this.loadSearchPage(this.activeTab, this.stateFilter, 1, force);
     }
 
@@ -583,7 +589,7 @@ export class MobileProjectsPullRequestsSidebarUi {
             results.append(this.createSignInState());
             return;
         }
-        if (pullRequests.length === 0 && (searchLoading || (inboxLoading && !list?.loaded))) {
+        if (pullRequests.length === 0 && !list?.error && (searchLoading || (inboxLoading && !list?.loaded))) {
             results.append(HubEmptyStateDom.createSkeletonList(
                 nls.localize('qaap/pullRequests/loading', 'Loading pull requests…'),
             ));

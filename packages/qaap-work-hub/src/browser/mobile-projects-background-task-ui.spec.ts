@@ -16,6 +16,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import { requestStopNewTaskStartup } from '../common/qaap-new-task-startup';
+import { clearRememberedDirtyWorkspaceChoice } from './mobile-projects-workspace-dirty-dialog';
 
 disableImportJSDOM();
 
@@ -290,6 +291,10 @@ describe('MobileProjectsBackgroundTaskUi', () => {
     });
 
     describe('dirty shared workspace on a new task', () => {
+        afterEach(() => {
+            clearRememberedDirtyWorkspaceChoice();
+        });
+
         function dirtyResponse(): Response {
             const body = { code: 'dirty_workspace', files: ['README.md', 'hello.txt'], total: 2 };
             const response = { ok: false, status: 409, statusText: 'Conflict', json: async () => body, clone: () => response };
@@ -391,7 +396,8 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             globalThis.fetch = originalFetch;
         });
 
-        function uiWithInner(): { ui: MobileProjectsBackgroundTaskUi; innerCalls: number[] } {
+        function uiWithInner(): { ui: MobileProjectsBackgroundTaskUi; innerCalls: number[]; rollbacks: number[] } {
+            const rollbacks: number[] = [];
             const ui = new MobileProjectsBackgroundTaskUi({
                 projects: [],
                 preparedCwdByProjectId: new Map(),
@@ -405,6 +411,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
                 renderSubtitle: () => undefined,
                 renderList: () => undefined,
                 seedTranscriptOptimisticSubmit: () => undefined,
+                rollbackTranscriptOptimisticSubmit: () => { rollbacks.push(1); },
                 syncWorkHubProjectSkillRoots: () => undefined,
             });
             ui['routeSubmitAgent'] = async (): Promise<string> => 'codex';
@@ -413,11 +420,11 @@ describe('MobileProjectsBackgroundTaskUi', () => {
                 innerCalls.push(1);
                 return undefined;
             };
-            return { ui, innerCalls };
+            return { ui, innerCalls, rollbacks };
         }
 
-        it('aborts the submit when routing fails: no gate and no send with a different agent', async () => {
-            const { ui, innerCalls } = uiWithInner();
+        it('aborts the submit when routing fails: rolls back optimistic paint, no gate and no send with a different agent', async () => {
+            const { ui, innerCalls, rollbacks } = uiWithInner();
             ui['routeSubmitAgent'] = async (): Promise<string> => {
                 throw new Error('catalog warming');
             };
@@ -429,6 +436,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
             expect(gated).to.equal(0);
             expect(innerCalls).to.be.empty;
+            expect(rollbacks).to.have.length(1);
         });
 
         it('routes once: the gate and the send carry the same routing agent', async () => {
@@ -463,11 +471,12 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect(gated).to.equal(0);
         });
 
-        it('does not start a task with a paid model the user declines', async () => {
-            const { ui, innerCalls } = uiWithInner();
+        it('does not start a task with a paid model the user declines and rolls back the optimistic paint', async () => {
+            const { ui, innerCalls, rollbacks } = uiWithInner();
             ui['confirmPaidSend'] = async (): Promise<boolean> => false;
             expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
             expect(innerCalls).to.be.empty;
+            expect(rollbacks).to.have.length(1);
         });
 
         it('holds a paid pick when its availability cannot be checked, without asking or sending', async function (): Promise<void> {

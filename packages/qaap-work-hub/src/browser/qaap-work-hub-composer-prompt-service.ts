@@ -185,7 +185,7 @@ export class QaapWorkHubComposerPromptService {
             // A shared tree with uncommitted changes asks first (409 dirty_workspace): Start clean or Continue here.
             const created = await create().catch(error => {
                 if (error instanceof QaapDirtyWorkspaceError) {
-                    return retryAfterDirtyWorkspace(error, create);
+                    return retryAfterDirtyWorkspace(error, create, undefined, cwd);
                 }
                 throw error;
             });
