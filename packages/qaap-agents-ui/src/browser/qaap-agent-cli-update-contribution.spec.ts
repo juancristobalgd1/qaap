@@ -177,5 +177,32 @@ describe('QaapAgentCliUpdateContribution update action', () => {
             await (firstBoot as unknown as { checkAndShow(trigger?: 'boot' | 'afterUpdate'): Promise<void> }).checkAndShow('afterUpdate');
             expect(presented).to.deep.equal(['codex', 'claude']);
         });
+
+        it('suppresses automatic boot update toasts on narrow mobile viewports', async () => {
+            const presented: string[] = [];
+            const originalMatchMedia = window.matchMedia;
+            Object.defineProperty(globalThis, 'fetch', {
+                value: async () => ({ ok: true, json: async () => ({ updates: [codexLater] }) }) as unknown as Response,
+                configurable: true,
+                writable: true,
+            });
+            window.matchMedia = ((query: string) => ({
+                matches: query === '(max-width: 767px)',
+                media: query,
+            })) as typeof window.matchMedia;
+            try {
+                const instance = Object.create(contributionModule.QaapAgentCliUpdateContribution.prototype) as Record<string, unknown>;
+                Object.assign(instance, {
+                    disposed: false,
+                    pendingUpdates: [],
+                    laterChosenThisSession: false,
+                    present: (info: QaapAgentCliUpdateInfo) => { presented.push(info.id); },
+                });
+                await (instance as unknown as { checkAndShow(trigger?: 'boot' | 'afterUpdate'): Promise<void> }).checkAndShow('boot');
+                expect(presented).to.deep.equal([]);
+            } finally {
+                window.matchMedia = originalMatchMedia;
+            }
+        });
     });
 });

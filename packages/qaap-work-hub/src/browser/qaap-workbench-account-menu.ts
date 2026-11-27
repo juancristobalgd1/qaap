@@ -33,6 +33,8 @@ export interface QaapAccountMenuEntry {
 export interface QaapAccountMenuViewToggleOptions {
     readonly activeId: MobileViewToggleId;
     readonly onSelect: (id: MobileViewToggleId) => void;
+    /** Optional handler when the already-active surface segment is clicked again (e.g. return to Agents home). */
+    readonly onReselect?: (id: MobileViewToggleId) => void;
 }
 
 /** Shared IDE/Agents selector used by desktop navigation surfaces. */
@@ -55,6 +57,7 @@ export function createQaapViewModeSwitch(
         value: options.activeId,
         iconOnly: true,
         onChange: options.onSelect,
+        onReselect: options.onReselect,
     });
     field.root.classList.add('theia-mod-header-surface');
     return field;

@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import * as sinon from 'sinon';
-import { fetchQaapGithubPullRequests } from './qaap-github-auth-client';
+import { fetchQaapGithubPullRequests, fetchQaapGithubRepositories, searchQaapGithubPullRequests } from './qaap-github-auth-client';
 import {
     activeGithubPullRequestsBackoff,
     recordGithubPullRequestsServerError,
@@ -102,6 +102,88 @@ describe('qaap-github-pull-requests-backoff', () => {
             clock.tick(30_000);
             fetchStub.callsFake(async () => new Response(JSON.stringify({ pullRequests: [], signedIn: true }), { status: 200 }));
             expect((await fetchQaapGithubPullRequests(['acme/app'])).signedIn).to.equal(true);
+            expect(fetchStub.callCount).to.equal(2);
+        });
+    });
+
+    describe('searchQaapGithubPullRequests', () => {
+        it('handles softAuth signedIn:false without 502 and pauses further requests for a minute', async () => {
+            fetchStub.callsFake(async () => new Response(
+                JSON.stringify({ pullRequests: [], page: 1, hasMore: false, signedIn: false, code: 'session_expired' }),
+                { status: 200 },
+            ));
+            const first = await searchQaapGithubPullRequests({ state: 'open', view: 'all', page: 1 });
+            const second = await searchQaapGithubPullRequests({ state: 'open', view: 'reviewing', page: 1 });
+            expect(first.signedIn).to.equal(false);
+            expect(second.signedIn).to.equal(false);
+            expect(fetchStub.callCount).to.equal(1);
+            expect(String(fetchStub.firstCall.args[0])).to.include('softAuth=1');
+        });
+
+        it('backs off after a 500 error', async () => {
+            fetchStub.callsFake(async () => new Response(JSON.stringify({ error: 'boom' }), { status: 500 }));
+            let firstError: unknown;
+            try {
+                await searchQaapGithubPullRequests({ state: 'open', view: 'all', page: 1 });
+            } catch (err) {
+                firstError = err;
+            }
+            expect(firstError).to.be.instanceOf(Error);
+
+            let skipped: unknown;
+            try {
+                await searchQaapGithubPullRequests({ state: 'open', view: 'all', page: 1 });
+            } catch (err) {
+                skipped = err;
+            }
+            expect((skipped as { code?: string }).code).to.equal('github_pull_requests_backoff');
+            expect(fetchStub.callCount).to.equal(1);
+        });
+    });
+
+    describe('fetchQaapGithubRepositories', () => {
+        it('deduplicates concurrent in-flight requests into one fetch', async () => {
+            let resolveResponse: ((res: Response) => void) | undefined;
+            fetchStub.callsFake(() => new Promise<Response>(resolve => { resolveResponse = resolve; }));
+            const p1 = fetchQaapGithubRepositories({ softAuth: true });
+            const p2 = fetchQaapGithubRepositories({ softAuth: true });
+            expect(fetchStub.callCount).to.equal(1);
+            resolveResponse!(new Response(JSON.stringify({ repositories: [] }), { status: 200 }));
+            const [r1, r2] = await Promise.all([p1, p2]);
+            expect(r1.repositories).to.deep.equal([]);
+            expect(r2.repositories).to.deep.equal([]);
+        });
+
+        it('maps softAuth 200 signedIn:false to session_expired and skips repeats until bypassBackoff or expiry', async () => {
+            fetchStub.callsFake(async () => new Response(
+                JSON.stringify({ repositories: [], signedIn: false, code: 'session_expired' }),
+                { status: 200 },
+            ));
+            let err1: unknown;
+            try {
+                await fetchQaapGithubRepositories({ softAuth: true });
+            } catch (err) {
+                err1 = err;
+            }
+            expect((err1 as { code?: string }).code).to.equal('session_expired');
+            expect(fetchStub.callCount).to.equal(1);
+
+            let err2: unknown;
+            try {
+                await fetchQaapGithubRepositories({ softAuth: true });
+            } catch (err) {
+                err2 = err;
+            }
+            expect((err2 as { code?: string }).code).to.equal('session_expired');
+            expect(fetchStub.callCount).to.equal(1);
+
+            let err3: unknown;
+            try {
+                await fetchQaapGithubRepositories({ softAuth: true, bypassBackoff: true });
+            } catch (err) {
+                err3 = err;
+            }
+            expect((err3 as { code?: string }).code).to.equal('session_expired');
             expect(fetchStub.callCount).to.equal(2);
         });
     });

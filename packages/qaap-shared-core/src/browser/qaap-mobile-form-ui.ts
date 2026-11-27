@@ -28,6 +28,8 @@ export function createSegmentedField<T extends string>(options: {
     readonly segments: readonly QaapSegmentedOption<T>[];
     readonly value: T;
     readonly onChange?: (value: T) => void;
+    /** Optional handler invoked when the already-active segment is clicked again. */
+    readonly onReselect?: (value: T) => void;
     /** Render segment labels as icons only (labels become `title` / `aria-label`). */
     readonly iconOnly?: boolean;
 }): QaapSegmentedFieldController<T> {
@@ -85,6 +87,7 @@ export function createSegmentedField<T extends string>(options: {
         }
         btn.addEventListener('click', () => {
             if (current === segment.id) {
+                options.onReselect?.(current);
                 return;
             }
             current = segment.id;
