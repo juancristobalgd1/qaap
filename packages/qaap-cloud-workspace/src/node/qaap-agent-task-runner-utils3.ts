@@ -27,6 +27,7 @@ import {
     findChangesExceedingScopeLimit,
     findChangesSinceBaseline,
     findOutOfScopeChanges,
+    isDocsOnlyVerificationScope,
     isPerFileVerificationScript,
     resolveAgentTaskChangedFilesLimit,
     type QaapWorktreeChange,
@@ -820,6 +821,8 @@ export interface VerifySuccessfulAgentTaskDeps {
     summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string;
     /** Dirty paths in the task's checkout; `undefined` when git cannot report them (scope rules then stay off). */
     listWorktreeChanges(task: QaapAgentTask): readonly QaapWorktreeChange[] | undefined;
+    /** Gitignored sensitive files (`.env*`, etc.) modified by this task; non-empty always keeps verification active. */
+    changedSensitiveFiles?(task: QaapAgentTask): readonly string[];
     /** Put the given paths back to how they were before the fix turn; returns the paths restored. */
     revertWorktreeChanges(task: QaapAgentTask, changes: readonly QaapWorktreeChange[]): readonly string[];
     /**
@@ -864,6 +867,10 @@ export async function verifySuccessfulAgentTask(
                 exceededFiles.slice(0, 10).join(', '),
             ),
         };
+    }
+    const hasSensitiveChanges = (deps.changedSensitiveFiles?.(task).length ?? 0) > 0;
+    if (!hasSensitiveChanges && scopePaths && isDocsOnlyVerificationScope(scopePaths)) {
+        return undefined;
     }
     let attempts = 0;
     let lastCommand = '';

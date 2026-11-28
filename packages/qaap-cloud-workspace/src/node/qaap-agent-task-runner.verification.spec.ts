@@ -94,6 +94,42 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(fixTurns()).to.equal(0);
     });
 
+    it('skips build/test verification scripts when the task only edited markdown/docs files', async () => {
+        let scriptRuns = 0;
+        const { runner } = makeRunner({
+            listWorktreeChanges: () => [
+                { path: 'dirty-before-task.ts', untracked: false },
+                { path: 'TEST-E2E-FO.md', untracked: true },
+            ],
+            changedSensitiveFiles: () => [],
+            runVerificationScripts: async (): Promise<ScriptRun> => {
+                scriptRuns++;
+                return undefined;
+            },
+        });
+        const result = await runner.runVerify({ ...TASK, worktreeBaselinePaths: ['dirty-before-task.ts'] });
+        expect(result).to.equal(undefined);
+        expect(scriptRuns).to.equal(0);
+    });
+
+    it('still runs verification when a code file is edited alongside markdown files', async () => {
+        let scriptRuns = 0;
+        const { runner } = makeRunner({
+            listWorktreeChanges: () => [
+                { path: 'TEST-E2E-FO.md', untracked: true },
+                { path: 'src/app.ts', untracked: false },
+            ],
+            changedSensitiveFiles: () => [],
+            runVerificationScripts: async (): Promise<ScriptRun> => {
+                scriptRuns++;
+                return undefined;
+            },
+        });
+        const result = await runner.runVerify({ ...TASK, worktreeBaselinePaths: [] });
+        expect(result).to.deep.include({ status: 'passed', attempts: 0 });
+        expect(scriptRuns).to.equal(1);
+    });
+
     it('runs one fix turn then passes when the first check fails', async () => {
         let scriptCalls = 0;
         const { runner, fixTurns } = makeRunner({
