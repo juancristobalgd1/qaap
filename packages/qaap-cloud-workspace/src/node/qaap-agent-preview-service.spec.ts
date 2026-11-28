@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapAgentPreviewError } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
 import { QaapPreviewLogRing } from '../common/qaap-preview-supervisor-types';
+import { buildQaapPreviewScriptCommand } from './qaap-preview-supervisor';
 import {
     QAAP_AGENT_PREVIEW_PROCESS_ID,
     QaapAgentPreviewService,
@@ -188,10 +189,12 @@ describe('QaapAgentPreviewService', () => {
         expect(state.httpStatus).to.equal(200);
         expect(state.previewPath).to.match(/^\/qaap-preview\/.+\/$/);
         expect(state.url, 'never derived from the request; no public origin configured').to.equal(undefined);
-        expect(state.command).to.equal('npm run start');
+        // Windows runs package-manager shims through cmd.exe (see buildQaapPreviewScriptCommand).
+        const expectedLaunch = buildQaapPreviewScriptCommand('npm', 'start');
+        expect(state.command).to.equal([expectedLaunch.command, ...expectedLaunch.args].join(' '));
         expect(state.cwd).to.equal('.');
         const start = service.fakeSupervisor.starts[0];
-        expect(start.launch).to.deep.equal({ command: 'npm', args: ['run', 'start'] });
+        expect(start.launch).to.deep.equal(expectedLaunch);
         expect(start.options).to.include({ autoRestart: 'never', detached: true });
         expect(start.port).to.equal(4100);
         expect(service.fakeSupervisor.autoRestart).to.deep.equal([[start.previewId, 'bounded']]);

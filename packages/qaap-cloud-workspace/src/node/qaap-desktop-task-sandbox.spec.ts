@@ -85,7 +85,8 @@ describe('QaapDesktopTaskSandbox', () => {
     let root: string;
 
     beforeEach(() => {
-        root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-desktop-sandbox-')));
+        // `.native`: Windows runners spell os.tmpdir() with 8.3 short names (RUNNER~1); the sandbox resolves long ones.
+        root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-desktop-sandbox-')));
     });
 
     afterEach(() => {
@@ -125,6 +126,13 @@ describe('QaapDesktopTaskSandbox', () => {
     });
 
     describe('profile', () => {
+        before(function (): void {
+            // The Seatbelt profile only exists on macOS (POSIX paths); the sandbox never applies on Windows.
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+        });
+
         const input = (overrides: Partial<QaapDesktopTaskSandboxProfileInput> = {}): QaapDesktopTaskSandboxProfileInput => ({
             worktree: '/private/var/folders/x/y/T/qaap-worktrees/t/abc',
             git: { commonDir: '/Users/u/repo/.git', adminDir: '/Users/u/repo/.git/worktrees/abc' },

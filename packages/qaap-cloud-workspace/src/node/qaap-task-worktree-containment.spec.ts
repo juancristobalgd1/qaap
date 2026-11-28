@@ -53,7 +53,7 @@ describe('qaap-task-worktree-containment', () => {
 
     beforeEach(() => {
         lexicalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-contain-'));
-        root = fs.realpathSync(lexicalRoot);
+        root = fs.realpathSync.native(lexicalRoot);
         base = path.join(root, 'base');
         fs.mkdirSync(path.join(base, '.git', 'worktrees', 'abc'), { recursive: true });
         fs.mkdirSync(path.join(base, 'public'));

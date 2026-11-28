@@ -20,6 +20,8 @@ const UNIFIED_DIFF_HEADER_RE = /^(?:\+\+\+|---) (?:[ab]\/)?([^\t\n]+)/gm;
 
 /** Shell word separators for the lexical path scan (quotes are separators too, so quoted paths are seen). */
 const SHELL_SPLIT_RE = /[\s'"`;|&<>(){}[\],:=]+/;
+/** Windows: like {@link SHELL_SPLIT_RE}, but a drive colon (`C:\\` or `C:/`) does not split the word. */
+const WIN32_SHELL_SPLIT_RE = /[\s'"`;|&<>(){}[\],=]+|:(?![\\/])/;
 
 /** Device files every shell command may name. */
 const ALLOWED_DEVICE_PATHS = new Set(['/dev/null', '/dev/stdin', '/dev/stdout', '/dev/stderr', '/dev/tty', '/dev/zero', '/dev/random', '/dev/urandom']);
@@ -114,12 +116,16 @@ export class QaapTaskWorktreeContainment {
         }
         const home = os.homedir();
         const targets = new Set<string>();
-        for (const word of command.split(SHELL_SPLIT_RE)) {
+        const win32 = process.platform === 'win32';
+        for (const word of command.split(win32 ? WIN32_SHELL_SPLIT_RE : SHELL_SPLIT_RE)) {
             if (!word) {
                 continue;
             }
             let target: string | undefined;
-            if (word.startsWith('/')) {
+            if (win32 && /^[A-Za-z]:[\\/]/.test(word)) {
+                // A drive-absolute path (`C:\repo\x`, `C:/repo/x`).
+                target = path.resolve(word);
+            } else if (word.startsWith('/')) {
                 const top = word.split('/')[1];
                 if (word.startsWith('//') || !top || !fs.existsSync(`/${top}`)) {
                     continue;
