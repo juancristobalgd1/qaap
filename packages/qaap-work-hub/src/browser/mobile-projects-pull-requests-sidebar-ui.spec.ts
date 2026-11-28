@@ -355,6 +355,23 @@ describe('mobile-projects-pull-requests-sidebar-ui', () => {
         expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal('PR 3');
     });
 
+    it('keeps the sign-in state after the inbox refresh rewrites the shared GitHub flag (expired session)', async () => {
+        const { host } = createSearchHost(request => ({ pullRequests: [], page: request.page ?? 1, hasMore: false, signedIn: false }));
+        const ui = new MobileProjectsPullRequestsSidebarUi(host);
+        const container = document.createElement('div');
+        document.body.append(container);
+        ui.render(container);
+        await flush();
+        expect(container.textContent).to.contain('Connect GitHub');
+
+        // The inbox refresh sets the flag back (true after /auth/session, undefined without project repositories).
+        host.inboxGithubSignedIn = undefined;
+        ui.render(container);
+        await flush();
+        expect(container.textContent).to.contain('Connect GitHub');
+        expect(container.textContent).not.to.contain('No pull requests yet');
+    });
+
     it('shows an error state with retry when the search fails', async () => {
         let fail = true;
         const { host } = createSearchHost(() => {

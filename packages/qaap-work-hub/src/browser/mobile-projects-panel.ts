@@ -318,6 +318,7 @@ import {
 } from './mobile-projects-panel-init';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
+import { QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND } from '../common/qaap-work-hub-command-palette';
 
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** Max conversation rows per repo card before "More" expands the list. */
@@ -743,6 +744,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             buildQaapAccountMenuEntries(readQaapSignedIn(), {
                 workHub: true,
                 openBilling: () => this.openBillingSheet?.(),
+                openSettings: () => this.commands.executeCommand(QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND),
                 openCommandSearch: () => this.openWorkHubCommandSearch(),
             }),
             {

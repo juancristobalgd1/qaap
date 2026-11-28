@@ -110,7 +110,11 @@ export class MobileProjectsInboxPrUi {
             }
             if (repoKeys.length === 0) {
                 this.host.inboxPullRequests = [];
-                this.host.inboxGithubSignedIn = undefined;
+                // No project repositories says nothing about GitHub: keep a refusal the pull-request search already
+                // recorded (`false`), or the Pull requests tab shows "No pull requests yet" for an expired session.
+                if (this.host.inboxGithubSignedIn !== false) {
+                    this.host.inboxGithubSignedIn = undefined;
+                }
                 this.host.inboxGithubLogin = undefined;
                 return;
             }
@@ -127,7 +131,10 @@ export class MobileProjectsInboxPrUi {
                 this.host.inboxPullRequests = [];
                 return;
             }
-            this.host.inboxGithubSignedIn = true;
+            // A Qaap session is not a working GitHub token: only the GitHub answer below may clear a recorded refusal.
+            if (this.host.inboxGithubSignedIn !== false) {
+                this.host.inboxGithubSignedIn = true;
+            }
             this.host.inboxGithubLogin = desktopGithubLogin ?? auth.user?.login;
             const response = await fetchQaapGithubPullRequests(repoKeys);
             if (generation !== this.host.inboxLoadGeneration || abort.signal.aborted) {

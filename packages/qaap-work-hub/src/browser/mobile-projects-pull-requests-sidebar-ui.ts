@@ -93,6 +93,12 @@ interface PullRequestSearchListState {
     loaded: boolean;
     error?: string;
     rateLimited?: boolean;
+    /**
+     * GitHub refused this search (expired or missing sign-in). Kept on the list, not only on the shared
+     * `inboxGithubSignedIn`: the inbox refresh rewrites that flag (true after /auth/session, undefined with no
+     * project repositories), which turned an expired session into "No pull requests yet" (Wajo, 28 Nov 2026).
+     */
+    signedOut?: boolean;
 }
 
 export interface MobileProjectsPullRequestsSidebarHost {
@@ -398,9 +404,11 @@ export class MobileProjectsPullRequestsSidebarUi {
             }
             if (!response.signedIn) {
                 this.host.inboxGithubSignedIn = false;
+                list.signedOut = true;
                 list.items = [];
                 list.hasMore = false;
             } else {
+                list.signedOut = undefined;
                 list.items = page === 1
                     ? mergeGithubPullRequestSummaries(response.pullRequests)
                     : mergeGithubPullRequestSummaries(list.items, response.pullRequests);
@@ -585,7 +593,7 @@ export class MobileProjectsPullRequestsSidebarUi {
         const pullRequests = this.filteredPullRequests();
         const searchLoading = list?.loading === true && !list.loaded;
         const inboxLoading = !this.host.inboxPullRequestsLoaded && this.host.inboxPullRequestsLoading;
-        if (this.host.inboxGithubSignedIn === false) {
+        if (this.host.inboxGithubSignedIn === false || list?.signedOut === true) {
             results.append(this.createSignInState());
             return;
         }
