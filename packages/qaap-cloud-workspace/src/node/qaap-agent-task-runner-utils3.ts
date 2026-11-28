@@ -43,6 +43,7 @@ import {
 import type { QaapGenericCommandResult } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
 import {
+    quoteShellArg,
     removeAgentPromptTempDir,
     type QaapAgentStdinPromptMode,
 } from './qaap-agent-task-runner-utils';
@@ -614,18 +615,36 @@ export async function reviewSuccessfulAgentTask(
     // Gitignored secrets files never appear in either git listing; a rewritten .env must both
     // count as a change and trip the sensitive-path high-risk signal.
     const sensitiveChanges = deps.changedSensitiveFiles(task);
+    // Exclude files that were already dirty before the task started so pre-existing workspace dirt
+    // never tricks the risk classifier into spawning a 3-minute independent reviewer for a low-risk,
+    // docs-only, or commit-only turn.
+    const baselinePaths = task.worktreeBaselinePaths !== undefined
+        ? new Set(task.worktreeBaselinePaths.map(filePath => filePath.replace(/\\/g, '/')))
+        : undefined;
+    const isTaskOwnedPath = (filePath: string): boolean => !baselinePaths || !baselinePaths.has(filePath.replace(/\\/g, '/'));
+    const trackedChanges = parseGitNumstat(numstat.stdout).filter(file => isTaskOwnedPath(file.path));
+    const untrackedChanges = untracked.stdout.split('\n').map(line => line.trim()).filter(Boolean)
+        .filter(isTaskOwnedPath)
+        .map(p => ({ path: p, added: 0, removed: 0 }));
     const changedFiles = [
-        ...parseGitNumstat(numstat.stdout),
+        ...trackedChanges,
         // Untracked (new) files never show in `diff HEAD` — count them for the file-count and
         // sensitive-path signals; their line counts are unknown and stay at 0.
-        ...untracked.stdout.split('\n').map(line => line.trim()).filter(Boolean)
-            .map(p => ({ path: p, added: 0, removed: 0 })),
+        ...untrackedChanges,
         ...sensitiveChanges.map(p => ({ path: p, added: 0, removed: 0 })),
     ];
+    if (baselinePaths !== undefined && changedFiles.length === 0) {
+        return undefined;
+    }
     if (mode === 'high-risk' && resolveTaskReviewRisk(changedFiles) === 'low') {
         return undefined;
     }
-    const diff = await deps.runGenericCommand('git diff HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
+    const diffCommand = baselinePaths !== undefined && baselinePaths.size > 0 && trackedChanges.length > 0
+        ? `git diff HEAD -- ${trackedChanges.map(file => quoteShellArg(file.path)).join(' ')}`
+        : 'git diff HEAD';
+    const diff = baselinePaths !== undefined && baselinePaths.size > 0 && trackedChanges.length === 0
+        ? { exitCode: 0, stdout: '', stderr: '', timedOut: false }
+        : await deps.runGenericCommand(diffCommand, task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
     // Name the secrets files the diff cannot show, so the reviewer inspects them read-only
     // instead of judging a change it cannot see. Contents are never inlined.
     const diffForReview = sensitiveChanges.length > 0
