@@ -59,6 +59,7 @@ import { resolveQaapRuntimeHarnessCapabilities } from './harness/acp/qaap-acp-br
 import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { isQaapAgentDelegationEnabled, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
 import { isQaapAgentPreviewToolsEnabled, type QaapAgentMcpToolset, type QaapAgentPreviewTransport } from '@theia/qaap-shared-core/lib/common/qaap-agent-preview-protocol';
+import { isQaapAgentGitCliEnabled } from '../common/qaap-agent-git-protocol';
 import { QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS, releaseQaapDelegationMcpConfigFile, type QaapDelegationWiring } from './qaap-agent-delegation-launch';
 
 /** Task fields the delegation wiring reads. */
@@ -2564,6 +2565,42 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         addAgentReachableNoProxy(env, origin);
         return { url: origin, token: issued.token };
+    }
+
+    /**
+     * Whether turns get the sealed `qaaq-git` CLI (requires tool-gate tokens + flag enabled).
+     * @internal Used by the extracted qaap-agent-task-runner-* modules.
+     */
+    agentGitCliAvailable(): boolean {
+        return !!this.toolGateTokens && isQaapAgentGitCliEnabled();
+    }
+
+    /**
+     * Issues a `git`-only task token for the `qaaq-git` sealed push/PR CLI so agents can push
+     * feature branches and open PRs through the backend without ever seeing a GitHub token.
+     * @internal Used by the extracted qaap-agent-task-runner-* modules.
+     */
+    applyAgentGitCliEnv(
+        env: NodeJS.ProcessEnv,
+        task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'readOnlyWorkspace'>,
+    ): { readonly url: string; readonly token: string } | undefined {
+        if (!this.toolGateTokens || !isQaapAgentGitCliEnabled() || task.readOnlyWorkspace === true) {
+            return undefined;
+        }
+        if (this.resolveTaskAgentId(task as QaapAgentTask) === SHELL_AGENT_ID) {
+            return undefined;
+        }
+        const sandbox = this.agentSandboxFor(task.cwd);
+        if (sandbox && !sandbox.sharedRoot) {
+            return undefined;
+        }
+        const origin = this.resolveAgentReachableOrigin(task.cwd);
+        if (!origin) {
+            return undefined;
+        }
+        const token = this.toolGateTokens.issueAgentGit(task.id, task.ownerLogin, task.cwd);
+        addAgentReachableNoProxy(env, origin);
+        return { url: origin, token };
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

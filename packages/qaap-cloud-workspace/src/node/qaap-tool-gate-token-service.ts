@@ -15,7 +15,7 @@ import { QAAP_AGENT_DELEGATION_MAX_DEPTH } from '../common/qaap-agent-delegation
  * `gate`: the harness's tool gate token. `delegate` / `preview`: the per-task Qaap MCP server's token (agent
  * delegation, agent preview tools); one MCP token carries whichever of these two the turn gets, never `gate`.
  */
-export type QaapToolGateTokenScope = 'gate' | 'delegate' | 'preview';
+export type QaapToolGateTokenScope = 'gate' | 'delegate' | 'preview' | 'git';
 
 /** What a gate token stands for. The server reads it from here, never from a request body. */
 export interface QaapToolGateTokenGrant {
@@ -76,6 +76,8 @@ export class QaapToolGateTokenService {
     protected readonly tokenHashByTask = new Map<string, string>();
     /** The separate delegation token of a task (scope `delegate` only), by task id. */
     protected readonly delegationHashByTask = new Map<string, string>();
+    /** Separate sealed-git CLI token of a task (scope `git` only), by task id. */
+    protected readonly gitHashByTask = new Map<string, string>();
     /** Tasks whose harness plugin reported in (`/arm`): the gate is really in the loop for them. */
     protected readonly armedTasks = new Set<string>();
     /** SHA-256 of the one-time nonce `/arm` requires, per task. Removed when used or when the task is revoked. */
@@ -86,17 +88,35 @@ export class QaapToolGateTokenService {
      * the `delegate` scope lives in a separate token ({@link issueDelegation}).
      */
     issue(taskId: string, owner: string | undefined, workspace: string): string {
-        // Replaces the gate token only; the task's separate delegation token (if any) stays valid.
+        // Replaces the gate token only; the task's separate delegation and git tokens (if any) stay valid.
         const delegationHash = this.delegationHashByTask.get(taskId);
+        const gitHash = this.gitHashByTask.get(taskId);
         this.delegationHashByTask.delete(taskId);
+        this.gitHashByTask.delete(taskId);
         this.revoke(taskId);
         if (delegationHash && this.grants.has(delegationHash)) {
             this.delegationHashByTask.set(taskId, delegationHash);
+        }
+        if (gitHash && this.grants.has(gitHash)) {
+            this.gitHashByTask.set(taskId, gitHash);
         }
         const token = randomBytes(32).toString('hex');
         const hash = this.hash(token);
         this.grants.set(hash, { taskId, owner, workspace, scopes: ['gate'], expiresAt: this.now() + QAAP_TOOL_GATE_TOKEN_MAX_AGE_MS });
         this.tokenHashByTask.set(taskId, hash);
+        return token;
+    }
+
+    /**
+     * Issues (or replaces) the task's sealed-git CLI token holding only the `git` scope. It cannot
+     * authenticate the tool gate, delegation, or preview endpoints, and is revoked when the task ends.
+     */
+    issueAgentGit(taskId: string, owner: string | undefined, workspace: string): string {
+        this.revokeGit(taskId);
+        const token = randomBytes(32).toString('hex');
+        const hash = this.hash(token);
+        this.grants.set(hash, { taskId, owner, workspace, scopes: ['git'], expiresAt: this.now() + QAAP_TOOL_GATE_TOKEN_MAX_AGE_MS });
+        this.gitHashByTask.set(taskId, hash);
         return token;
     }
 
@@ -204,7 +224,7 @@ export class QaapToolGateTokenService {
 
     /** Whether the live token for `taskId` holds `scope` (false when the task has no live token). */
     hasScope(taskId: string, scope: QaapToolGateTokenScope): boolean {
-        return [this.tokenHashByTask.get(taskId), this.delegationHashByTask.get(taskId)].some(hash => {
+        return [this.tokenHashByTask.get(taskId), this.delegationHashByTask.get(taskId), this.gitHashByTask.get(taskId)].some(hash => {
             const grant = hash ? this.grants.get(hash) : undefined;
             return !!grant && grant.expiresAt > this.now() && grant.scopes.includes(scope);
         });
@@ -227,6 +247,9 @@ export class QaapToolGateTokenService {
             }
             if (this.delegationHashByTask.get(grant.taskId) === hash) {
                 this.delegationHashByTask.delete(grant.taskId);
+            }
+            if (this.gitHashByTask.get(grant.taskId) === hash) {
+                this.gitHashByTask.delete(grant.taskId);
             }
             return undefined;
         }
@@ -272,6 +295,7 @@ export class QaapToolGateTokenService {
             this.tokenHashByTask.delete(taskId);
         }
         this.revokeDelegation(taskId);
+        this.revokeGit(taskId);
     }
 
     protected revokeDelegation(taskId: string): void {
@@ -279,6 +303,14 @@ export class QaapToolGateTokenService {
         if (hash) {
             this.grants.delete(hash);
             this.delegationHashByTask.delete(taskId);
+        }
+    }
+
+    protected revokeGit(taskId: string): void {
+        const hash = this.gitHashByTask.get(taskId);
+        if (hash) {
+            this.grants.delete(hash);
+            this.gitHashByTask.delete(taskId);
         }
     }
 

@@ -60,6 +60,7 @@ export const QAAP_DELEGATE_MCP_FILE = 'qaap-delegate-mcp.mjs';
 
 /** File name of the standalone preview CLI fallback under `resources/`. */
 export const QAAP_PREVIEW_CLI_FILE = 'qaaq-preview.mjs';
+export const QAAP_GIT_CLI_FILE = 'qaaq-git.mjs';
 
 /** Claude Code's per-tool-call timeout for MCP tools, in ms; set so the longest wait plus slack fits. */
 export const QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS = (QAAP_AGENT_DELEGATION_WAIT_MAX_SEC + 60) * 1000;
@@ -114,6 +115,75 @@ export function resolveQaapDelegateMcpPath(): string {
 /** Where the standalone preview CLI script lives on this server. */
 export function resolveQaapPreviewCliPath(): string {
     return resolveQaapCloudWorkspaceResource(QAAP_PREVIEW_CLI_FILE);
+}
+
+export function resolveQaapGitCliPath(): string {
+    return resolveQaapCloudWorkspaceResource(QAAP_GIT_CLI_FILE);
+}
+
+/** Credentials for a turn using the `qaaq-git` sealed push/PR CLI. */
+export interface QaapGitCliWiring {
+    readonly url: string;
+    readonly token: string;
+}
+
+/**
+ * Stages the `qaaq-git` CLI executable and its 0600 per-task token file (on host or below a
+ * sandbox's `sharedRoot`) and wires `PATH`, `QAAP_GIT_URL` and `QAAP_GIT_TOKEN_FILE` on `env`.
+ * Every directory created is tracked under `taskId` so `releaseQaapDelegationMcpConfigFile(taskId)` cleans it up.
+ */
+export function applyQaapGitCli(
+    env: NodeJS.ProcessEnv,
+    taskId: string,
+    wiring: QaapGitCliWiring,
+    owner: AgentPromptOwner | undefined,
+    sandbox?: Pick<QaapTaskSandbox, 'name' | 'sharedRoot'>,
+): { readonly binDir: string; readonly tokenFile: string } | undefined {
+    try {
+        let baseDir: string | undefined;
+        let nodeBin = process.execPath;
+        let electronRunAsNode = typeof process.versions.electron === 'string';
+        let scriptPath = resolveQaapGitCliPath();
+        if (sandbox) {
+            if (!sandbox.sharedRoot) {
+                throw new Error(`The task sandbox ${sandbox.name} shares no directory with the backend.`);
+            }
+            baseDir = ensureQaapDelegationSandboxBase(sandbox.sharedRoot, owner);
+            sweepSandboxBaseThrottled(baseDir, owner);
+            const staged = writeAgentPromptFile(fs.readFileSync(scriptPath, 'utf8'), owner, {
+                fileName: QAAP_GIT_CLI_FILE, dirPrefix: `${QAAP_DELEGATION_CONFIG_DIR_PREFIX}git-cli-`, baseDir,
+            });
+            rememberConfigDir(taskId, staged.dir);
+            scriptPath = staged.file;
+            nodeBin = QAAP_DELEGATION_SANDBOX_NODE;
+            electronRunAsNode = false;
+        }
+        const tokenFile = writeQaapDelegationTokenFile(taskId, wiring.token, owner, baseDir);
+        const quotePosix = (value: string): string => `'${value.replace(/'/g, '\'\\\'\'')}'`;
+        const wrapperContent = process.platform === 'win32'
+            ? `@echo off\r\n${electronRunAsNode ? 'set ELECTRON_RUN_AS_NODE=1\r\n' : ''}"${nodeBin}" "${scriptPath}" %*\r\n`
+            : `#!/bin/sh\n${electronRunAsNode ? 'ELECTRON_RUN_AS_NODE=1 ' : ''}exec ${quotePosix(nodeBin)} ${quotePosix(scriptPath)} "$@"\n`;
+        const wrapperName = process.platform === 'win32' ? 'qaaq-git.cmd' : 'qaaq-git';
+        const wrapper = writeAgentPromptFile(wrapperContent, owner, {
+            fileName: wrapperName, dirPrefix: `${QAAP_DELEGATION_CONFIG_DIR_PREFIX}git-bin-`, ...(baseDir ? { baseDir } : {}),
+        });
+        rememberConfigDir(taskId, wrapper.dir);
+        if (process.platform !== 'win32') {
+            try {
+                fs.chmodSync(wrapper.file, 0o700);
+            } catch {
+                // Best-effort when owned by a dropped tenant uid.
+            }
+        }
+        env.QAAP_GIT_URL = wiring.url;
+        env.QAAP_GIT_TOKEN_FILE = tokenFile;
+        const pathSep = process.platform === 'win32' ? ';' : ':';
+        env.PATH = env.PATH ? `${wrapper.dir}${pathSep}${env.PATH}` : wrapper.dir;
+        return { binDir: wrapper.dir, tokenFile };
+    } catch (error) {
+        console.warn(`[qaap-git] could not stage qaaq-git CLI; the turn runs without it (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
+        return undefined;
+    }
 }
 
 /** Credentials for a turn using the `qaaq-preview` CLI fallback (harnesses without an MCP transport). */
