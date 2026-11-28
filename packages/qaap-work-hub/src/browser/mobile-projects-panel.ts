@@ -1520,6 +1520,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.sessionsSidebarUi.onSessionsSidebarViewModeChange(id);
     }
 
+    protected onHeaderViewModeReselect(id: MobileViewToggleId): void {
+        if (id === 'agent') {
+            // Re-clicking Agents while inside a task or secondary Work Hub view returns to the Agents home overview.
+            void this.delegate.onShowAgentsHub?.();
+        }
+    }
+
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public createHeaderIdeViewIcon(icon: string): HTMLElement {
         return createHeaderIdeViewIconHelper(icon);

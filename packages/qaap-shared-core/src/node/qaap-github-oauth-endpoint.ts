@@ -860,15 +860,30 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
     }
 
+    /**
+     * Background Work Hub probes pass `?softAuth=1` so an expired or missing upstream GitHub token
+     * answers HTTP 200 with `signedIn: false` (plus the structured `code`), keeping the browser
+     * console free of noisy red 401 entries while preserving strict 401 responses for direct API callers.
+     */
+    protected isSoftAuthQuery(req: Request): boolean {
+        return req.query?.softAuth === '1';
+    }
+
     protected async handleGithubRepositories(req: Request, res: Response): Promise<void> {
         const auth = await this.authenticateGithub(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }
+        const softAuth = this.isSoftAuthQuery(req);
         if (auth.kind === 'skip') {
             if (isQaapDesktopRuntime()) {
-                res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                res.status(softAuth ? 200 : 401).json({
+                    repositories: [],
+                    signedIn: false,
+                    code: 'github_sign_in_required',
+                    error: 'GitHub sign-in required',
+                });
                 return;
             }
             res.json({ repositories: [] });
@@ -879,16 +894,26 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             const repositories = await fetchGithubRepositories(stored.accessToken);
             res.json({ repositories });
         } catch (err) {
-            // A GitHub 401 means the stored token was revoked/expired. Return 401 (not a generic 502)
-            // so the client clears its stale session and re-authenticates, instead of getting stuck
-            // on "could not load repositories" with a still-signed-in UI. (ONB-5)
+            // A GitHub 401 means the stored token was revoked/expired. Return 401 (or 200 signedIn:false
+            // when the client opted into softAuth) instead of a generic 502 so the client backs off and
+            // offers GitHub sign-in instead of getting stuck on "could not load repositories". (ONB-5)
             if ((err as { status?: number }).status === 401) {
                 if (this.reportDesktopCredentialRejected(auth)) {
                     // The user's own credential expired (gh auth logout, revoked token): offer the sign-in.
-                    res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                    res.status(softAuth ? 200 : 401).json({
+                        repositories: [],
+                        signedIn: false,
+                        code: 'github_sign_in_required',
+                        error: 'GitHub sign-in required',
+                    });
                     return;
                 }
-                res.status(401).json({ error: 'GitHub session expired', signedIn: false });
+                res.status(softAuth ? 200 : 401).json({
+                    repositories: [],
+                    signedIn: false,
+                    code: 'session_expired',
+                    error: 'GitHub session expired',
+                });
                 return;
             }
             const message = err instanceof Error ? err.message : 'Failed to load repositories';
@@ -906,6 +931,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.json({ pullRequests: [], signedIn: false });
             return;
         }
+        const softAuth = this.isSoftAuthQuery(req);
         const stored = auth.session;
         try {
             const hubRepositories = await this.filterAccessibleRepositories(
@@ -923,10 +949,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 : [];
             res.json({ pullRequests, currentRepository: repository, signedIn: true });
         } catch (err) {
-            // A GitHub 401 means the stored token expired or was revoked: answer 401 like the repository list does,
-            // so the client backs off for a minute instead of retrying a "502" about every second.
+            // A GitHub 401 means the stored token expired or was revoked: answer 401 (or 200 signedIn:false
+            // for softAuth) so the client backs off instead of retrying a "502".
             if ((err as { status?: number }).status === 401) {
-                res.status(401).json({ error: 'GitHub session expired', signedIn: false, pullRequests: [] });
+                const code = this.reportDesktopCredentialRejected(auth) ? 'github_sign_in_required' : 'session_expired';
+                res.status(softAuth ? 200 : 401).json({ error: 'GitHub session expired', code, signedIn: false, pullRequests: [] });
                 return;
             }
             const message = err instanceof Error ? err.message : 'Failed to load pull requests';
@@ -951,6 +978,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.json({ pullRequests: [], page: 1, hasMore: false, signedIn: true });
             return;
         }
+        const softAuth = this.isSoftAuthQuery(req);
         const stored = auth.session;
         const page = Number.parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10);
         try {
@@ -969,6 +997,18 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
             res.json(response);
         } catch (err) {
+            if ((err as { status?: number }).status === 401) {
+                const code = this.reportDesktopCredentialRejected(auth) ? 'github_sign_in_required' : 'session_expired';
+                res.status(softAuth ? 200 : 401).json({
+                    error: 'GitHub session expired',
+                    code,
+                    signedIn: false,
+                    pullRequests: [],
+                    page: 1,
+                    hasMore: false,
+                });
+                return;
+            }
             const message = err instanceof Error ? err.message : 'Failed to search pull requests';
             res.status(502).json({ error: message, signedIn: true, pullRequests: [], page: 1, hasMore: false });
         }
@@ -1004,6 +1044,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.json({ pullRequest });
         } catch (err) {
             const status = (err as { status?: number }).status;
+            if (status === 401) {
+                this.reportDesktopCredentialRejected(auth);
+                res.status(401).json({ error: 'GitHub session expired', signedIn: false });
+                return;
+            }
             res.status(status === 404 ? 404 : 502).json({ error: err instanceof Error ? err.message : 'Failed to load pull request' });
         }
     }
@@ -1043,6 +1088,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.json({ pullRequest });
         } catch (err) {
             const status = (err as { status?: number }).status;
+            if (status === 401) {
+                this.reportDesktopCredentialRejected(auth);
+                res.status(401).json({ error: 'GitHub session expired', signedIn: false });
+                return;
+            }
             res.status(status === 404 ? 404 : 502).json({ error: err instanceof Error ? err.message : 'Failed to load pull request' });
         }
     }

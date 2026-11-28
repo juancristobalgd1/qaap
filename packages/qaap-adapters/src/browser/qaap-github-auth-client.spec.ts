@@ -15,6 +15,7 @@ import {
     QaapApiRequestError,
     startQaapGithubWorkspaceJob,
 } from './qaap-github-auth-client';
+import { resetGithubPullRequestsBackoff } from './qaap-github-pull-requests-backoff';
 
 describe('qaap-github-auth-client timeouts', () => {
     const originalFetch = globalThis.fetch;
@@ -22,6 +23,7 @@ describe('qaap-github-auth-client timeouts', () => {
     let seenSignals: Array<AbortSignal | undefined>;
 
     beforeEach(() => {
+        resetGithubPullRequestsBackoff();
         seenSignals = [];
         globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
             seenSignals.push(init?.signal ?? undefined);
@@ -31,6 +33,7 @@ describe('qaap-github-auth-client timeouts', () => {
 
     afterEach(() => {
         globalThis.fetch = originalFetch;
+        resetGithubPullRequestsBackoff();
     });
 
     function abortError(): Error {

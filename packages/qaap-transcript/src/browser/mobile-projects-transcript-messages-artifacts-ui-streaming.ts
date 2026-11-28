@@ -218,8 +218,9 @@ function appendTurnResultFooter(
 export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segmentsBody: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
         turn?: { readonly conv?: QaapAgentConversationDTO; readonly message?: QaapAgentMessageDTO },): void {
-        // Remove any existing diff summary or live footer so re-calling this is idempotent.
-        segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
+        // Remove every existing diff summary or live footer so re-calling this is idempotent
+        // (both the per-turn line summary and the file list use `.theia-mobile-diff-summary`).
+        segmentsBody.querySelectorAll('.theia-mobile-diff-summary').forEach(node => node.remove());
         ctx.removeTranscriptLiveStatusWithOrb(segmentsBody);
         const mutableSegments = [...segments];
         // The turn's own totals, from the checkpoint the backend wrote when this turn settled.
@@ -248,8 +249,20 @@ export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMe
                 },
             );
             appendTurnResultFooter(ctx, diffSummary, turn);
-            // The per-file list above carries task-measured counts; the turn's own totals are labelled "this turn".
-            if (turnStats && (turnStats.added > 0 || turnStats.removed > 0)) {
+            // The per-file list carries task-measured counts; only show a separate "Changes this turn" line
+            // when the turn has exact per-turn totals that differ from the file list sum (multi-turn tasks)
+            // or when the file list itself has no line counts yet.
+            const fileStats = changedFiles.reduce(
+                (acc, f) => ({
+                    added: acc.added + (f.added ?? 0),
+                    removed: acc.removed + (f.removed ?? 0),
+                    hasLineCounts: acc.hasLineCounts || f.added !== undefined || f.removed !== undefined,
+                }),
+                { added: 0, removed: 0, hasLineCounts: false },
+            );
+            const turnDiffersFromFiles = !fileStats.hasLineCounts
+                || (turnStats !== undefined && (turnStats.added !== fileStats.added || turnStats.removed !== fileStats.removed));
+            if (turnStats && (turnStats.added > 0 || turnStats.removed > 0) && turnDiffersFromFiles) {
                 segmentsBody.append(createMobileLineDiffSummaryElement(turnStats.added, turnStats.removed));
             }
             // Last child = below process accordion + closing narrative summary.

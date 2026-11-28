@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { fetchQaapGithubRepositories } from './qaap-github-auth-client';
 import { QaapApiRequestError } from './qaap-github-auth-client';
+import { resetGithubPullRequestsBackoff } from './qaap-github-pull-requests-backoff';
 import { pollQaapGithubDeviceFlow, startQaapGithubDeviceFlow } from './qaap-github-device-client';
 
 describe('qaap GitHub sign-in client', () => {
@@ -13,11 +14,13 @@ describe('qaap GitHub sign-in client', () => {
     let requests: Array<{ url: string; method?: string; body?: string }>;
 
     beforeEach(() => {
+        resetGithubPullRequestsBackoff();
         requests = [];
     });
 
     afterEach(() => {
         globalThis.fetch = originalFetch;
+        resetGithubPullRequestsBackoff();
     });
 
     function respondWith(status: number, body: unknown): void {

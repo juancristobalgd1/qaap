@@ -1047,3 +1047,70 @@ describe('QaapGithubOauthEndpoint GET /qaap/api/auth/config payload', () => {
     });
 });
 
+describe('QaapGithubOauthEndpoint.handleSearchGithubPullRequests 401 handling', () => {
+    function makeRes(): {
+        statusCode?: number;
+        body?: Record<string, unknown>;
+        status: (code: number) => { json: (b: Record<string, unknown>) => void };
+        json: (b: Record<string, unknown>) => void;
+    } {
+        const res: {
+            statusCode?: number;
+            body?: Record<string, unknown>;
+            status: (code: number) => { json: (b: Record<string, unknown>) => void };
+            json: (b: Record<string, unknown>) => void;
+        } = {
+            status(code: number) {
+                res.statusCode = code;
+                return { json: (b: Record<string, unknown>) => { res.body = b; } };
+            },
+            json(b: Record<string, unknown>) {
+                res.statusCode = 200;
+                res.body = b;
+            },
+        };
+        return res;
+    }
+
+    function createEndpointWith401Search(): QaapGithubOauthEndpoint {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => ({
+                    kind: 'authenticated',
+                    userLogin: 'alice',
+                    session: { accessToken: 'expired', user: { login: 'alice' } },
+                }),
+            },
+            pullRequestSearch: {
+                search: async () => {
+                    const err = new Error('GitHub API returned 401') as Error & { status?: number };
+                    err.status = 401;
+                    throw err;
+                },
+            },
+        });
+        return endpoint;
+    }
+
+    it('returns 401 with signedIn:false (never 502) when upstream GitHub rejects an expired token', async () => {
+        const endpoint = createEndpointWith401Search();
+        const res = makeRes();
+        await (endpoint as unknown as { handleSearchGithubPullRequests(req: object, res: object): Promise<void> })
+            .handleSearchGithubPullRequests({ query: { state: 'open', view: 'all', page: '1' } }, res);
+        expect(res.statusCode).to.equal(401);
+        expect(res.body?.signedIn).to.equal(false);
+        expect(res.body?.code).to.equal('session_expired');
+    });
+
+    it('returns HTTP 200 with signedIn:false when softAuth=1 is requested so background probes avoid 401 console noise', async () => {
+        const endpoint = createEndpointWith401Search();
+        const res = makeRes();
+        await (endpoint as unknown as { handleSearchGithubPullRequests(req: object, res: object): Promise<void> })
+            .handleSearchGithubPullRequests({ query: { state: 'open', view: 'all', page: '1', softAuth: '1' } }, res);
+        expect(res.statusCode).to.equal(200);
+        expect(res.body?.signedIn).to.equal(false);
+        expect(res.body?.code).to.equal('session_expired');
+    });
+});
+

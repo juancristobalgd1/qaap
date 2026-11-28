@@ -127,5 +127,8 @@ describe('captureTurnGitState baseline', function (): void {
         expect(state?.gitStats?.added).to.equal(1);
         expect(state?.gitStats?.removed).to.equal(1);
         expect(state?.baselineApproximate).to.equal(true);
+        // Approximate whole-workspace counts must not be stored on the turn checkpoint as "Changes this turn".
+        expect(state?.checkpoint?.added).to.equal(undefined);
+        expect(state?.checkpoint?.removed).to.equal(undefined);
     });
 });

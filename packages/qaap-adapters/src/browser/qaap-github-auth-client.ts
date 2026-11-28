@@ -318,41 +318,88 @@ export async function upsertQaapProjectSession(patch: QaapProjectSessionUpsertRe
     return body.session;
 }
 
-export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositoriesResponse> {
-    const response = await fetchQaapOrTimeoutError(
-        `${QAAP_GITHUB_API_PATH}/repositories`,
-        qaapAuthenticatedFetchInit(),
-        QAAP_GITHUB_LIST_TIMEOUT_MS,
-        () => nls.localize(
-            'qaap/githubRepositories/timedOut',
-            'Loading GitHub repositories took too long. Please try again.'
-        ),
-    );
-    if (response.status === 401) {
-        // Desktop without a GitHub session: the app itself is signed in, only GitHub is missing. Keep
-        // the local session and let the import dialog offer "Sign in with GitHub".
-        const body = await response.clone().json().catch(() => undefined) as { code?: string } | undefined;
-        if (body?.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE) {
-            throw new QaapApiRequestError(
-                nls.localize('qaap/githubRepositories/signInRequired', 'Sign in with GitHub to import your repositories.'),
-                401,
-                QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
-            );
-        }
-        // Stored GitHub token expired/revoked. The Qaap session is left alone: clearing it locally (ONB-5) could not
-        // end the server session, so the next session sync wrote it back and the Work Hub flipped between signed
-        // in and out (and the repository dialog said "Connected as" and "Sign in" at once). Callers show a
-        // "sign in to GitHub again" action instead.
-        throw new QaapUserFacingError(
-            nls.localize('qaap/githubRepositories/sessionExpired', 'Your GitHub session expired. Please sign in again.'),
+export interface FetchQaapGithubRepositoriesOptions {
+    /** Request HTTP 200 `{ signedIn: false }` on expired/missing GitHub tokens to avoid noisy browser 401 console errors. */
+    readonly softAuth?: boolean;
+    /** Ignore any active client-side sign-in backoff (used by explicit user actions such as opening the Import dialog). */
+    readonly bypassBackoff?: boolean;
+}
+
+const inFlightGithubRepositories = new Map<string, Promise<QaapGithubRepositoriesResponse>>();
+const inFlightGithubPullRequests = new Map<string, Promise<QaapGithubPullRequestsResponse>>();
+const inFlightGithubPullRequestSearch = new Map<string, Promise<QaapGithubPullRequestSearchResponse>>();
+
+function createGithubAuthRequiredError(code: string | undefined): Error {
+    if (code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE) {
+        return new QaapApiRequestError(
+            nls.localize('qaap/githubRepositories/signInRequired', 'Sign in with GitHub to import your repositories.'),
             401,
-            'session_expired',
+            QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
         );
     }
-    if (!response.ok) {
-        throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub repositories (${response.status})`);
+    // Stored GitHub token expired/revoked. The Qaap session is left alone: clearing it locally (ONB-5) could not
+    // end the server session, so the next session sync wrote it back and the Work Hub flipped between signed
+    // in and out (and the repository dialog said "Connected as" and "Sign in" at once). Callers show a
+    // "sign in to GitHub again" action instead.
+    return new QaapUserFacingError(
+        nls.localize('qaap/githubRepositories/sessionExpired', 'Your GitHub session expired. Please sign in again.'),
+        401,
+        'session_expired',
+    );
+}
+
+export async function fetchQaapGithubRepositories(options?: FetchQaapGithubRepositoriesOptions): Promise<QaapGithubRepositoriesResponse> {
+    if (options?.softAuth && !options.bypassBackoff) {
+        const paused = activeGithubPullRequestsBackoff();
+        if (paused?.reason === 'sign-in') {
+            throw createGithubAuthRequiredError(paused.code);
+        }
     }
-    return response.json() as Promise<QaapGithubRepositoriesResponse>;
+    const url = options?.softAuth
+        ? `${QAAP_GITHUB_API_PATH}/repositories?softAuth=1`
+        : `${QAAP_GITHUB_API_PATH}/repositories`;
+    const existing = inFlightGithubRepositories.get(url);
+    if (existing) {
+        return existing;
+    }
+    const pending = (async (): Promise<QaapGithubRepositoriesResponse> => {
+        const response = await fetchQaapOrTimeoutError(
+            url,
+            qaapAuthenticatedFetchInit(),
+            QAAP_GITHUB_LIST_TIMEOUT_MS,
+            () => nls.localize(
+                'qaap/githubRepositories/timedOut',
+                'Loading GitHub repositories took too long. Please try again.'
+            ),
+        );
+        if (response.status === 401) {
+            // Desktop without a GitHub session: the app itself is signed in, only GitHub is missing. Keep
+            // the local session and let the import dialog offer "Sign in with GitHub".
+            const body = await response.clone().json().catch(() => undefined) as { code?: string } | undefined;
+            const code = body?.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE ? QAAP_GITHUB_SIGN_IN_REQUIRED_CODE : 'session_expired';
+            recordGithubPullRequestsSignInRequired(undefined, code);
+            throw createGithubAuthRequiredError(code);
+        }
+        if (!response.ok) {
+            throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub repositories (${response.status})`);
+        }
+        const body = await response.json() as QaapGithubRepositoriesResponse & { signedIn?: boolean; code?: string };
+        if (body.signedIn === false) {
+            const code = body.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE ? QAAP_GITHUB_SIGN_IN_REQUIRED_CODE : 'session_expired';
+            recordGithubPullRequestsSignInRequired(undefined, code);
+            throw createGithubAuthRequiredError(code);
+        }
+        resetGithubPullRequestsBackoff();
+        return body;
+    })();
+    inFlightGithubRepositories.set(url, pending);
+    try {
+        return await pending;
+    } finally {
+        if (inFlightGithubRepositories.get(url) === pending) {
+            inFlightGithubRepositories.delete(url);
+        }
+    }
 }
 
 /**
@@ -373,35 +420,56 @@ export async function fetchQaapGithubPullRequests(
             'github_pull_requests_backoff',
         );
     }
-    const reposQuery = repositories?.length
-        ? `?repos=${encodeURIComponent(repositories.join(','))}`
-        : '';
-    const response = await fetchQaapOrTimeoutError(
-        `${QAAP_GITHUB_API_PATH}/pull-requests${reposQuery}`,
-        qaapAuthenticatedFetchInit(),
-        QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS,
-        () => nls.localize(
-            'qaap/githubPullRequests/timedOut',
-            'Loading GitHub pull requests took too long. Please try again.'
-        ),
-    );
-    if (response.status === 401) {
-        recordGithubPullRequestsSignInRequired();
-        return { pullRequests: [], signedIn: false };
+    const params = new URLSearchParams({ softAuth: '1' });
+    if (repositories?.length) {
+        params.set('repos', repositories.join(','));
     }
-    if (!response.ok) {
-        if (response.status >= 500) {
-            recordGithubPullRequestsServerError();
+    const url = `${QAAP_GITHUB_API_PATH}/pull-requests?${params.toString()}`;
+    const existing = inFlightGithubPullRequests.get(url);
+    if (existing) {
+        return existing;
+    }
+    const pending = (async (): Promise<QaapGithubPullRequestsResponse> => {
+        const response = await fetchQaapOrTimeoutError(
+            url,
+            qaapAuthenticatedFetchInit(),
+            QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS,
+            () => nls.localize(
+                'qaap/githubPullRequests/timedOut',
+                'Loading GitHub pull requests took too long. Please try again.'
+            ),
+        );
+        if (response.status === 401) {
+            recordGithubPullRequestsSignInRequired();
+            return { pullRequests: [], signedIn: false };
         }
-        throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub pull requests (${response.status})`);
+        if (!response.ok) {
+            if (response.status >= 500) {
+                recordGithubPullRequestsServerError();
+            }
+            throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub pull requests (${response.status})`);
+        }
+        const body = await response.json() as Partial<QaapGithubPullRequestsResponse> & { code?: string };
+        if (body.signedIn === false) {
+            const code = body.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE ? QAAP_GITHUB_SIGN_IN_REQUIRED_CODE : 'session_expired';
+            recordGithubPullRequestsSignInRequired(undefined, code);
+            return { pullRequests: [], signedIn: false };
+        }
+        resetGithubPullRequestsBackoff();
+        return {
+            pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],
+            currentRepository: body.currentRepository,
+            signedIn: true,
+        };
+    })();
+    inFlightGithubPullRequests.set(url, pending);
+    try {
+        return await pending;
+    } finally {
+        if (inFlightGithubPullRequests.get(url) === pending) {
+            inFlightGithubPullRequests.delete(url);
+        }
     }
-    resetGithubPullRequestsBackoff();
-    const body = await response.json() as Partial<QaapGithubPullRequestsResponse>;
-    return {
-        pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],
-        currentRepository: body.currentRepository,
-        signedIn: body.signedIn !== false,
-    };
 }
 
 export interface QaapGithubPullRequestSearchRequest {
@@ -416,37 +484,74 @@ export interface QaapGithubPullRequestSearchRequest {
 
 /** All pull requests (open, merged, closed) the signed-in user can see, one search page at a time. */
 export async function searchQaapGithubPullRequests(request: QaapGithubPullRequestSearchRequest): Promise<QaapGithubPullRequestSearchResponse> {
-    const params = new URLSearchParams({ state: request.state, view: request.view, page: String(request.page ?? 1) });
+    const page = request.page ?? 1;
+    const paused = activeGithubPullRequestsBackoff();
+    if (paused?.reason === 'sign-in') {
+        return { pullRequests: [], page, hasMore: false, signedIn: false };
+    }
+    if (paused && !request.force) {
+        throw new QaapUserFacingError(
+            nls.localize('qaap/githubPullRequests/temporarilyUnavailable', 'GitHub pull requests are not available right now. Retrying shortly.'),
+            503,
+            'github_pull_requests_backoff',
+        );
+    }
+    const params = new URLSearchParams({ state: request.state, view: request.view, page: String(page), softAuth: '1' });
     if (request.repositories?.length) {
         params.set('repos', request.repositories.join(','));
     }
     if (request.force) {
         params.set('force', '1');
     }
-    const response = await fetchQaapOrTimeoutError(
-        `${QAAP_GITHUB_API_PATH}/pull-requests/search?${params.toString()}`,
-        qaapAuthenticatedFetchInit(),
-        QAAP_GITHUB_PULL_REQUEST_SEARCH_TIMEOUT_MS,
-        () => nls.localize(
-            'qaap/githubPullRequests/timedOut',
-            'Loading GitHub pull requests took too long. Please try again.'
-        ),
-    );
-    if (response.status === 401) {
-        return { pullRequests: [], page: request.page ?? 1, hasMore: false, signedIn: false };
+    const url = `${QAAP_GITHUB_API_PATH}/pull-requests/search?${params.toString()}`;
+    const existing = inFlightGithubPullRequestSearch.get(url);
+    if (existing) {
+        return existing;
     }
-    const body = await response.json().catch(() => ({})) as Partial<QaapGithubPullRequestSearchResponse> & { error?: string };
-    if (!response.ok) {
-        throw QaapUserFacingErrors.fromBody(JSON.stringify(body), response.status, undefined, `Failed to search GitHub pull requests (${response.status})`);
+    const pending = (async (): Promise<QaapGithubPullRequestSearchResponse> => {
+        const response = await fetchQaapOrTimeoutError(
+            url,
+            qaapAuthenticatedFetchInit(),
+            QAAP_GITHUB_PULL_REQUEST_SEARCH_TIMEOUT_MS,
+            () => nls.localize(
+                'qaap/githubPullRequests/timedOut',
+                'Loading GitHub pull requests took too long. Please try again.'
+            ),
+        );
+        if (response.status === 401) {
+            recordGithubPullRequestsSignInRequired();
+            return { pullRequests: [], page, hasMore: false, signedIn: false };
+        }
+        const body = await response.json().catch(() => ({})) as Partial<QaapGithubPullRequestSearchResponse> & { error?: string; code?: string };
+        if (!response.ok) {
+            if (response.status >= 500) {
+                recordGithubPullRequestsServerError();
+            }
+            throw QaapUserFacingErrors.fromBody(JSON.stringify(body), response.status, undefined, `Failed to search GitHub pull requests (${response.status})`);
+        }
+        if (body.signedIn === false) {
+            const code = body.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE ? QAAP_GITHUB_SIGN_IN_REQUIRED_CODE : 'session_expired';
+            recordGithubPullRequestsSignInRequired(undefined, code);
+            return { pullRequests: [], page, hasMore: false, signedIn: false };
+        }
+        resetGithubPullRequestsBackoff();
+        return {
+            pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],
+            page: typeof body.page === 'number' ? body.page : page,
+            hasMore: body.hasMore === true,
+            signedIn: true,
+            rateLimited: body.rateLimited,
+            incompleteResults: body.incompleteResults,
+        };
+    })();
+    inFlightGithubPullRequestSearch.set(url, pending);
+    try {
+        return await pending;
+    } finally {
+        if (inFlightGithubPullRequestSearch.get(url) === pending) {
+            inFlightGithubPullRequestSearch.delete(url);
+        }
     }
-    return {
-        pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],
-        page: typeof body.page === 'number' ? body.page : request.page ?? 1,
-        hasMore: body.hasMore === true,
-        signedIn: body.signedIn !== false,
-        rateLimited: body.rateLimited,
-        incompleteResults: body.incompleteResults,
-    };
 }
 
 /** Full detail (branches, diff stats, mergeability, files preview) of one pull request. */

@@ -328,7 +328,7 @@ export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceCont
             return [];
         }
         try {
-            const response = await fetchQaapGithubRepositories();
+            const response = await fetchQaapGithubRepositories({ softAuth: true, bypassBackoff: surfaceSignInRequired });
             githubSignInRequiredSince = undefined;
             const pinnedIds = ctx.readPinnedProjectIds();
             const currentFullName = ctx.currentGithubRepositoryFullName();

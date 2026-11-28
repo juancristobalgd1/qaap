@@ -136,4 +136,38 @@ describe('QaapGithubPullRequestSearchService', () => {
         }
         expect(error).to.be.instanceOf(Error);
     });
+
+    it('rethrows a 401 immediately without issuing remaining queries', async () => {
+        results['is:pr involves:octo@1'] = new GithubApiError('Bad credentials', 401);
+        const service = createService();
+        let error: unknown;
+        try {
+            await service.search({ accessToken: 'expired', login: 'octo', state: 'all', page: 1 });
+        } catch (err) {
+            error = err;
+        }
+        expect(error).to.be.instanceOf(GithubApiError);
+        expect((error as GithubApiError).status).to.equal(401);
+        expect(calls).to.have.length(1);
+    });
+
+    it('rethrows a 401 from organization lookup instead of swallowing it', async () => {
+        const service = new QaapGithubPullRequestSearchService({
+            now: () => now,
+            organizations: async () => { throw new GithubApiError('Bad credentials', 401); },
+            search: async (_token, query, page) => {
+                calls.push({ query, page });
+                return { pullRequests: [], totalCount: 0, incompleteResults: false };
+            },
+        });
+        let error: unknown;
+        try {
+            await service.search({ accessToken: 'expired', login: 'octo', state: 'all', page: 1 });
+        } catch (err) {
+            error = err;
+        }
+        expect(error).to.be.instanceOf(GithubApiError);
+        expect((error as GithubApiError).status).to.equal(401);
+        expect(calls).to.have.length(0);
+    });
 });

@@ -100,7 +100,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         if (
             this.laterChosenThisSession
             || isAgentCliUpdateSnoozed(now)
-            || (trigger === 'boot' && isAgentCliUpdateInDailyCooldown(now))
+            || (trigger === 'boot' && (isAgentCliUpdateInDailyCooldown(now) || this.isNarrowMobileViewport()))
         ) {
             return;
         }
@@ -117,6 +117,13 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             rememberAgentCliUpdateShown(now);
         }
         this.present(next, countAgentUpdatesToShow(updates, dismissed));
+    }
+
+    /** Suppress automatic boot CLI update toasts on narrow mobile screens so they do not crowd the composer/header. */
+    protected isNarrowMobileViewport(): boolean {
+        return typeof window !== 'undefined'
+            && typeof window.matchMedia === 'function'
+            && window.matchMedia('(max-width: 767px)').matches;
     }
 
     protected present(info: QaapAgentCliUpdateInfo, pendingCount: number): void {

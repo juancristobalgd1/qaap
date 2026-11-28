@@ -152,11 +152,17 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
         chrome.dispose();
     });
 
-    it('forwards IDE/Agents selection from the header switch', () => {
+    it('forwards IDE/Agents selection and Agents reselect from the header switch', () => {
         stubMatchMedia(true);
         const host = createHost();
+        let reselected: string | undefined;
+        host.onHeaderViewModeReselect = id => { reselected = id; };
         const chrome = new MobileProjectsPanelChromeUi(host);
         chrome.constructPanelShell();
+        const agents = host.headerIdeAgentsSwitchHost.querySelector<HTMLButtonElement>('[data-segment-id="agent"]');
+        expect(agents).to.not.equal(null);
+        agents!.click();
+        expect(reselected).to.equal('agent');
         const ide = host.headerIdeAgentsSwitchHost.querySelector<HTMLButtonElement>('[data-segment-id="editor"]');
         expect(ide).to.not.equal(null);
         ide!.click();

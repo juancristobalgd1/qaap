@@ -150,7 +150,10 @@ export async function captureTurnGitState(ctx: QaapAgentConversationStoreContext
                 }
             }
             const gitStats = await ctx.computeGitDiffStats(cwd, startSha);
-            const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, gitStats);
+            // Without a pre-turn snapshot, `gitStats` reflects whole-workspace dirt rather than this turn's diff.
+            // Still capture the rewind checkpoint, but omit approximate workspace counts so the transcript never
+            // displays unrelated workspace changes as "Changes this turn".
+            const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, undefined);
             return { gitStats, checkpoint, baselineApproximate: cwdIsGitRepository(cwd) || undefined };
         });
     } catch {

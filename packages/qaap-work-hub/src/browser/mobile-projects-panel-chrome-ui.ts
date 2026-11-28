@@ -69,6 +69,7 @@ export interface MobileProjectsPanelChromeHost {
     onTitleTap(): void;
     composerHeaderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     onHeaderViewModeChange(id: MobileViewToggleId): void;
+    onHeaderViewModeReselect?(id: MobileViewToggleId): void;
     updateAccountAvatar(): void;
     hide(): void;
     refreshInboxPullRequests(projects?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
@@ -259,6 +260,7 @@ export class MobileProjectsPanelChromeUi {
         this.headerIdeAgentsSwitch = createQaapViewModeSwitch({
             activeId: this.host.composerHeaderUi.resolveActiveViewToggleId(),
             onSelect: id => this.host.onHeaderViewModeChange(id),
+            onReselect: id => this.host.onHeaderViewModeReselect?.(id),
         });
         const headerIdeAgentsSwitchInner = document.createElement('span');
         headerIdeAgentsSwitchInner.className = 'theia-workbench-view-mode-switch';

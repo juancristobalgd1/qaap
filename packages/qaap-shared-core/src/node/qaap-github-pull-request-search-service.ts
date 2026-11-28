@@ -116,6 +116,11 @@ export class QaapGithubPullRequestSearchService {
                     result = await this.searchPage(request.accessToken, query, page, this.perPage);
                     this.store(this.pages, key, result);
                 } catch (err) {
+                    // A 401 means the stored GitHub token expired or was revoked: surface it right away
+                    // so the endpoint answers 401/signedIn:false instead of looping every query into a 502.
+                    if ((err as Partial<GithubApiError>).status === 401) {
+                        throw err;
+                    }
                     failures++;
                     rateLimited = rateLimited || (err as Partial<GithubApiError>).rateLimited === true;
                     result = this.staleValue(cached);
@@ -162,7 +167,10 @@ export class QaapGithubPullRequestSearchService {
             const orgs = await this.fetchOrganizations(request.accessToken);
             this.store(this.orgs, key, orgs);
             return orgs;
-        } catch {
+        } catch (err) {
+            if ((err as Partial<GithubApiError>).status === 401) {
+                throw err;
+            }
             // Org coverage is best effort; involvement and owned repositories still load.
             return cached?.value ?? [];
         }
