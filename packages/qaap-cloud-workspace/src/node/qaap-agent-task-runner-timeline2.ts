@@ -101,7 +101,13 @@ import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-ke
 import { isPiProviderSignInRefusal } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { applyQaapHarnessBinaryOverride, applyQaapHarnessUserEnv, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
-import { QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
+import {
+    QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS,
+    QAAP_OPENCODE_EXIT_AFTER_STOP_GRACE_MS,
+    QaapAgentFinalResultWatcher,
+    QaapOpencodeFinalStepWatcher,
+    type QaapAgentFinalResult,
+} from './qaap-agent-final-result-watcher';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -1079,6 +1085,11 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         const finalResultWatcher = requestedAdapter.spawnQuirks.emitsStreamJsonFinalResult || qaapAcpFlavorPrintsStreamJson(acpFlavor)
             ? new QaapAgentFinalResultWatcher()
             : undefined;
+        // OpenCode (`opencode run --format json`) emits `step_finish` with `reason: "stop"` when done,
+        // but can linger with open LSP/MCP handles. End it after a quiet grace unless another step starts.
+        const opencodeFinalStepWatcher = !finalResultWatcher && requestedAdapter.spawnQuirks.watchesFatalStderr && !acpFlavor
+            ? new QaapOpencodeFinalStepWatcher()
+            : undefined;
         let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
         let endedAfterResult: QaapAgentFinalResult | undefined;
         // agy without a usable session waits 60 s for a pasted code: stop it on its first sign-in wait line.
@@ -1093,8 +1104,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.killAgentProcessTree(child);
         };
         child.stdout?.on('data', chunk => {
+            const chunkText = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
             if (finalResultWatcher && !exitAfterResultTimer) {
-                const finalResult = finalResultWatcher.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+                const finalResult = finalResultWatcher.push(chunkText);
                 if (finalResult) {
                     exitAfterResultTimer = setTimeout(() => {
                         if (ctx.processes.get(task.id) !== child || child.exitCode !== null || child.signalCode !== null) {
@@ -1104,6 +1116,23 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         endedAfterResult = finalResult;
                         ctx.killAgentProcessTree(child);
                     }, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS);
+                    exitAfterResultTimer.unref?.();
+                }
+            } else if (opencodeFinalStepWatcher) {
+                const stepEvent = opencodeFinalStepWatcher.push(chunkText);
+                if (stepEvent?.kind === 'activity') {
+                    clearTimeout(exitAfterResultTimer);
+                    exitAfterResultTimer = undefined;
+                } else if (stepEvent?.kind === 'final') {
+                    clearTimeout(exitAfterResultTimer);
+                    exitAfterResultTimer = setTimeout(() => {
+                        if (ctx.processes.get(task.id) !== child || child.exitCode !== null || child.signalCode !== null) {
+                            return;
+                        }
+                        console.warn(`[qaap-agent-tasks] ${task.id}: ${task.agentId} still running ${QAAP_OPENCODE_EXIT_AFTER_STOP_GRACE_MS}ms after step_finish(stop); ending it`);
+                        endedAfterResult = stepEvent.result;
+                        ctx.killAgentProcessTree(child);
+                    }, QAAP_OPENCODE_EXIT_AFTER_STOP_GRACE_MS);
                     exitAfterResultTimer.unref?.();
                 }
             }
@@ -1171,7 +1200,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             clearTimeout(exitAfterResultTimer);
             // The turn's usage from its final result line, kept on the task: the conversation settle copies it to the turn verdict.
             // Only with delegation on (its cost totals read it): with the flag off the persisted task is unchanged.
-            const turnUsage = isQaapAgentDelegationEnabled(process.env) ? finalResultWatcher?.result?.usage : undefined;
+            const turnUsage = isQaapAgentDelegationEnabled(process.env)
+                ? (finalResultWatcher?.result?.usage ?? opencodeFinalStepWatcher?.result?.usage)
+                : undefined;
             const usageTask = ctx.tasks.get(task.id);
             if (turnUsage && usageTask?.state === 'running') {
                 ctx.tasks.set(task.id, { ...usageTask, usage: turnUsage });

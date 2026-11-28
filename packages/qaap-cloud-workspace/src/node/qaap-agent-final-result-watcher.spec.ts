@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { emitsStreamJsonFinalResult, QaapAgentFinalResultWatcher } from './qaap-agent-final-result-watcher';
+import { emitsStreamJsonFinalResult, QaapAgentFinalResultWatcher, QaapOpencodeFinalStepWatcher } from './qaap-agent-final-result-watcher';
 
 describe('QaapAgentFinalResultWatcher', () => {
     it('sees the final result even when it is split across chunks', () => {
@@ -36,5 +36,22 @@ describe('QaapAgentFinalResultWatcher', () => {
         expect(emitsStreamJsonFinalResult('openclaude')).to.equal(true);
         expect(emitsStreamJsonFinalResult('codex')).to.equal(false);
         expect(emitsStreamJsonFinalResult(undefined)).to.equal(false);
+    });
+});
+
+describe('QaapOpencodeFinalStepWatcher', () => {
+    it('emits final on step_finish with reason stop and cancels if another step starts', () => {
+        const watcher = new QaapOpencodeFinalStepWatcher();
+        expect(watcher.push('{"type":"step_finish","part":{"reason":"tool-calls"}}\n')).to.equal(undefined);
+        const stopEvent = watcher.push('{"type":"step_finish","part":{"reason":"stop","tokens":{"input":10,"output":5}}}\n');
+        expect(stopEvent?.kind).to.equal('final');
+        expect(watcher.result?.isError).to.equal(false);
+        expect(watcher.result?.usage?.inputTokens).to.equal(10);
+        expect(watcher.result?.usage?.outputTokens).to.equal(5);
+
+        // If OpenCode starts another step, the pending final result is cleared so the turn is never cut short.
+        const resumed = watcher.push('{"type":"step_start"}\n');
+        expect(resumed).to.deep.equal({ kind: 'activity' });
+        expect(watcher.result).to.equal(undefined);
     });
 });

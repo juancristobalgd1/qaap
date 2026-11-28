@@ -77,6 +77,21 @@ export function findChangesExceedingScopeLimit(
     return changes.length > maxFiles ? changes.map(change => change.path) : undefined;
 }
 
+/** Pure documentation / plain-text files that cannot break build, typecheck, or unit-test scripts. */
+const DOCS_ONLY_FILE_PATTERN = /(?:^|\/)(?:(?:LICENSE|COPYING|NOTICE)(?:\.[^/]+)?|[^/]+\.(?:md|mdx|markdown|txt|rst|adoc))$/i;
+
+/**
+ * True when the task's own changed paths are known and every single one is a plain documentation or
+ * text file. Running full repository build/compile/test verification for a markdown-only edit (e.g.
+ * adding a `.md` note in a large monorepo) can burn the 5-minute wall clock without testing the edit.
+ */
+export function isDocsOnlyVerificationScope(scopePaths: readonly string[]): boolean {
+    if (scopePaths.length === 0) {
+        return false;
+    }
+    return scopePaths.every(filePath => DOCS_ONLY_FILE_PATTERN.test(filePath.replace(/\\/g, '/')));
+}
+
 /** Scripts whose findings are reported per file, so a failure can be attributed to the files it names. */
 const PER_FILE_SCRIPT_PATTERN = /(?:^|[:\-_])(?:lint|eslint|stylelint|prettier|format)(?:$|[:\-_])/i;
 
