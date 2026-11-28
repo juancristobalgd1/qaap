@@ -126,5 +126,69 @@ describe('gate credentials for harness runs inside verification', () => {
             const { prompt } = await reviewWithFixture('@@QAAP:VERDICT@@ pass ok', { status: 'passed', command: 'node --check src/a.js', attempts: 0 });
             expect(prompt).to.contain('Qaap checks for this turn: PASSED — `node --check src/a.js`');
         });
+
+        it('ignores pre-existing dirty baseline files so a 1-file or commit-only turn does not trigger a 3-minute high-risk review', async () => {
+            const previousMode = process.env.QAAP_AGENT_REVIEW;
+            process.env.QAAP_AGENT_REVIEW = 'high-risk';
+            try {
+                const baseline = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'];
+                const preExistingNumstat = baseline.map(file => `3\t2\t${file}`).join('\n');
+                let reviewerSpawned = 0;
+
+                // Turn 1: agent added only TEST-E2E-FO-2.md on top of 7 pre-existing dirty files (low risk).
+                const turn1Review = await reviewSuccessfulAgentTask({ ...task, worktreeBaselinePaths: baseline }, undefined, {
+                    isTaskStillRunning: () => true,
+                    resolveTaskAgentId: () => 'opencode',
+                    buildChildEnv: () => ({ PATH: '/bin' }),
+                    hasEditedFilesForVerification: async () => true,
+                    runGenericCommand: async (command: string) => {
+                        if (command === 'git diff --numstat HEAD') {
+                            return { ...ok, stdout: preExistingNumstat };
+                        }
+                        if (command === 'git ls-files --others --exclude-standard') {
+                            return { ...ok, stdout: 'TEST-E2E-FO-2.md\n' };
+                        }
+                        reviewerSpawned++;
+                        return ok;
+                    },
+                    changedSensitiveFiles: () => [],
+                    resolveReviewerCandidates: () => ['opencode'],
+                    buildAgentCommand: () => ({ command: 'opencode review', agentId: 'opencode' }),
+                    appendAndFireOutput: () => undefined,
+                } as unknown as Parameters<typeof reviewSuccessfulAgentTask>[2]);
+                expect(turn1Review).to.equal(undefined);
+                expect(reviewerSpawned).to.equal(0);
+
+                // Turn 2: agent only committed its file; only the 7 pre-existing dirty files remain.
+                const turn2Review = await reviewSuccessfulAgentTask({ ...task, worktreeBaselinePaths: baseline }, undefined, {
+                    isTaskStillRunning: () => true,
+                    resolveTaskAgentId: () => 'opencode',
+                    buildChildEnv: () => ({ PATH: '/bin' }),
+                    hasEditedFilesForVerification: async () => true,
+                    runGenericCommand: async (command: string) => {
+                        if (command === 'git diff --numstat HEAD') {
+                            return { ...ok, stdout: preExistingNumstat };
+                        }
+                        if (command === 'git ls-files --others --exclude-standard') {
+                            return { ...ok, stdout: '' };
+                        }
+                        reviewerSpawned++;
+                        return ok;
+                    },
+                    changedSensitiveFiles: () => [],
+                    resolveReviewerCandidates: () => ['opencode'],
+                    buildAgentCommand: () => ({ command: 'opencode review', agentId: 'opencode' }),
+                    appendAndFireOutput: () => undefined,
+                } as unknown as Parameters<typeof reviewSuccessfulAgentTask>[2]);
+                expect(turn2Review).to.equal(undefined);
+                expect(reviewerSpawned).to.equal(0);
+            } finally {
+                if (previousMode === undefined) {
+                    delete process.env.QAAP_AGENT_REVIEW;
+                } else {
+                    process.env.QAAP_AGENT_REVIEW = previousMode;
+                }
+            }
+        });
     });
 });
