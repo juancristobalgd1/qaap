@@ -291,7 +291,8 @@ export interface QaapAgentTaskRunnerContext {
     reviewSuccessfulAgentTask(task: QaapAgentTask, verification: QaapAgentTaskVerification | undefined): Promise<QaapAgentTaskReview | undefined>;
     resolveReviewerCandidates(task: QaapAgentTask): string[];
     hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean>;
-    captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'worktreeBaselinePaths' | 'sensitiveBaselineHashes'>;
+    captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'worktreeBaselinePaths' | 'worktreeBaselineHead' | 'sensitiveBaselineHashes'>;
+    listCommittedPathsSinceBaseline(task: Pick<QaapAgentTask, 'cwd' | 'worktreeBaselineHead'>): readonly string[] | undefined;
     changedSensitiveFiles(task: QaapAgentTask): string[];
     restoreBaselineSensitiveFiles(task: QaapAgentTask): string[];
     captureWorktreeStatus(cwd: string): string | undefined;

@@ -1910,13 +1910,49 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'worktreeBaselinePaths' | 'sensitiveBaselineHashes'> {
+    public captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'worktreeBaselinePaths' | 'worktreeBaselineHead' | 'sensitiveBaselineHashes'> {
         const baseline = captureWorktreeBaselineExtracted(this, cwd);
         const baselineChanges = this.listWorktreeChanges(cwd);
+        const head = this.readWorktreeHead(cwd);
         return {
             ...baseline,
             ...(baselineChanges !== undefined ? { worktreeBaselinePaths: baselineChanges.map(change => change.path) } : {}),
+            ...(head ? { worktreeBaselineHead: head } : {}),
         };
+    }
+
+    /** Full `HEAD` commit id of `cwd`, or `undefined` (no repository, unborn branch, git error). */
+    protected readWorktreeHead(cwd: string): string | undefined {
+        if (!fs.existsSync(path.join(cwd, '.git'))) {
+            return undefined;
+        }
+        const result = this.readGitSync(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+        const sha = result.status === 0 && typeof result.stdout === 'string' ? result.stdout.trim() : '';
+        return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(sha) ? sha : undefined;
+    }
+
+    /**
+     * Repo-relative paths changed by commits made since the task started (`worktreeBaselineHead..HEAD`),
+     * `[]` when HEAD did not move, or `undefined` when unknown (no baseline head, git error).
+     * @internal Used by the extracted qaap-agent-task-runner-* modules.
+     */
+    public listCommittedPathsSinceBaseline(task: Pick<QaapAgentTask, 'cwd' | 'worktreeBaselineHead'>): readonly string[] | undefined {
+        const base = task.worktreeBaselineHead;
+        if (!base || !/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(base)) {
+            return undefined;
+        }
+        const head = this.readWorktreeHead(task.cwd);
+        if (!head) {
+            return undefined;
+        }
+        if (head === base) {
+            return [];
+        }
+        const result = this.readGitSync(task.cwd, ['diff', '--name-only', '-z', '--no-renames', base, head]);
+        if (result.status !== 0 || result.error || typeof result.stdout !== 'string') {
+            return undefined;
+        }
+        return result.stdout.split('\0').filter(Boolean);
     }
 
     /** Sensitive (gitignored) files this task changed, or `[]` when none / no baseline. */
