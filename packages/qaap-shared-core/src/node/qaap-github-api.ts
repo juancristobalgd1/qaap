@@ -281,7 +281,8 @@ export async function fetchGithubRepository(accessToken: string | undefined, own
         { headers: githubHeaders(accessToken) },
     );
     if (!response.ok) {
-        throw new Error(`GitHub repository API failed (${response.status})`);
+        // `status` lets callers tell an expired sign-in (401) from a missing repository or outage.
+        throw Object.assign(new Error(`GitHub repository API failed (${response.status})`), { status: response.status });
     }
     return githubRepoToSummary(await response.json() as GithubRepoResponse);
 }

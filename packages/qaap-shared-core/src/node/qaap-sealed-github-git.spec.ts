@@ -17,6 +17,12 @@ class SpecSealedGit extends QaapSealedGithubGit {
         return this.createScratch(prefix);
     }
 
+    fallbackRootForTest: string | undefined;
+
+    protected override fallbackScratchRoot(): string {
+        return this.fallbackRootForTest ?? super.fallbackScratchRoot();
+    }
+
     runGitForTest(args: string[], options: QaapSealedGitRunOptions): Promise<string> {
         return this.runGit(args, { ...process.env, GIT_CONFIG_NOSYSTEM: '1' }, options);
     }
@@ -41,7 +47,12 @@ function gatedHandle(): { handle: fs.promises.FileHandle; release: () => void; b
 
 describe('qaap-sealed-github-git scratch and output limits (R3-5)', function (): void {
     this.timeout(30_000);
-    const saved = { QAAP_SEALED_GIT_SCRATCH_ROOT: process.env.QAAP_SEALED_GIT_SCRATCH_ROOT };
+    const saved = {
+        QAAP_SEALED_GIT_SCRATCH_ROOT: process.env.QAAP_SEALED_GIT_SCRATCH_ROOT,
+        QAAP_TENANT_BACKEND_MODE: process.env.QAAP_TENANT_BACKEND_MODE,
+        QAAP_TENANT_CONFIG_ROOT: process.env.QAAP_TENANT_CONFIG_ROOT,
+        QAAP_REPOS_ROOT: process.env.QAAP_REPOS_ROOT,
+    };
     let base: string;
 
     beforeEach(() => {
@@ -65,6 +76,47 @@ describe('qaap-sealed-github-git scratch and output limits (R3-5)', function ():
         expect(path.dirname(scratch)).to.equal(path.join(base, 'scratch'));
         if (process.platform !== 'win32') {
             expect(fs.statSync(path.join(base, 'scratch')).mode & 0o777).to.equal(0o700);
+        }
+    });
+
+    it('uses the tenant config mount in a tenant backend, whose /workspace is read-only', async () => {
+        delete process.env.QAAP_SEALED_GIT_SCRATCH_ROOT;
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_CONFIG_ROOT = path.join(base, 'tenant-config');
+        process.env.QAAP_REPOS_ROOT = path.join(base, 'workspace', 'repos');
+        const scratch = await new SpecSealedGit().createScratchForTest('qaap-push-');
+        expect(path.dirname(scratch)).to.equal(path.join(base, 'tenant-config', 'sealed-git'));
+    });
+
+    it('falls back to the private tmpdir root when the derived volume root cannot be created', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        delete process.env.QAAP_SEALED_GIT_SCRATCH_ROOT;
+        delete process.env.QAAP_TENANT_BACKEND_MODE;
+        // `{volume}/.qaap` cannot be created: `{volume}` is a regular file, like a missing/read-only parent.
+        fs.writeFileSync(path.join(base, 'volume'), '');
+        process.env.QAAP_REPOS_ROOT = path.join(base, 'volume', 'repos');
+        const git = new SpecSealedGit();
+        git.fallbackRootForTest = path.join(base, 'fallback');
+        let error: unknown;
+        try {
+            await git.createScratchForTest('qaap-push-');
+        } catch (caught) {
+            error = caught;
+        }
+        // ENOTDIR is not a read-only/missing parent: it still fails loudly.
+        expect(String(error)).to.match(/ENOTDIR/);
+
+        fs.rmSync(path.join(base, 'volume'));
+        fs.mkdirSync(path.join(base, 'volume'), { mode: 0o500 });
+        try {
+            const scratch = await git.createScratchForTest('qaap-push-');
+            if (process.getuid?.() !== 0) {
+                expect(path.dirname(scratch)).to.equal(path.join(base, 'fallback'));
+            }
+        } finally {
+            fs.chmodSync(path.join(base, 'volume'), 0o700);
         }
     });
 

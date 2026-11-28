@@ -252,6 +252,16 @@ COPY --from=build /app-out /app
 # under /home/theia/.qaap/users/{login}/skills on the qaap-auth-data volume.
 COPY packages/qaap-product/resources/qaap-system-skills /opt/qaap/system-skills
 
+# Stable PATH entries for the sealed agent CLIs. The backend also prepends a per-task wrapper dir to
+# the agent's PATH, but login shells (Debian /etc/profile hard-sets PATH) drop it, and agents then
+# report "qaaq-git: command not found". The credentials still arrive through QAAP_GIT_* /
+# QAAP_PREVIEW_* env vars, which login shells keep.
+RUN printf '#!/bin/sh\nexec node /app/packages/qaap-cloud-workspace/resources/qaaq-git.mjs "$@"\n' > /usr/local/bin/qaaq-git \
+    && printf '#!/bin/sh\nexec node /app/packages/qaap-cloud-workspace/resources/qaaq-preview.mjs "$@"\n' > /usr/local/bin/qaaq-preview \
+    && chmod 0755 /usr/local/bin/qaaq-git /usr/local/bin/qaaq-preview \
+    && test -f /app/packages/qaap-cloud-workspace/resources/qaaq-git.mjs \
+    && test -f /app/packages/qaap-cloud-workspace/resources/qaaq-preview.mjs
+
 # --- Agent privilege-drop (on by default via QAAP_AGENT_UID below) -------------
 # The backend intentionally runs as non-root. In hosted Docker mode, tenant worker containers are
 # the execution boundary and start the agent as their configured non-root uid. The image still

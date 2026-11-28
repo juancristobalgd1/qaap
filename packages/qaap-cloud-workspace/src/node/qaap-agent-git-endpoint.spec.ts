@@ -15,6 +15,9 @@ class TestableAgentGitEndpoint extends QaapAgentGitEndpoint {
     branch = 'feat/demo';
     sha = 'a'.repeat(40);
     defaultBranch = 'master';
+    metaError: unknown = undefined;
+    originHead: string | undefined = undefined;
+    localRefs = new Set<string>();
     pushed: QaapHostedGitPushRequest[] = [];
     prs: Array<{ token: string; input: Record<string, unknown> }> = [];
     overrideEnv: NodeJS.ProcessEnv = {};
@@ -42,10 +45,25 @@ class TestableAgentGitEndpoint extends QaapAgentGitEndpoint {
         if (args[0] === 'rev-parse' && args[1] === '--verify') {
             return `${this.sha}\n`;
         }
+        if (args[0] === 'symbolic-ref') {
+            if (!this.originHead) {
+                throw new Error('not a symbolic ref');
+            }
+            return `${this.originHead}\n`;
+        }
+        if (args[0] === 'show-ref') {
+            if (!this.localRefs.has(args[args.length - 1])) {
+                throw new Error('missing ref');
+            }
+            return '';
+        }
         return '';
     }
 
     protected override async fetchRepositoryMeta(): Promise<{ defaultBranch?: string }> {
+        if (this.metaError) {
+            throw this.metaError;
+        }
         return { defaultBranch: this.defaultBranch };
     }
 
@@ -234,5 +252,38 @@ describe('QaapAgentGitEndpoint', () => {
             draft: true,
         });
         expect(linkedPrs).to.have.length(1);
+    });
+
+    it('falls back to the local clone\'s default branch when GitHub metadata is unavailable', async () => {
+        const { endpoint, gitToken } = createHarness();
+        endpoint.metaError = Object.assign(new Error('GitHub repository API failed (503)'), { status: 503 });
+        endpoint.originHead = 'origin/develop';
+        const fromOriginHead = makeRes();
+        await endpoint.callPr(makeReq(gitToken, { title: 'T' }), fromOriginHead.res);
+        expect(fromOriginHead.statusCode).to.equal(200);
+        expect(endpoint.prs[0].input.base).to.equal('develop');
+
+        endpoint.originHead = undefined;
+        endpoint.localRefs.add('refs/remotes/origin/master');
+        const fromRemoteBranch = makeRes();
+        await endpoint.callPr(makeReq(gitToken, { title: 'T' }), fromRemoteBranch.res);
+        expect(fromRemoteBranch.statusCode).to.equal(200);
+        expect(endpoint.prs[1].input.base).to.equal('master');
+
+        endpoint.localRefs.clear();
+        const unknown = makeRes();
+        await endpoint.callPr(makeReq(gitToken, { title: 'T' }), unknown.res);
+        expect(unknown.statusCode).to.equal(400);
+        expect(String((unknown.body as { error?: string }).error)).to.match(/default branch/);
+    });
+
+    it('reports an expired GitHub sign-in (repository metadata 401) instead of a missing default branch', async () => {
+        const { endpoint, gitToken } = createHarness();
+        endpoint.metaError = Object.assign(new Error('GitHub repository API failed (401)'), { status: 401 });
+        const response = makeRes();
+        await endpoint.callPr(makeReq(gitToken, { title: 'T' }), response.res);
+        expect(response.statusCode).to.equal(401);
+        expect(String((response.body as { error?: string }).error)).to.match(/Sign in with GitHub/);
+        expect(endpoint.pushed).to.have.length(0);
     });
 });
