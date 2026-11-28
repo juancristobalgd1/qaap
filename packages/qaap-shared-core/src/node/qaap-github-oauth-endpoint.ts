@@ -866,7 +866,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
      * console free of noisy red 401 entries while preserving strict 401 responses for direct API callers.
      */
     protected isSoftAuthQuery(req: Request): boolean {
-        return req.query.softAuth === '1';
+        return req.query?.softAuth === '1';
     }
 
     protected async handleGithubRepositories(req: Request, res: Response): Promise<void> {
