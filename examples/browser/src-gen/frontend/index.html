@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" class="theia-splash-branded">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="description" content="Qaap — a mobile-friendly IDE for reading, reviewing and writing code on the go.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Qaap">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff">
+  <script type="text/javascript">(function(){function syncPwaChrome(){var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var tc=d?"#1e1e1e":"#ffffff";var sb=d?'black-translucent':'default';var m=document.querySelector('meta[name="theme-color"]:not([media])');if(m){m.setAttribute('content',tc);}m=document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');if(m){m.setAttribute('content',sb);}}syncPwaChrome();try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',syncPwaChrome);}catch(_){}})();</script>
+  <meta name="application-name" content="Qaap">
+  <meta name="application-icon" content="./media/qaap-logo.svg">
+  <link rel="icon" href="./media/qaap-logo.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="./media/qaap-apple-touch-icon-180.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="./media/qaap-icon-192.png">
+  <script type="text/javascript">(function(){try{var m=document.querySelector('meta[name="application-icon"]');var r=m&&m.getAttribute('content');if(!r)return;var h=r.trim();if(!h)return;var u=(/^https?:\/\//i.test(h)||h.startsWith('data:')||h.startsWith('/'))?h:new URL(h,document.baseURI).href;document.documentElement.classList.add('theia-splash-branded');document.documentElement.style.setProperty('--theia-preload-spinner-content','none');document.documentElement.style.setProperty('--theia-preload-spinner-animation','none');document.documentElement.style.setProperty('--theia-preload-logo-url','url(' + JSON.stringify(u) + ')');document.documentElement.style.setProperty('--theia-workbench-brand-logo-url','url(' + JSON.stringify(u) + ')');var l=document.querySelector('link[rel="icon"]');if(l){l.setAttribute('href',u);}}catch(_){}})();</script>
+  <style id="qaap-splash-critical">.theia-preload{position:absolute;inset:0;z-index:50000;background:var(--theia-editor-background,#f5f5f5);display:flex;justify-content:center;align-items:center;transition:opacity .8s}.theia-preload::after{content:"\eb19";font:normal normal normal 72px/1 codicon;color:#777;animation:1s theia-preload-rotate infinite}@keyframes theia-preload-rotate{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}.theia-preload.theia-hidden{opacity:0}html.theia-splash-branded .theia-preload{background-image:var(--theia-preload-logo-url);background-size:60px 60px;background-repeat:no-repeat;background-position:center}html.theia-splash-branded .theia-preload::after{content:var(--theia-preload-spinner-content,"\eb19");animation:var(--theia-preload-spinner-animation,1s theia-preload-rotate infinite)}html.theia-mobile-workhub-boot,html.theia-mobile-workhub-boot body{background:#f5f5f5!important}html.theia-mobile-workhub-boot #theia-app-shell,html.theia-mobile-workhub-boot #theia-top-panel,html.theia-mobile-workhub-boot #theia-left-content-panel,html.theia-mobile-workhub-boot #theia-right-content-panel,html.theia-mobile-workhub-boot #theia-bottom-content-panel,html.theia-mobile-workhub-boot #theia-bottom-split-panel,html.theia-mobile-workhub-boot .theia-mobile-workbench-top-bar,html.theia-mobile-workhub-boot .theia-mobile-bottom-chrome-host,html.theia-mobile-workhub-boot #theia-statusBar,html.theia-mobile-workhub-boot .theia-mobile-bottom-bar{visibility:hidden!important;pointer-events:none!important}body.theia-mobile-mod-workhub-composer-header #theia-main-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-top-panel,body.theia-mobile-mod-workhub-composer-header #theia-left-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-right-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-bottom-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-bottom-split-panel{visibility:hidden!important;pointer-events:none!important}body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-left-content-panel,body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-right-content-panel,body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-bottom-content-panel,body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-bottom-split-panel{visibility:hidden!important;pointer-events:none!important}</style>
+  <link rel="preload" href="./bundle.css" as="style" onload="this.onload=null;this.rel='stylesheet'"><noscript><link rel="stylesheet" href="./bundle.css"></noscript>
+  <title>Qaap</title>
+</head>
+
+<!-- TEST-E2E-FO -->
+<body>
+    <div class="theia-preload"></div>
+    <div style="position:fixed;bottom:4px;right:4px;z-index:99999;color:#ff00ff;font-size:12px;">TEST E2E FO</div>
+    <script type="text/javascript" src="./qaap-login-gate.js" charset="utf-8"></script>
+</body>
+
+</html>
