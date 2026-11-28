@@ -112,6 +112,41 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(scriptRuns).to.equal(0);
     });
 
+    it('skips scripts when the agent committed its markdown-only edit (clean git status after the commit)', async () => {
+        let scriptRuns = 0;
+        let envSeen: NodeJS.ProcessEnv | undefined;
+        const { runner } = makeRunner({
+            listWorktreeChanges: () => [],
+            listCommittedPathsSinceBaseline: () => ['TEST-CICLO-FO-2.md'],
+            changedSensitiveFiles: () => [],
+            runVerificationScripts: async (_task: unknown, env: NodeJS.ProcessEnv): Promise<ScriptRun> => {
+                scriptRuns++;
+                envSeen = env;
+                return undefined;
+            },
+        });
+        const result = await runner.runVerify({ ...TASK, worktreeBaselinePaths: [] });
+        expect(result).to.equal(undefined);
+        expect(scriptRuns).to.equal(0);
+        expect(envSeen).to.equal(undefined);
+    });
+
+    it('still runs scripts (with CI=1) when the agent committed a code change', async () => {
+        let envSeen: NodeJS.ProcessEnv | undefined;
+        const { runner } = makeRunner({
+            listWorktreeChanges: () => [],
+            listCommittedPathsSinceBaseline: () => ['NOTES.md', 'src/app.ts'],
+            changedSensitiveFiles: () => [],
+            runVerificationScripts: async (_task: unknown, env: NodeJS.ProcessEnv): Promise<ScriptRun> => {
+                envSeen = env;
+                return undefined;
+            },
+        });
+        const result = await runner.runVerify({ ...TASK, worktreeBaselinePaths: [] });
+        expect(result).to.deep.include({ status: 'passed', attempts: 0 });
+        expect(envSeen?.CI).to.equal('1');
+    });
+
     it('still runs verification when a code file is edited alongside markdown files', async () => {
         let scriptRuns = 0;
         const { runner } = makeRunner({

@@ -840,6 +840,12 @@ export interface VerifySuccessfulAgentTaskDeps {
     summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string;
     /** Dirty paths in the task's checkout; `undefined` when git cannot report them (scope rules then stay off). */
     listWorktreeChanges(task: QaapAgentTask): readonly QaapWorktreeChange[] | undefined;
+    /**
+     * Paths the agent committed during the task (baseline HEAD..HEAD). Without them a turn that commits its
+     * edit leaves a clean `git status`, the scope is empty, the docs-only skip never applies, and full repo
+     * scripts run for a one-file `.md` change until the 5-minute wall clock (stuck "streaming", Nov 2026).
+     */
+    listCommittedPathsSinceBaseline?(task: QaapAgentTask): readonly string[] | undefined;
     /** Gitignored sensitive files (`.env*`, etc.) modified by this task; non-empty always keeps verification active. */
     changedSensitiveFiles?(task: QaapAgentTask): readonly string[];
     /** Put the given paths back to how they were before the fix turn; returns the paths restored. */
@@ -869,7 +875,10 @@ export async function verifySuccessfulAgentTask(
     // never widen the agent's repair scope.
     const currentChanges = deps.listWorktreeChanges(task);
     const taskChanges = currentChanges ? findChangesSinceBaseline(currentChanges, task.worktreeBaselinePaths) : undefined;
-    const scopePaths = taskChanges?.map(change => change.path);
+    const committedPaths = taskChanges ? deps.listCommittedPathsSinceBaseline?.(task) : undefined;
+    const scopePaths = taskChanges
+        ? [...new Set([...taskChanges.map(change => change.path), ...(committedPaths ?? [])])]
+        : undefined;
     const changedFilesLimit = resolveAgentTaskChangedFilesLimit(process.env);
     const exceededFiles = currentChanges && changedFilesLimit !== undefined && task.worktreeBaselinePaths !== undefined
         ? findChangesExceedingScopeLimit(currentChanges, task.worktreeBaselinePaths, changedFilesLimit)
@@ -903,7 +912,8 @@ export async function verifySuccessfulAgentTask(
         const pendingScripts = fingerprint === undefined
             ? scripts
             : scripts.filter(script => passedOnFingerprint.get(script) !== fingerprint);
-        const failed = await deps.runVerificationScripts(task, env, pendingScripts, startedAt);
+        // CI=1: test runners (jest, react-scripts, vitest) otherwise may start in watch mode and only stop at the wall clock.
+        const failed = await deps.runVerificationScripts(task, { ...env, CI: env.CI || '1' }, pendingScripts, startedAt);
         if (fingerprint !== undefined) {
             // Scripts run in order and stop at the first failure: everything before it passed.
             const failedScript = failed?.command.startsWith(VERIFY_NPM_RUN_PREFIX)

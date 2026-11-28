@@ -154,6 +154,11 @@ export interface QaapAgentTask {
     readonly worktreeBaselineStatus?: string;
     /** Repo-relative dirty paths that already existed before this task started. */
     readonly worktreeBaselinePaths?: readonly string[];
+    /**
+     * `HEAD` commit when the task started, so paths the agent committed during the turn (`git commit`,
+     * `qaaq-git push`) still count as the task's own changes after `git status` turns clean.
+     */
+    readonly worktreeBaselineHead?: string;
     /** Task-owned paths over the default cap that caused the runner to stop and request review. */
     readonly scopeLimitExceededFiles?: readonly string[];
     /**

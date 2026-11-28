@@ -192,6 +192,7 @@ export async function verifySuccessfulAgentTaskExtracted(ctx: QaapAgentTaskRunne
             runAgentVerificationFixTurn: (t, e, c, r, a, sa, sp) => ctx.runAgentVerificationFixTurn(t, e, c, r, a, sa, sp),
             summarizeVerificationFailure: (c, r) => ctx.summarizeVerificationFailure(c, r),
             listWorktreeChanges: t => ctx.listWorktreeChanges(t.cwd),
+            listCommittedPathsSinceBaseline: t => ctx.listCommittedPathsSinceBaseline(t),
             changedSensitiveFiles: t => ctx.changedSensitiveFiles(t),
             revertWorktreeChanges: (t, changes) => revertOutOfScopeChangesExtracted(ctx, t, changes),
             onVerificationPhase: (t, phase) => setTaskVerificationPhaseExtracted(ctx, t.id, phase),
