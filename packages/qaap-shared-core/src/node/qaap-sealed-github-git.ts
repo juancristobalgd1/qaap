@@ -177,19 +177,33 @@ export class QaapSealedGithubGit {
     }
 
     /**
-     * Where sealed git works: `QAAP_SEALED_GIT_SCRATCH_ROOT`, else `{volume}/.qaap/sealed-git` next to a
-     * `.../repos` root (the backend-owned directory of the project-session store), so a whole repository
-     * is never downloaded into a tmpfs `/tmp`; else `{tmpdir}/qaap-sealed-git`.
+     * Where sealed git works: `QAAP_SEALED_GIT_SCRATCH_ROOT`; else, in a tenant backend
+     * (`QAAP_TENANT_BACKEND_MODE=1`), `{QAAP_TENANT_CONFIG_ROOT}/sealed-git` on the tenant's disk-backed
+     * config mount (its root filesystem is read-only, so `/workspace/.qaap` cannot be created there);
+     * else `{volume}/.qaap/sealed-git` next to a `.../repos` root (the backend-owned directory of the
+     * project-session store), so a whole repository is never downloaded into a tmpfs `/tmp`; else
+     * {@link fallbackScratchRoot}.
      */
     protected scratchRoot(): string {
         const configured = process.env.QAAP_SEALED_GIT_SCRATCH_ROOT?.trim();
         if (configured) {
             return path.resolve(configured);
         }
+        const tenantConfigRoot = process.env.QAAP_TENANT_BACKEND_MODE?.trim() === '1'
+            ? process.env.QAAP_TENANT_CONFIG_ROOT?.trim()
+            : undefined;
+        if (tenantConfigRoot) {
+            return path.join(path.resolve(tenantConfigRoot), 'sealed-git');
+        }
         const reposRoot = resolveQaapReposRoot();
         return path.basename(reposRoot) === 'repos'
             ? path.join(path.dirname(reposRoot), '.qaap', 'sealed-git')
-            : path.join(os.tmpdir(), 'qaap-sealed-git');
+            : this.fallbackScratchRoot();
+    }
+
+    /** `{tmpdir}/qaap-sealed-git`: used when no volume root applies or the derived one cannot be created. */
+    protected fallbackScratchRoot(): string {
+        return path.join(os.tmpdir(), 'qaap-sealed-git');
     }
 
     /**
@@ -197,8 +211,22 @@ export class QaapSealedGithubGit {
      * uid or open to others. The first call also removes scratch directories a crashed backend left.
      */
     protected async ensureScratchRoot(): Promise<string> {
-        const root = this.scratchRoot();
-        await fs.promises.mkdir(root, { recursive: true, mode: 0o700 });
+        let root = this.scratchRoot();
+        try {
+            await fs.promises.mkdir(root, { recursive: true, mode: 0o700 });
+        } catch (error) {
+            // A derived root on a read-only or missing parent (e.g. `/workspace/.qaap` in a container whose
+            // root filesystem is read-only) must not break every push: fall back to the private tmpdir root.
+            // An explicitly configured root still fails loudly.
+            const code = (error as NodeJS.ErrnoException)?.code;
+            const fallback = this.fallbackScratchRoot();
+            if (process.env.QAAP_SEALED_GIT_SCRATCH_ROOT?.trim() || root === fallback
+                || !['EROFS', 'ENOENT', 'EACCES', 'EPERM'].includes(code ?? '')) {
+                throw error;
+            }
+            root = fallback;
+            await fs.promises.mkdir(root, { recursive: true, mode: 0o700 });
+        }
         const stat = await fs.promises.lstat(root);
         const foreign = process.platform !== 'win32' && (stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0);
         if (stat.isSymbolicLink() || !stat.isDirectory() || foreign) {

@@ -108,7 +108,7 @@ export class QaapAgentGitEndpoint implements BackendApplicationContribution {
             throw new QaapAgentGitError(400, parsed.message);
         }
         const { token, project, branch, sha, url, defaultBranch } = await this.preparePush(caller);
-        const base = parsed.value.base ?? defaultBranch;
+        const base = parsed.value.base ?? defaultBranch ?? await this.resolveLocalDefaultBranch(caller.cwd, branch);
         if (!base) {
             throw new QaapAgentGitError(400, 'Could not determine the repository default branch. Pass --base <branch>.');
         }
@@ -267,6 +267,37 @@ export class QaapAgentGitEndpoint implements BackendApplicationContribution {
         }
         // Keep local remote tracking ref in sync (best-effort, no token).
         await this.runReadOnlyGit(caller.cwd, ['update-ref', `refs/remotes/origin/${branch}`, sha]).catch(() => undefined);
+    }
+
+    /**
+     * The default branch as the local clone knows it, for when GitHub's repository metadata is unavailable:
+     * `refs/remotes/origin/HEAD`, else the first existing `origin/main` / `origin/master` / local `main` /
+     * `master`. The result only picks the pull request's base (the agent may pass any `--base` anyway), so
+     * reading these agent-writable refs grants nothing.
+     */
+    protected async resolveLocalDefaultBranch(cwd: string, currentBranch: string): Promise<string | undefined> {
+        const valid = (name: string | undefined): string | undefined => {
+            const trimmed = name?.trim();
+            return trimmed && /^[A-Za-z0-9._/+-]+$/.test(trimmed) && !trimmed.startsWith('-')
+                && trimmed.toLowerCase() !== currentBranch.toLowerCase() ? trimmed : undefined;
+        };
+        const originHead = await this.runReadOnlyGit(cwd, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']).catch(() => '');
+        const fromOriginHead = valid(originHead.trim().replace(/^origin\//, ''));
+        if (fromOriginHead) {
+            return fromOriginHead;
+        }
+        for (const [ref, name] of [
+            ['refs/remotes/origin/main', 'main'],
+            ['refs/remotes/origin/master', 'master'],
+            ['refs/heads/main', 'main'],
+            ['refs/heads/master', 'master'],
+        ] as const) {
+            const exists = await this.runReadOnlyGit(cwd, ['show-ref', '--verify', '--quiet', ref]).then(() => true, () => false);
+            if (exists && valid(name)) {
+                return name;
+            }
+        }
+        return undefined;
     }
 
     protected resolveOwnerToken(ownerLogin: string): string | undefined {
