@@ -211,6 +211,8 @@ export interface QaapAgentDefaultWorkflowOptions {
      * "Qaap runs the dev server" and "verify with curl" blocks, which contradict an agent that starts the app itself.
      */
     readonly previewTools?: boolean | 'mcp' | 'cli';
+    /** When true, mention the sealed `qaaq-git` CLI for pushing feature branches and opening PRs. */
+    readonly gitCli?: boolean;
 }
 
 /**
@@ -279,6 +281,9 @@ export function buildAgentDefaultWorkflowPromptBlock(options: QaapAgentDefaultWo
         'Start every task by using Read, Glob, or Grep on the repository — never end a turn with only planning/thinking text.',
         'Implement the change, run the most relevant verification you can find, and summarize the result with changed files and test status.',
         'Do not run git commit, create or switch branches (git checkout -b, git switch -c), push, or open a pull request unless the user explicitly asked for that in this conversation.',
+        ...(gitAvailable && options.gitCli
+            ? ['When the user explicitly asks to push a branch or open a GitHub pull request, commit on a new non-default feature branch and run `qaaq-git push` or `qaaq-git pr create --title "..." [--body "..."] [--base <branch>] [--draft]` instead of raw `git push` or `gh` (GitHub credentials stay sealed on the Qaap backend).']
+            : []),
         'Do not merge, delete branches, or rewrite shared history unless the user explicitly asks.',
     ].join('\n');
 }

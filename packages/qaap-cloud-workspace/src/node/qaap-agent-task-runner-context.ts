@@ -413,4 +413,11 @@ export interface QaapAgentTaskRunnerContext {
         task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'delegationRole' | 'readOnlyWorkspace'>,
         options?: { readonly fallback?: boolean },
     ): { readonly url: string; readonly token: string } | undefined;
+    /** Whether turns get the sealed `qaaq-git` CLI (adds `qaaq-git` guidance to the prompt). */
+    agentGitCliAvailable?(): boolean;
+    /** Issues sealed-git CLI credentials (`qaaq-git`) for non-read-only agent turns. */
+    applyAgentGitCliEnv?(
+        env: NodeJS.ProcessEnv,
+        task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'readOnlyWorkspace'>,
+    ): { readonly url: string; readonly token: string } | undefined;
 }

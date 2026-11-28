@@ -37,6 +37,7 @@ import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 import { QaapToolGateEndpoint } from './qaap-tool-gate-endpoint';
 import { QaapAgentDelegationEndpoint } from './qaap-agent-delegation-endpoint';
 import { QaapAgentPreviewEndpoint } from './qaap-agent-preview-endpoint';
+import { QaapAgentGitEndpoint } from './qaap-agent-git-endpoint';
 import { QaapAgentPreviewService } from './qaap-agent-preview-service';
 import { QaapPreviewPageInspector } from './qaap-preview-page-inspector';
 import { QaapAgentDelegationService } from './qaap-agent-delegation-service';
@@ -452,6 +453,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapAgentPreviewService);
     bind(QaapAgentPreviewEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentPreviewEndpoint);
+    // Sealed agent git CLI (`qaaq-git push` / `qaaq-git pr create`): GitHub tokens stay on the backend.
+    bind(QaapAgentGitEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentGitEndpoint);
     bind(QaapAgentApprovalEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentApprovalEndpoint);
     // Qaap-level agent lifecycle hooks + workspace trust review (doc/qaap-agent-hooks.md).

@@ -33,6 +33,7 @@ import {
     applyQaapCursorPreviewMcp,
     applyQaapGeminiPreviewMcp,
     applyQaapGrokPreviewMcp,
+    applyQaapGitCli,
     applyQaapOpencodeDelegation,
     applyQaapPiDelegation,
     applyQaapPreviewCli,
@@ -760,6 +761,13 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     const owner = typeof identity?.uid === 'number' ? { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } : undefined;
                     previewCliStaged = applyQaapPreviewCli(childEnv, task.id, previewCli, owner, ctx.agentSandboxFor?.(task.cwd)) !== undefined;
                 }
+            }
+            // Stage the sealed `qaaq-git` CLI after delegation/preview placement so cleanup tracks all dirs under task.id.
+            const gitCli = ctx.applyAgentGitCliEnv?.(childEnv, task);
+            if (gitCli) {
+                const identity = ctx.resolveAgentSpawnIdentity(task.cwd);
+                const owner = typeof identity?.uid === 'number' ? { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } : undefined;
+                applyQaapGitCli(childEnv, task.id, gitCli, owner, ctx.agentSandboxFor?.(task.cwd));
             }
             // Fails closed before any Codex process: no token while the gate is wired means no gate for its tool calls.
             assertCodexGateTokenIssued({

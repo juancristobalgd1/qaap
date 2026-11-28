@@ -55,6 +55,15 @@ The token is used by:
      workflow returns the destination (`pushedTo`) and the Work Hub shows it.
   3. The sealed child runs `git push <url> <sha>:refs/heads/<branch>` with the project's `objects`
      directory as `GIT_ALTERNATE_OBJECT_DIRECTORIES`.
+- **Sealed agent git CLI (`qaaq-git push`, `qaaq-git pr create`)**: `QaapAgentGitEndpoint` + `QaapHostedGitPush`.
+  1. Agents receive only a per-task `git`-scoped token in a `0600` file (`QAAP_GIT_TOKEN_FILE`,
+     revoked when the task ends) — never the user's GitHub OAuth token.
+  2. `QaapHostedProjectResolver` resolves the target repository strictly from backend state, never
+     from `.git/config` or request parameters.
+  3. Detached `HEAD`, `main`, `master`, and the repository's GitHub `default_branch` are refused,
+     force-push is always off (`force: false`), and read-only (`plan`) turns are refused.
+  4. The push executes through `QaapHostedGitPush` and PR creation calls GitHub directly from the
+     backend; the GitHub token never crosses into the agent process or its output.
 - **Hosted open/clone/fetch of a GitHub repository** (`ensureRepositoryWorkspace`):
   `QaapHostedGitFetch`.
   1. The sealed child fetches every branch and tag into its scratch repository. For an existing
