@@ -92,6 +92,11 @@ export interface QaapAccountMenuEntriesOptions {
     /** Work Hub: open the Billing sheet. */
     readonly openBilling?: () => void | Promise<void>;
     /**
+     * Work Hub: open the Work Hub Settings sheet (App + Account, including Usage). Without it the hub menu has no
+     * Settings row: the IDE preferences command would open behind the hub.
+     */
+    readonly openSettings?: () => void | Promise<void>;
+    /**
      * Work Hub: open the Work Hub search dialog on its Commands tab. When set, the Command Palette entry
      * runs this instead of the IDE quick-command palette (which is not the product palette on the hub).
      */
@@ -160,7 +165,16 @@ export function buildQaapAccountMenuEntries(
             commandId: WORKBENCH_OPEN_KEYBINDINGS,
         },
     ];
-    const settings: QaapAccountMenuEntry[] = workHub ? [] : [settingsMenuEntry()];
+    const settings: QaapAccountMenuEntry[] = !workHub
+        ? [settingsMenuEntry()]
+        : options?.openSettings
+            ? [{
+                kind: 'action',
+                label: nls.localize('qaap/accountMenu/settings', 'Settings'),
+                iconClass: 'codicon-settings-gear',
+                run: () => options.openSettings?.(),
+            }]
+            : [];
     if (!signedIn) {
         return [
             {

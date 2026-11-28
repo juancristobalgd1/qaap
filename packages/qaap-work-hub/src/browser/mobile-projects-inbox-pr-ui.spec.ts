@@ -161,4 +161,11 @@ describe('MobileProjectsInboxPrUi when GitHub refuses the stored token', () => {
             (globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent;
         }
     });
+
+    it('never clears a recorded GitHub refusal just because the hub has no project repositories', async () => {
+        const host = { ...makeHost(), hubQueryUi: { projectsForCurrentHubList: () => [] } as unknown as MobileProjectsInboxPrHost['hubQueryUi'] };
+        host.inboxGithubSignedIn = false;
+        await new MobileProjectsInboxPrUi(host).refreshInboxPullRequests();
+        expect(host.inboxGithubSignedIn).to.equal(false);
+    });
 });

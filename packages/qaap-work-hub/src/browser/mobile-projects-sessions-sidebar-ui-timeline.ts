@@ -15,6 +15,7 @@ import { MobileWorkHubUnifiedSearchDialog, type MobileWorkHubUnifiedSearchTab } 
 import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+import { QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND } from '../common/qaap-work-hub-command-palette';
 
 export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
@@ -276,6 +277,7 @@ export function onSessionsSidebarAccountClickExtracted(ctx: MobileProjectsSessio
         buildQaapAccountMenuEntries(readQaapSignedIn(), {
             workHub: true,
             openBilling: () => ctx.host.openBillingSheet?.(),
+            openSettings: () => ctx.host.commands.executeCommand(QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND),
             openCommandSearch: () => openSessionsSidebarSearchExtracted(ctx, 'commands'),
         }),
         {

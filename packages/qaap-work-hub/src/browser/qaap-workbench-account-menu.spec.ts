@@ -81,6 +81,25 @@ describe('buildQaapAccountMenuEntries', () => {
             expect(settings).to.equal(undefined);
         });
 
+        it('offers the Work Hub Settings sheet (with Usage) on the Work Hub menu when openSettings is provided', async () => {
+            let opened = 0;
+            const hub = buildQaapAccountMenuEntries(true, {
+                workHub: true,
+                openBilling: () => undefined,
+                openSettings: () => { opened++; },
+            });
+            expect(hub.filter(e => e.kind === 'action').map(e => e.label)).to.deep.equal([
+                'Command Palette…',
+                'Settings',
+                'Billing',
+                'Sign Out',
+            ]);
+            const settings = hub.find(e => e.kind === 'action' && e.label === 'Settings');
+            expect(settings?.commandId).to.equal(undefined);
+            await settings?.run?.();
+            expect(opened).to.equal(1);
+        });
+
         it('separators only appear between non-empty groups', () => {
             // No consecutive separators
             for (let i = 0; i < entries.length - 1; i++) {
